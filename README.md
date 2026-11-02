@@ -29,7 +29,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `17 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation. On Windows, prefix with `AWS_LC_SYS_PREBUILT_NASM=1` if `aws-lc-sys` asks for NASM.
+See: `17 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
