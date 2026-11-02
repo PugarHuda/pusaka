@@ -17,7 +17,7 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 | Contract | [`pusaka-btc.testnet`](https://testnet.nearblocks.io/address/pusaka-btc.testnet) (NEAR testnet) |
 | MPC signer | `v1.signer-prod.testnet` (NEAR Chain Signatures) |
 | Bitcoin network | testnet4 ([mempool.space/testnet4](https://mempool.space/testnet4)) |
-| Live demo | *(hosted URL added at submission)* · or run locally, below |
+| Live demo | **https://pusaka-two.vercel.app** (or run locally, below) |
 
 ## Try it
 
