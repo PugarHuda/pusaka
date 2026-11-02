@@ -1,0 +1,13 @@
+{
+  "name": "pusaka",
+  "private": true,
+  "type": "module",
+  "workspaces": ["shared", "scripts", "web"],
+  "scripts": {
+    "demo": "npm run demo -w scripts --",
+    "setup": "npm run setup -w scripts",
+    "test": "cd contract && cargo test",
+    "dev": "npm run dev -w web",
+    "build": "npm run build -w web"
+  }
+}

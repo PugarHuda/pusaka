@@ -27,6 +27,11 @@ const MAX_INPUTS: usize = 8;
 const KEY_TGAS: u64 = 10;
 const SIGN_TGAS: u64 = 15;
 const CALLBACK_TGAS: u64 = 20;
+const MAX_HISTORY: usize = 32;
+/// Reserved per token for the BTC key (set in a callback) and the bounded history.
+const TOKEN_RESERVE_BYTES: u64 = 4_000;
+/// Per recorded signed outpoint (64-char txid + vout + Vec overhead), rounded up.
+const OUTPOINT_BYTES: u64 = 120;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -149,10 +154,11 @@ impl Pusaka {
     /// Mints a Pusaka and asks the MPC contract for its derived BTC key. Attach ~0.02 NEAR for storage.
     #[payable]
     pub fn nft_mint(&mut self, receiver_id: Option<AccountId>) -> Promise {
+        let before = env::storage_usage();
         let id = self.next_id.to_string();
         self.next_id += 1;
         let owner = receiver_id.unwrap_or_else(env::predecessor_account_id);
-        self.tokens.internal_mint(
+        self.tokens.internal_mint_with_refund(
             id.clone(),
             owner.clone(),
             Some(TokenMetadata {
@@ -160,8 +166,13 @@ impl Pusaka {
                 description: Some("An NFT that holds native Bitcoin.".into()),
                 ..empty_meta()
             }),
+            None,
         );
         self.log(&id, Event::Mint { owner });
+        // The minter pays for everything this token stores, including the BTC key
+        // and history that land later.
+        let bytes = env::storage_usage() - before + TOKEN_RESERVE_BYTES;
+        charge_storage(bytes, 0);
 
         // The key is fetched on-chain from the MPC contract, so nobody can mint a
         // Pusaka that points at an address they control privately.
@@ -223,9 +234,11 @@ impl Pusaka {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
         require!(!utxos.is_empty() && utxos.len() <= MAX_INPUTS, "1..=8 inputs");
-        require!(
-            env::attached_deposit() >= NearToken::from_yoctonear(utxos.len() as u128),
-            "attach 1 yoctoNEAR per input"
+        let utxos = canonical_utxos(utxos);
+        // 1 yocto per MPC sign call + storage for the outpoints this may record.
+        charge_storage(
+            OUTPOINT_BYTES * utxos.len() as u64,
+            utxos.len() as u128,
         );
 
         let pk = self.btc_keys.get(&token_id).unwrap().clone();
@@ -380,11 +393,44 @@ impl Pusaka {
     }
 
     fn log(&mut self, token_id: &str, event: Event) {
-        self.history
-            .entry(token_id.to_string())
-            .or_default()
-            .push(Entry { at_ms: U64(env::block_timestamp_ms()), event });
+        let h = self.history.entry(token_id.to_string()).or_default();
+        h.push(Entry { at_ms: U64(env::block_timestamp_ms()), event });
+        // ponytail: bounded so list/cancel spam can't grow storage; full history lives in tx logs
+        if h.len() > MAX_HISTORY {
+            h.remove(0);
+        }
     }
+}
+
+/// Requires the attached deposit to cover `bytes` of storage plus `extra_yocto`, refunds the rest.
+fn charge_storage(bytes: u64, extra_yocto: u128) {
+    let cost = env::storage_byte_cost()
+        .saturating_mul(bytes as u128)
+        .saturating_add(NearToken::from_yoctonear(extra_yocto));
+    let paid = env::attached_deposit();
+    require!(paid >= cost, format!("attach at least {cost} for storage"));
+    let refund = paid.saturating_sub(cost);
+    if !refund.is_zero() {
+        Promise::new(env::predecessor_account_id()).transfer(refund).detach();
+    }
+}
+
+/// Outpoints are recorded exactly as the buyer will compare them: 64 lower-case hex
+/// txid, no duplicates. Anything else could let a signed UTXO hide from the registry.
+fn canonical_utxos(utxos: Vec<Utxo>) -> Vec<Utxo> {
+    let mut seen = std::collections::HashSet::new();
+    utxos
+        .into_iter()
+        .map(|mut u| {
+            require!(
+                u.txid.len() == 64 && u.txid.bytes().all(|b| b.is_ascii_hexdigit()),
+                "txid must be 64 hex chars"
+            );
+            u.txid = u.txid.to_ascii_lowercase();
+            require!(seen.insert((u.txid.clone(), u.vout)), "duplicate outpoint");
+            u
+        })
+        .collect()
 }
 
 fn empty_meta() -> TokenMetadata {

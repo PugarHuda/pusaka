@@ -44,7 +44,7 @@ fn utxo(vout: u32) -> Utxo {
 }
 
 fn withdraw(c: &mut Pusaka, caller: &str, vouts: &[u32]) {
-    ctx(caller, NearToken::from_yoctonear(8), vec![]);
+    ctx(caller, NearToken::from_millinear(20), vec![]);
     let _ = c.withdraw(
         "1".into(),
         vouts.iter().map(|v| utxo(*v)).collect(),
@@ -190,7 +190,7 @@ fn token_without_key_is_frozen() {
 #[should_panic(expected = "inputs do not cover amount + fee")]
 fn overspend_is_rejected() {
     let mut c = setup();
-    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
     let _ = c.withdraw(
         "1".into(),
         vec![utxo(0)],
@@ -198,4 +198,44 @@ fn overspend_is_rejected() {
         U64(100_000),
         U64(1),
     );
+}
+
+#[test]
+fn uppercase_txid_is_recorded_canonically() {
+    // Attack: sign with an upper-case txid so the registry entry doesn't match what
+    // the buyer's indexer reports, making a signed UTXO look "safe".
+    let upper = Utxo { txid: TXID.to_uppercase(), vout: 0, value: U64(100_000) };
+    assert_eq!(canonical_utxos(vec![upper])[0].txid, TXID);
+}
+
+#[test]
+#[should_panic(expected = "duplicate outpoint")]
+fn duplicate_outpoints_rejected() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0, 0]);
+}
+
+#[test]
+#[should_panic(expected = "txid must be 64 hex chars")]
+fn malformed_txid_rejected() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let bad = Utxo { txid: format!("{TXID}00"), vout: 0, value: U64(100_000) };
+    let _ = c.withdraw("1".into(), vec![bad], "0014".to_string() + &"11".repeat(20), U64(50_000), U64(500));
+}
+
+#[test]
+#[should_panic(expected = "for storage")]
+fn mint_must_pay_storage() {
+    ctx("alice.testnet", NearToken::from_millinear(1), vec![]);
+    let mut c = Pusaka::new(acc("v1.signer-prod.testnet"));
+    let _ = c.nft_mint(None);
+}
+
+#[test]
+#[should_panic(expected = "for storage")]
+fn withdraw_must_pay_outpoint_storage() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.withdraw("1".into(), vec![utxo(0)], "0014".to_string() + &"11".repeat(20), U64(50_000), U64(500));
 }
