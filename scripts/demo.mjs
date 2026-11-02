@@ -55,12 +55,17 @@ ok(`its native Bitcoin address: ${addr}  (key derived on-chain by the NEAR MPC n
 // ---------- 2. fund ----------
 step(2, "Put real (testnet4) BTC inside it");
 let bal = await balances(addr, info.signed_outpoints);
-if (bal.safe < 2000) {
+if (bal.safe + bal.pending < 2000) {
   console.log(`   → open https://coinfaucet.eu/en/btc-testnet4/ and send to ${addr}`);
   console.log("   waiting for the deposit to show up in the mempool…");
-  while ((bal = await balances(addr, info.signed_outpoints)).safe < 2000) await sleep(5000);
+  while ((bal = await balances(addr, info.signed_outpoints)).safe + bal.pending < 2000) await sleep(5000);
 }
-ok(`safe balance: ${bal.safe} sats in ${bal.utxos.length} UTXO(s)  https://mempool.space/testnet4/address/${addr}`);
+if (bal.safe < 2000) {
+  // A buyer only counts confirmed coins: an unconfirmed deposit can still be replaced (RBF).
+  console.log(`   ${bal.pending} sats seen, waiting for 1 Bitcoin confirmation (testnet4 blocks take ~10 min)…`);
+  while ((bal = await balances(addr, info.signed_outpoints)).safe < 2000) await sleep(15000);
+}
+ok(`safe balance: ${bal.safe} sats confirmed  https://mempool.space/testnet4/address/${addr}`);
 
 // ---------- 3. list ----------
 step(3, `${seller.accountId} lists it for 1 NEAR`);
@@ -68,7 +73,7 @@ await call(seller, "list", { token_id: tokenId, price: PRICE });
 ok("listed — withdrawals are now locked by the contract");
 await expectFail("seller tries to withdraw while listed", () =>
   call(seller, "withdraw", {
-    token_id: tokenId, utxos: bal.utxos.slice(0, 1).map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
+    token_id: tokenId, utxos: bal.spendable.slice(0, 1).map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
     to_script_hex: scriptHex(RETURN_TO), amount_sat: "1000", fee_sat: "300",
   }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 }), "Listed");
 
@@ -76,7 +81,7 @@ await expectFail("seller tries to withdraw while listed", () =>
 step(4, `${buyer.accountId} checks the safe balance, then buys`);
 info = await view("token_info", { token_id: tokenId });
 bal = await balances(addr, info.signed_outpoints);
-ok(`buyer verifies: ${bal.safe} sats safe, ${bal.atRisk} sats at risk, ${info.signed_outpoints.length} signed outpoint(s)`);
+ok(`buyer verifies: ${bal.safe} sats safe (confirmed), ${bal.pending} unconfirmed, ${bal.atRisk} at risk, ${info.signed_outpoints.length} signed outpoint(s)`);
 const t0 = Date.now();
 await call(buyer, "buy", { token_id: tokenId, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(PRICE) });
 const saleSecs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -87,13 +92,13 @@ ok(`sold in ${saleSecs}s — new owner: ${info.token.owner_id}. The BTC never mo
 step(5, "The old owner tries to take the BTC");
 await expectFail(`${seller.accountId} withdraws`, () =>
   call(seller, "withdraw", {
-    token_id: tokenId, utxos: bal.utxos.slice(0, 1).map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
+    token_id: tokenId, utxos: bal.spendable.slice(0, 1).map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
     to_script_hex: scriptHex(RETURN_TO), amount_sat: "1000", fee_sat: "300",
   }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 }), "NotOwner");
 
 // ---------- 6. new owner withdraws ----------
 step(6, `${buyer.accountId} withdraws 1000 sats to a Bitcoin address`);
-const ins = bal.utxos.slice(0, 8);
+const ins = bal.spendable.slice(0, 8);
 const t1 = Date.now();
 const signed = await call(buyer, "withdraw", {
   token_id: tokenId, utxos: ins.map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),

@@ -1,0 +1,15 @@
+# Pusaka
+
+> NFTs on NEAR that hold native Bitcoin. Each Pusaka (NEP-171 token) controls its own Bitcoin address through NEAR Chain Signatures; selling the NFT transfers control of the BTC in one NEAR transaction, with no bridge, wrapped BTC or custodian.
+
+Network: NEAR testnet (contract `pusaka-btc.testnet`, MPC signer `v1.signer-prod.testnet`) and Bitcoin testnet4.
+
+## How to use this site
+
+- `/#/` lists every Pusaka with the BTC it holds (read live from mempool.space testnet4).
+- `/#/pusaka/{id}` shows one Pusaka: Bitcoin address, safe balance, at-risk balance, on-chain history, and actions (mint, list, buy, withdraw) after connecting a NEAR testnet wallet.
+
+## Docs
+
+- [Source code and README](https://github.com/PugarHuda/pusaka): reproducible steps, threat model mapped to tests, measured testnet results
+- [Contract on NEAR testnet](https://testnet.nearblocks.io/address/pusaka-btc.testnet)

@@ -14,7 +14,7 @@ async function loadToken(id) {
   const info = await view("token_info", { token_id: id });
   if (!info) return null;
   const address = info.btc_pubkey ? btcAddress(info.btc_pubkey) : null;
-  let bal = { safe: 0, atRisk: 0, utxos: [] };
+  let bal = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
   if (address) bal = await balances(address, info.signed_outpoints).catch(() => ({ ...bal, error: true }));
   return { id, info, address, bal };
 }
@@ -76,7 +76,7 @@ export default function App() {
         )}
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
-      <main>{tokenId ? <Detail id={tokenId} accountId={accountId} /> : <Home />}</main>
+      <main>{tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
           Contract <a href={`https://testnet.nearblocks.io/address/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
@@ -167,6 +167,12 @@ function Detail({ id, accountId }) {
             <p className="warn">
               A signature already exists that can spend {bal.atRisk.toLocaleString()} more sats, so they're left out of
               the amount above. They stop counting as at risk once that transaction lands on Bitcoin.
+            </p>
+          )}
+          {bal.pending > 0 && (
+            <p className="muted">
+              {bal.pending.toLocaleString()} more sats are waiting for a Bitcoin confirmation. Until then whoever sent
+              them could still replace that transaction, so they aren't counted yet.
             </p>
           )}
           {bal.error && <p className="error">mempool.space didn't answer, so the balance may be out of date.</p>}
@@ -291,6 +297,7 @@ function OwnerForms({ t, busy, run, status }) {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const FEE = 300;
+  const spendableSats = bal.safe + bal.pending;
 
   function sell(e) {
     e.preventDefault();
@@ -304,8 +311,11 @@ function OwnerForms({ t, busy, run, status }) {
     e.preventDefault();
     run("withdraw", async () => {
       const sats = Math.round(Number(amount) * 1e8);
-      const script = scriptHex(to); // throws on a bad address before anything is signed
-      const ins = [...bal.utxos].sort((a, b) => b.value - a.value).slice(0, 8);
+      let script;
+      try { script = scriptHex(to); } catch { // checked before anything is signed
+        throw new Error("That isn't a Bitcoin testnet address. It should start with tb1.");
+      }
+      const ins = [...bal.spendable].sort((a, b) => b.value - a.value).slice(0, 8);
       const signed = await call("withdraw", {
         token_id: id,
         utxos: ins.map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
@@ -329,10 +339,10 @@ function OwnerForms({ t, busy, run, status }) {
           <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="tb1q…" required spellCheck="false" />
         </label>
         <label>Amount
-          <span className="row"><input type="number" min="0.00000546" step="0.00000001" max={(bal.safe - FEE) / 1e8}
+          <span className="row"><input type="number" min="0.00000546" step="0.00000001" max={(spendableSats - FEE) / 1e8}
             value={amount} onChange={(e) => setAmount(e.target.value)} required /> BTC</span>
         </label>
-        <button disabled={!!busy || bal.safe === 0}>{busy === "withdraw" ? "Signing with NEAR MPC… (about 15 s)" : "Withdraw"}</button>
+        <button disabled={!!busy || spendableSats === 0}>{busy === "withdraw" ? "Signing with NEAR MPC… (about 15 s)" : "Withdraw"}</button>
         <p className="muted">Network fee {FEE} sats. Change goes back into this Pusaka.</p>
       </form>
       {status}

@@ -3,6 +3,7 @@
   --ink-soft: #4a5570;
   --brass: #b08d3c;
   --brass-pale: #e6d7ae;
+  --brass-ink: #7d6220; /* brass for text on mist: 4.9:1 */
   --patina: #3e7c6f;
   --seal: #8e2c2c;
   --mist: #eceef1;
@@ -21,7 +22,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 a { color: inherit; text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
-a:hover { color: var(--brass); }
+a:hover { color: var(--brass-ink); }
 code { white-space: nowrap; font-size: 0.9em; background: var(--paper); padding: 0.05em 0.3em; border-radius: 3px; }
 :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
 
@@ -70,7 +71,7 @@ input:focus { border-color: var(--ink); outline: none; }
 .net { color: var(--ink-soft); font-size: 0.85rem; margin-right: auto; }
 .who { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
 
-main { padding: 0 clamp(1rem, 4vw, 3rem) 4rem; max-width: 1180px; margin: 0 auto; }
+main { padding: 0 clamp(1rem, 4vw, 3rem) 4rem; max-width: 1180px; margin: 0 auto; min-height: 80vh; }
 footer { border-top: 1px solid var(--line); padding: 1.5rem clamp(1rem, 4vw, 3rem); color: var(--ink-soft); font-size: 0.85rem; }
 footer p { max-width: var(--measure); margin: 0; }
 
@@ -112,7 +113,7 @@ footer p { max-width: var(--measure); margin: 0; }
   display: block;
   font-weight: 800;
   font-size: 2rem;
-  color: var(--brass);
+  color: var(--brass-ink);
   line-height: 1;
   margin-bottom: 0.4rem;
 }
@@ -156,6 +157,7 @@ footer p { max-width: var(--measure); margin: 0; }
   padding-top: 3rem;
   align-items: start;
 }
+.detail > * { min-width: 0; } /* let long addresses and inputs shrink instead of widening the grid */
 .detail-face { position: sticky; top: 2rem; text-align: center; }
 .detail-face .emblem { width: 100%; height: auto; max-width: 340px; }
 .detail-face h1 { font-size: 2.4rem; letter-spacing: -0.03em; margin: 1rem 0 0.2rem; }
@@ -166,7 +168,7 @@ footer p { max-width: var(--measure); margin: 0; }
 .detail-body h2 { font-size: 1rem; font-weight: 700; margin: 0 0 0.6rem; color: var(--ink-soft); }
 
 .amount { margin: 0; font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
-.amount span { font-variant-numeric: tabular-nums; color: var(--brass); }
+.amount span { font-variant-numeric: tabular-nums; color: var(--brass-ink); }
 .addr { overflow-wrap: anywhere; font-size: 0.95rem; }
 
 .actions { display: flex; flex-direction: column; gap: 1.2rem; align-items: flex-start; }

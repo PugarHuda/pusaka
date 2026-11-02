@@ -66,7 +66,7 @@ fn sign_ok(c: &mut Pusaka, vouts: &[u32], ok: &[bool]) -> SignedSpend {
             })
             .collect(),
     );
-    c.on_signed("1".into(), vouts.iter().map(|v| utxo(*v)).collect(), U64(50_000), "00".into())
+    c.on_signed("1".into(), vouts.len() as u32, U64(50_000), "00".into())
 }
 
 #[test]
@@ -112,19 +112,67 @@ fn t2_list_while_pending_fails() {
 }
 
 #[test]
-fn t3_signed_outpoints_are_recorded_and_lock_released() {
+fn t3_outpoints_are_recorded_before_signing_and_lock_released() {
     let mut c = setup();
     withdraw(&mut c, "alice.testnet", &[0, 1]);
-    assert!(c.token_info("1".into()).unwrap().pending);
+    let info = c.token_info("1".into()).unwrap();
+    assert!(info.pending);
+    // Recorded at request time, before any signature exists.
+    assert_eq!(info.signed_outpoints.len(), 2);
 
-    // Input 1's signature failed: only outpoint 0 now has a signature in the wild.
+    // Input 1's signature never came back (e.g. MPC timeout). It may still exist on
+    // chain later, so it must stay recorded.
     let out = sign_ok(&mut c, &[0, 1], &[true, false]);
-    assert_eq!(out.signatures.len(), 2);
     assert!(out.signatures[1].is_none());
-
     let info = c.token_info("1".into()).unwrap();
     assert!(!info.pending);
-    assert_eq!(info.signed_outpoints, vec![OutPointRef { txid: TXID.into(), vout: 0 }]);
+    assert_eq!(
+        info.signed_outpoints,
+        vec![OutPointRef { txid: TXID.into(), vout: 0 }, OutPointRef { txid: TXID.into(), vout: 1 }]
+    );
+}
+
+#[test]
+fn repeated_withdrawals_do_not_duplicate_outpoints() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0]);
+    sign_ok(&mut c, &[0], &[true]);
+    withdraw(&mut c, "alice.testnet", &[0]);
+    sign_ok(&mut c, &[0], &[true]);
+    assert_eq!(c.token_info("1".into()).unwrap().signed_outpoints.len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "still waiting")]
+fn unlock_stale_waits_for_timeout() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0]);
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.unlock_stale("1".into());
+}
+
+#[test]
+fn unlock_stale_releases_after_timeout() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0]);
+    let later = VMContextBuilder::new()
+        .current_account_id(acc("pusaka.testnet"))
+        .predecessor_account_id(acc("alice.testnet"))
+        .block_height(10_000)
+        .build();
+    testing_env!(later, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    c.unlock_stale("1".into());
+    let info = c.token_info("1".into()).unwrap();
+    assert!(!info.pending);
+    assert_eq!(info.signed_outpoints.len(), 1); // still recorded: unlocking is safe
+}
+
+#[test]
+#[should_panic(expected = "nft_transfer_call is disabled")]
+fn transfer_call_is_disabled() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.nft_transfer_call(acc("market.testnet"), "1".into(), None, None, "".into());
 }
 
 #[test]

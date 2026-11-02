@@ -6,9 +6,7 @@
 
 mod btc;
 
-use near_contract_standards::non_fungible_token::core::{
-    NonFungibleTokenCore, NonFungibleTokenResolver,
-};
+use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
 use near_contract_standards::non_fungible_token::enumeration::NonFungibleTokenEnumeration;
 use near_contract_standards::non_fungible_token::metadata::{
     NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
@@ -16,18 +14,19 @@ use near_contract_standards::non_fungible_token::metadata::{
 use near_contract_standards::non_fungible_token::{NonFungibleToken, Token, TokenId};
 use near_sdk::json_types::U64;
 use near_sdk::serde_json::{self, json, Value};
-use near_sdk::store::{LookupMap, LookupSet};
+use near_sdk::store::LookupMap;
 use near_sdk::{
     env, near, require, AccountId, BorshStorageKey, Gas, GasWeight, NearToken, PanicOnDefault,
     Promise, PromiseOrValue,
 };
-use std::collections::HashMap;
 
 const MAX_INPUTS: usize = 8;
 const KEY_TGAS: u64 = 10;
 const SIGN_TGAS: u64 = 15;
 const CALLBACK_TGAS: u64 = 20;
 const MAX_HISTORY: usize = 32;
+/// ~10 minutes; MPC yields time out well before this.
+const PENDING_TIMEOUT_BLOCKS: u64 = 600;
 /// Reserved per token, sized for the worst case: 32 history entries of ~170 bytes
 /// (a Sale between two 64-char accounts) + listing + BTC key + pending flag ≈ 5.9 KB.
 const TOKEN_RESERVE_BYTES: u64 = 8_000;
@@ -119,7 +118,7 @@ pub struct Pusaka {
     next_id: u64,
     btc_keys: LookupMap<TokenId, Vec<u8>>,
     listings: LookupMap<TokenId, Listing>,
-    pending: LookupSet<TokenId>,
+    pending: LookupMap<TokenId, u64>, // token -> block height of the sign request
     signed: LookupMap<TokenId, Vec<OutPointRef>>,
     history: LookupMap<TokenId, Vec<Entry>>,
 }
@@ -144,7 +143,7 @@ impl Pusaka {
             next_id: 1,
             btc_keys: LookupMap::new(Key::BtcKeys),
             listings: LookupMap::new(Key::Listings),
-            pending: LookupSet::new(Key::Pending),
+            pending: LookupMap::new(Key::Pending),
             signed: LookupMap::new(Key::Signed),
             history: LookupMap::new(Key::History),
         }
@@ -248,6 +247,17 @@ impl Pusaka {
         let dest = hex::decode(&to_script_hex).expect("bad script hex");
         let spend = btc::build_spend(&pkh, &inputs, dest, amount_sat.0, fee_sat.0);
 
+        // Record every outpoint *before* asking for signatures. If a signature is
+        // produced but never reaches our callback (MPC timeout, late respond), it is
+        // still accounted for: the registry errs on the side of "at risk".
+        let signed = self.signed.entry(token_id.clone()).or_default();
+        for u in &utxos {
+            let o = OutPointRef { txid: u.txid.clone(), vout: u.vout };
+            if !signed.contains(&o) {
+                signed.push(o);
+            }
+        }
+
         let path = btc_path(&token_id);
         let mut signs: Option<Promise> = None;
         for h in &spend.sighashes {
@@ -267,12 +277,12 @@ impl Pusaka {
         }
 
         // Locked until the callback: no transfer/listing while a signature is in flight.
-        self.pending.insert(token_id.clone());
+        self.pending.insert(token_id.clone(), env::block_height());
         signs.unwrap().then(
             Self::ext(env::current_account_id())
                 .with_static_gas(Gas::from_tgas(CALLBACK_TGAS))
                 .with_unused_gas_weight(0)
-                .on_signed(token_id, utxos, amount_sat, btc::unsigned_hex(&spend.tx)),
+                .on_signed(token_id, utxos.len() as u32, amount_sat, btc::unsigned_hex(&spend.tx)),
         )
     }
 
@@ -280,7 +290,7 @@ impl Pusaka {
     pub fn on_signed(
         &mut self,
         token_id: TokenId,
-        utxos: Vec<Utxo>,
+        inputs: u32,
         amount_sat: U64,
         unsigned_tx: String,
     ) -> SignedSpend {
@@ -292,24 +302,28 @@ impl Pusaka {
             })
             .collect();
 
-        // Every outpoint that now has a valid signature is recorded forever: a buyer
-        // must treat it as spendable by whoever held the token at signing time.
-        let signed = self.signed.entry(token_id.clone()).or_default();
-        for (u, s) in utxos.iter().zip(&signatures) {
-            if s.is_some() {
-                signed.push(OutPointRef { txid: u.txid.clone(), vout: u.vout });
-            }
-        }
         let ok = signatures.iter().filter(|s| s.is_some()).count() as u32;
         self.log(
             &token_id,
-            Event::Withdraw { inputs: utxos.len() as u32, amount_sat, signed: ok },
+            Event::Withdraw { inputs, amount_sat, signed: ok },
         );
         SignedSpend {
             unsigned_tx,
             btc_pubkey: hex::encode(self.btc_keys.get(&token_id).unwrap()),
             signatures,
         }
+    }
+
+    /// Owner escape hatch if a withdrawal's callback never cleared the lock. Safe
+    /// because the outpoints were recorded before signing was requested.
+    pub fn unlock_stale(&mut self, token_id: TokenId) {
+        self.assert_owner(&token_id);
+        let since = *self.pending.get(&token_id).expect("NotPending");
+        require!(
+            env::block_height() >= since + PENDING_TIMEOUT_BLOCKS,
+            "still waiting for the MPC network"
+        );
+        self.pending.remove(&token_id);
     }
 
     // ---------- market ----------
@@ -365,7 +379,7 @@ impl Pusaka {
             btc_path: btc_path(&token_id),
             btc_pubkey: self.btc_keys.get(&token_id).map(hex::encode),
             listing: self.listings.get(&token_id).cloned(),
-            pending: self.pending.contains(&token_id),
+            pending: self.pending.contains_key(&token_id),
             signed_outpoints: self.signed.get(&token_id).cloned().unwrap_or_default(),
             history: self.history.get(&token_id).cloned().unwrap_or_default(),
         })
@@ -389,7 +403,7 @@ impl Pusaka {
     /// A token may move or sign only when nothing else is in flight.
     fn assert_free(&self, token_id: &TokenId) {
         require!(self.btc_keys.contains_key(token_id), "KeyNotReady");
-        require!(!self.pending.contains(token_id), "SignPending");
+        require!(!self.pending.contains_key(token_id), "SignPending");
         require!(!self.listings.contains_key(token_id), "Listed");
     }
 
@@ -469,37 +483,22 @@ impl NonFungibleTokenCore for Pusaka {
         self.log(&token_id, Event::Transfer { from, to: receiver_id });
     }
 
+    /// Disabled: during a transfer_call the receiver owns the token mid-flight and could
+    /// withdraw the BTC before handing back an empty token. Use nft_transfer or the market.
     #[payable]
     fn nft_transfer_call(
         &mut self,
-        receiver_id: AccountId,
-        token_id: TokenId,
-        approval_id: Option<u64>,
-        memo: Option<String>,
-        msg: String,
+        _receiver_id: AccountId,
+        _token_id: TokenId,
+        _approval_id: Option<u64>,
+        _memo: Option<String>,
+        _msg: String,
     ) -> PromiseOrValue<bool> {
-        self.assert_free(&token_id);
-        let from = env::predecessor_account_id();
-        self.log(&token_id, Event::Transfer { from, to: receiver_id.clone() });
-        self.tokens.nft_transfer_call(receiver_id, token_id, approval_id, memo, msg)
+        env::panic_str("nft_transfer_call is disabled for Pusaka; use nft_transfer")
     }
 
     fn nft_token(&self, token_id: TokenId) -> Option<Token> {
         self.tokens.nft_token(token_id)
-    }
-}
-
-#[near]
-impl NonFungibleTokenResolver for Pusaka {
-    #[private]
-    fn nft_resolve_transfer(
-        &mut self,
-        previous_owner_id: AccountId,
-        receiver_id: AccountId,
-        token_id: TokenId,
-        approved_account_ids: Option<HashMap<AccountId, u64>>,
-    ) -> bool {
-        self.tokens.nft_resolve_transfer(previous_owner_id, receiver_id, token_id, approved_account_ids)
     }
 }
 

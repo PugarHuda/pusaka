@@ -34,15 +34,19 @@ export async function utxos(address) {
 const key = (o) => `${o.txid.toLowerCase()}:${o.vout}`;
 
 /**
- * Safe balance = unspent UTXOs that were never signed by the MPC for this token.
- * A signed-but-unspent UTXO could be swept by whoever requested that signature.
+ * What a buyer can rely on.
+ * - safe:     confirmed UTXOs never signed by the MPC for this token
+ * - pending:  unconfirmed UTXOs never signed (whoever funded them can still replace them via RBF)
+ * - atRisk:   unspent UTXOs that some past request got a signature for
+ * `spendable` (never signed, confirmed or not) is what the owner may withdraw.
  */
 export async function balances(address, signedOutpoints) {
   const list = await utxos(address);
   const signed = new Set(signedOutpoints.map(key));
-  const safe = list.filter((u) => !signed.has(key(u)));
+  const spendable = list.filter((u) => !signed.has(key(u)));
   const sum = (xs) => xs.reduce((a, u) => a + u.value, 0);
-  return { safe: sum(safe), atRisk: sum(list) - sum(safe), utxos: safe };
+  const safe = sum(spendable.filter((u) => u.status?.confirmed));
+  return { safe, pending: sum(spendable) - safe, atRisk: sum(list) - sum(spendable), spendable };
 }
 
 const N = secp256k1.Point.CURVE().n;

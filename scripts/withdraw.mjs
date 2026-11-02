@@ -4,7 +4,7 @@ const id = process.argv[3] ?? "1";
 const to = process.argv[4] ?? "tb1qerzrlxcfu24davlur5sqmgzzgsal6wusda40er";
 const info = await view("token_info", { token_id: id });
 const addr = btcAddress(info.btc_pubkey);
-const { safe, utxos } = await balances(addr, info.signed_outpoints);
+const { safe, spendable: utxos } = await balances(addr, info.signed_outpoints);
 console.log(addr, "safe", safe, "utxos", utxos.length);
 const ins = utxos.slice(0, 8);
 const t0 = Date.now();
