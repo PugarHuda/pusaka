@@ -1,0 +1,10 @@
+# Allowlist: upload only what the web build needs. Never .keys/, contract/target, node_modules.
+/*
+!package.json
+!package-lock.json
+!vercel.json
+!shared
+!scripts
+!web
+web/node_modules
+web/dist
