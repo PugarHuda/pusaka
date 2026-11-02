@@ -44,6 +44,7 @@ enum Key {
     Pending,
     Signed,
     History,
+    Loans,
 }
 
 #[near(serializers = [json, borsh])]
@@ -62,11 +63,41 @@ pub struct OutPointRef {
     pub vout: u32,
 }
 
+/// A sale. With `floor < price` it is a Dutch auction: the price falls linearly from
+/// `price` at `start_ms` to `floor` at `end_ms`, then stays there.
 #[near(serializers = [json, borsh])]
 #[derive(Clone)]
 pub struct Listing {
     pub seller: AccountId,
     pub price: NearToken,
+    pub floor: NearToken,
+    pub start_ms: U64,
+    pub end_ms: U64,
+}
+
+impl Listing {
+    pub fn price_at(&self, now_ms: u64) -> NearToken {
+        let (start, end) = (self.start_ms.0, self.end_ms.0);
+        if now_ms >= end || end <= start {
+            return self.floor;
+        }
+        let (hi, lo) = (self.price.as_yoctonear(), self.floor.as_yoctonear());
+        let elapsed = now_ms.saturating_sub(start) as u128;
+        NearToken::from_yoctonear(hi - (hi - lo) * elapsed / (end - start) as u128)
+    }
+}
+
+/// A peer-to-peer loan with the Pusaka (and the BTC inside) as collateral.
+/// Requested by the owner, funded by a lender, then either repaid or claimed after `due_ms`.
+#[near(serializers = [json, borsh])]
+#[derive(Clone)]
+pub struct Loan {
+    pub borrower: AccountId,
+    pub principal: NearToken,
+    pub repay: NearToken,
+    pub duration_ms: U64,
+    pub lender: Option<AccountId>,
+    pub due_ms: Option<U64>,
 }
 
 #[near(serializers = [json, borsh])]
@@ -79,6 +110,11 @@ pub enum Event {
     Sale { from: AccountId, to: AccountId, price: NearToken },
     Transfer { from: AccountId, to: AccountId },
     Withdraw { inputs: u32, amount_sat: U64, signed: u32 },
+    LoanRequested { principal: NearToken, repay: NearToken, duration_ms: U64 },
+    LoanCancelled,
+    LoanFunded { lender: AccountId, due_ms: U64 },
+    LoanRepaid { lender: AccountId, amount: NearToken },
+    LoanDefaulted { lender: AccountId },
 }
 
 #[near(serializers = [json, borsh])]
@@ -96,6 +132,9 @@ pub struct TokenInfo {
     /// 33-byte compressed secp256k1 key (hex); `None` until the MPC key callback lands.
     pub btc_pubkey: Option<String>,
     pub listing: Option<Listing>,
+    /// Current price if listed (Dutch auctions fall over time).
+    pub price_now: Option<NearToken>,
+    pub loan: Option<Loan>,
     pub pending: bool,
     pub signed_outpoints: Vec<OutPointRef>,
     pub history: Vec<Entry>,
@@ -119,6 +158,20 @@ pub struct Pusaka {
     btc_keys: LookupMap<TokenId, Vec<u8>>,
     listings: LookupMap<TokenId, Listing>,
     pending: LookupMap<TokenId, u64>, // token -> block height of the sign request
+    signed: LookupMap<TokenId, Vec<OutPointRef>>,
+    history: LookupMap<TokenId, Vec<Entry>>,
+    loans: LookupMap<TokenId, Loan>,
+}
+
+/// State layout before loans existed; used once by `migrate`.
+#[near(serializers = [borsh])]
+struct PusakaV1 {
+    tokens: NonFungibleToken,
+    mpc: AccountId,
+    next_id: u64,
+    btc_keys: LookupMap<TokenId, Vec<u8>>,
+    listings: LookupMap<TokenId, Listing>,
+    pending: LookupMap<TokenId, u64>,
     signed: LookupMap<TokenId, Vec<OutPointRef>>,
     history: LookupMap<TokenId, Vec<Entry>>,
 }
@@ -146,6 +199,26 @@ impl Pusaka {
             pending: LookupMap::new(Key::Pending),
             signed: LookupMap::new(Key::Signed),
             history: LookupMap::new(Key::History),
+            loans: LookupMap::new(Key::Loans),
+        }
+    }
+
+    /// One-time upgrade from the pre-loan layout. Requires no active listings
+    /// (the Listing format changed); cancel them before upgrading.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: PusakaV1 = env::state_read().expect("no state");
+        Self {
+            tokens: old.tokens,
+            mpc: old.mpc,
+            next_id: old.next_id,
+            btc_keys: old.btc_keys,
+            listings: old.listings,
+            pending: old.pending,
+            signed: old.signed,
+            history: old.history,
+            loans: LookupMap::new(Key::Loans),
         }
     }
 
@@ -328,12 +401,31 @@ impl Pusaka {
 
     // ---------- market ----------
 
-    pub fn list(&mut self, token_id: TokenId, price: NearToken) {
+    /// Fixed price: `list(id, price)`. Dutch auction: also pass `floor` and `duration_ms`;
+    /// the price falls linearly from `price` to `floor` over that time.
+    pub fn list(
+        &mut self,
+        token_id: TokenId,
+        price: NearToken,
+        floor: Option<NearToken>,
+        duration_ms: Option<U64>,
+    ) {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
+        let floor = floor.unwrap_or(price);
+        require!(!price.is_zero() && floor <= price, "need 0 < floor <= price");
+        let now = env::block_timestamp_ms();
+        let end = now + duration_ms.map_or(0, |d| d.0);
+        require!(floor == price || end > now, "a falling price needs duration_ms");
         self.listings.insert(
             token_id.clone(),
-            Listing { seller: env::predecessor_account_id(), price },
+            Listing {
+                seller: env::predecessor_account_id(),
+                price,
+                floor,
+                start_ms: U64(now),
+                end_ms: U64(end),
+            },
         );
         self.log(&token_id, Event::Listed { price });
     }
@@ -351,7 +443,8 @@ impl Pusaka {
         let listing = self.listings.remove(&token_id).expect("NotListed");
         let buyer = env::predecessor_account_id();
         let paid = env::attached_deposit();
-        require!(paid >= listing.price, "InsufficientDeposit");
+        let price = listing.price_at(env::block_timestamp_ms());
+        require!(paid >= price, "InsufficientDeposit");
         require!(buyer != listing.seller, "SelfBuy");
         require!(
             self.signed_count(&token_id) == expected_signed_count,
@@ -361,13 +454,95 @@ impl Pusaka {
         self.tokens.internal_transfer(&listing.seller, &buyer, &token_id, None, None);
         self.log(
             &token_id,
-            Event::Sale { from: listing.seller.clone(), to: buyer.clone(), price: listing.price },
+            Event::Sale { from: listing.seller.clone(), to: buyer.clone(), price },
         );
-        Promise::new(listing.seller).transfer(listing.price).detach();
-        let refund = paid.saturating_sub(listing.price);
-        if !refund.is_zero() {
-            Promise::new(buyer).transfer(refund).detach();
-        }
+        Promise::new(listing.seller).transfer(price).detach();
+        refund(buyer, paid.saturating_sub(price));
+    }
+
+    // ---------- loans ----------
+
+    /// Owner asks for `principal` NEAR, promising to pay back `repay` within `duration_ms`
+    /// of funding. The Pusaka is locked (no withdraw, sale or transfer) until the loan ends.
+    pub fn request_loan(
+        &mut self,
+        token_id: TokenId,
+        principal: NearToken,
+        repay: NearToken,
+        duration_ms: U64,
+    ) {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        require!(!principal.is_zero() && repay >= principal, "need 0 < principal <= repay");
+        require!(duration_ms.0 > 0, "duration_ms must be > 0");
+        self.loans.insert(
+            token_id.clone(),
+            Loan {
+                borrower: env::predecessor_account_id(),
+                principal,
+                repay,
+                duration_ms,
+                lender: None,
+                due_ms: None,
+            },
+        );
+        self.log(&token_id, Event::LoanRequested { principal, repay, duration_ms });
+    }
+
+    pub fn cancel_loan_request(&mut self, token_id: TokenId) {
+        self.assert_owner(&token_id);
+        let loan = self.loans.get(&token_id).expect("NoLoan");
+        require!(loan.lender.is_none(), "LoanAlreadyFunded");
+        self.loans.remove(&token_id);
+        self.log(&token_id, Event::LoanCancelled);
+    }
+
+    /// Lender sends `principal`, which goes straight to the borrower. Like `buy`, the
+    /// lender passes the signed-outpoint count they checked the collateral against.
+    #[payable]
+    pub fn fund_loan(&mut self, token_id: TokenId, expected_signed_count: u32) {
+        let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        require!(loan.lender.is_none(), "LoanAlreadyFunded");
+        let lender = env::predecessor_account_id();
+        require!(lender != loan.borrower, "SelfLoan");
+        let paid = env::attached_deposit();
+        require!(paid >= loan.principal, "InsufficientDeposit");
+        require!(
+            self.signed_count(&token_id) == expected_signed_count,
+            "StateChanged: signed outpoints differ from what you checked"
+        );
+        let due = U64(env::block_timestamp_ms() + loan.duration_ms.0);
+        loan.lender = Some(lender.clone());
+        loan.due_ms = Some(due);
+        self.loans.insert(token_id.clone(), loan.clone());
+        self.log(&token_id, Event::LoanFunded { lender: lender.clone(), due_ms: due });
+        Promise::new(loan.borrower).transfer(loan.principal).detach();
+        refund(lender, paid.saturating_sub(loan.principal));
+    }
+
+    /// Anyone may repay (usually the borrower). Repaying after the due date still works
+    /// as long as the lender hasn't claimed the collateral yet.
+    #[payable]
+    pub fn repay_loan(&mut self, token_id: TokenId) {
+        let loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        let lender = loan.lender.clone().expect("LoanNotFunded");
+        let paid = env::attached_deposit();
+        require!(paid >= loan.repay, "InsufficientDeposit");
+        self.loans.remove(&token_id);
+        self.log(&token_id, Event::LoanRepaid { lender: lender.clone(), amount: loan.repay });
+        Promise::new(lender).transfer(loan.repay).detach();
+        refund(env::predecessor_account_id(), paid.saturating_sub(loan.repay));
+    }
+
+    /// After the due date, an unpaid lender takes the Pusaka, and with it the BTC.
+    pub fn claim_collateral(&mut self, token_id: TokenId) {
+        let loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        let lender = loan.lender.clone().expect("LoanNotFunded");
+        require!(env::predecessor_account_id() == lender, "NotLender");
+        require!(env::block_timestamp_ms() >= loan.due_ms.unwrap().0, "NotDueYet");
+        self.loans.remove(&token_id);
+        self.tokens.internal_transfer(&loan.borrower, &lender, &token_id, None, None);
+        self.log(&token_id, Event::LoanDefaulted { lender });
     }
 
     // ---------- views ----------
@@ -379,6 +554,8 @@ impl Pusaka {
             btc_path: btc_path(&token_id),
             btc_pubkey: self.btc_keys.get(&token_id).map(hex::encode),
             listing: self.listings.get(&token_id).cloned(),
+            price_now: self.listings.get(&token_id).map(|l| l.price_at(env::block_timestamp_ms())),
+            loan: self.loans.get(&token_id).cloned(),
             pending: self.pending.contains_key(&token_id),
             signed_outpoints: self.signed.get(&token_id).cloned().unwrap_or_default(),
             history: self.history.get(&token_id).cloned().unwrap_or_default(),
@@ -405,6 +582,7 @@ impl Pusaka {
         require!(self.btc_keys.contains_key(token_id), "KeyNotReady");
         require!(!self.pending.contains_key(token_id), "SignPending");
         require!(!self.listings.contains_key(token_id), "Listed");
+        require!(!self.loans.contains_key(token_id), "Collateralised");
     }
 
     fn log(&mut self, token_id: &str, event: Event) {
@@ -414,6 +592,12 @@ impl Pusaka {
         if h.len() > MAX_HISTORY {
             h.remove(0);
         }
+    }
+}
+
+fn refund(to: AccountId, amount: NearToken) {
+    if !amount.is_zero() {
+        Promise::new(to).transfer(amount).detach();
     }
 }
 

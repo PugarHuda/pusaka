@@ -179,7 +179,7 @@ footer p { max-width: var(--measure); margin: 0; }
 .row input { width: 7rem; }
 .stack { display: flex; flex-direction: column; gap: 0.8rem; align-items: flex-start; padding-top: 1.2rem; border-top: 1px dashed var(--line); }
 .stack label { display: flex; flex-direction: column; gap: 0.3rem; width: 100%; font-weight: 500; }
-.stack .row input { width: 12rem; }
+.stack .row input { width: auto; flex: 1 1 5rem; min-width: 5rem; max-width: 12rem; }
 
 .why { padding: 1.4rem 0; border-bottom: 1px solid var(--line); }
 .why summary { cursor: pointer; font-weight: 700; }

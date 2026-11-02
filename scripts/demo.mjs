@@ -62,10 +62,13 @@ if (bal.safe + bal.pending < 2000) {
 }
 if (bal.safe < 2000) {
   // A buyer only counts confirmed coins: an unconfirmed deposit can still be replaced (RBF).
-  console.log(`   ${bal.pending} sats seen, waiting for 1 Bitcoin confirmation (testnet4 blocks take ~10 min)…`);
-  while ((bal = await balances(addr, info.signed_outpoints)).safe < 2000) await sleep(15000);
+  console.log(`   ${bal.pending} sats seen, waiting up to 2 min for a Bitcoin confirmation…`);
+  const until = Date.now() + 120_000;
+  while ((bal = await balances(addr, info.signed_outpoints)).safe < 2000 && Date.now() < until) await sleep(15000);
 }
-ok(`safe balance: ${bal.safe} sats confirmed  https://mempool.space/testnet4/address/${addr}`);
+if (bal.safe >= 2000) ok(`safe balance: ${bal.safe} sats confirmed  https://mempool.space/testnet4/address/${addr}`);
+else console.log(`   \x1b[33m!\x1b[0m testnet4 hasn't confirmed it yet (its blocks are irregular). Continuing so the demo finishes;
+     the web app shows these ${bal.pending} sats as "waiting for confirmation", not safe, and a real buyer should wait.`);
 
 // ---------- 3. list ----------
 step(3, `${seller.accountId} lists it for 1 NEAR`);
@@ -108,6 +111,27 @@ ok(`NEAR MPC network signed ${signed.signatures.filter(Boolean).length}/${ins.le
 const txid = await broadcast(finalize(signed, ins.map((u) => u.value)).toHex());
 ok(`broadcast to Bitcoin testnet4: https://mempool.space/testnet4/tx/${txid}`);
 
+// ---------- 7–8. borrow against it, default, lender takes it ----------
+const LOAN_MS = 20_000;
+step(7, `${buyer.accountId} borrows 0.5 NEAR against the Pusaka, repaying 0.55 within ${LOAN_MS / 1000}s`);
+await call(buyer, "request_loan", {
+  token_id: tokenId, principal: parseNearAmount("0.5"), repay: parseNearAmount("0.55"), duration_ms: String(LOAN_MS),
+});
 info = await view("token_info", { token_id: tokenId });
+await call(seller, "fund_loan", { token_id: tokenId, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(parseNearAmount("0.5")) });
+ok(`${seller.accountId} lent 0.5 NEAR; it went straight to the borrower`);
+await expectFail("borrower tries to withdraw the collateral", () =>
+  call(buyer, "withdraw", {
+    token_id: tokenId, utxos: [{ txid: "00".repeat(32), vout: 0, value: "10000" }],
+    to_script_hex: scriptHex(RETURN_TO), amount_sat: "1000", fee_sat: "300",
+  }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 }), "Collateralised");
+await expectFail("lender tries to claim before the due date", () => call(seller, "claim_collateral", { token_id: tokenId }), "NotDueYet");
+
+step(8, "The loan isn't repaid in time");
+await sleep(LOAN_MS + 2000);
+await call(seller, "claim_collateral", { token_id: tokenId });
+info = await view("token_info", { token_id: tokenId });
+ok(`${seller.accountId} claimed the collateral — new owner: ${info.token.owner_id}, BTC included. No bridge, no liquidation bot.`);
+
 console.log(`\nDone. Pusaka #${tokenId} history:`);
 for (const h of info.history) console.log(`   ${new Date(Number(h.at_ms)).toISOString()}  ${h.event.kind}`);

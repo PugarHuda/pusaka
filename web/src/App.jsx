@@ -123,10 +123,11 @@ function Home() {
         {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
         {tokens?.map((t) => (
           <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
-            <Emblem pubkey={t.info.btc_pubkey} sats={t.bal.safe} locked={!!t.info.listing || t.info.pending} size={168} />
+            <Emblem pubkey={t.info.btc_pubkey} sats={t.bal.safe} locked={!!t.info.listing || !!t.info.loan || t.info.pending} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
             <span className="piece-btc">{btc(t.bal.safe)} BTC</span>
-            {t.info.listing && <span className="piece-price">For sale at {near(t.info.listing.price)} NEAR</span>}
+            {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
+            {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
         ))}
       </section>
@@ -148,7 +149,7 @@ function Detail({ id, accountId }) {
   const { info, address, bal } = t;
   const owner = info.token.owner_id;
   const isOwner = accountId === owner;
-  const locked = !!info.listing || info.pending;
+  const locked = !!info.listing || !!info.loan || info.pending;
 
   return (
     <article className="detail">
@@ -229,14 +230,23 @@ function CopyButton({ text }) {
 function describe(e) {
   switch (e.kind) {
     case "Mint": return `Minted by ${e.owner}`;
-    case "Listed": return `Listed for ${near(e.price)} NEAR`;
+    case "Listed": return `Listed from ${near(e.price)} NEAR`;
     case "Unlisted": return "Listing cancelled";
     case "Sale": return `Sold by ${e.from} to ${e.to} for ${near(e.price)} NEAR`;
     case "Transfer": return `Given by ${e.from} to ${e.to}`;
     case "Withdraw": return `Withdrew ${Number(e.amount_sat).toLocaleString()} sats (${e.signed}/${e.inputs} inputs signed)`;
+    case "LoanRequested": return `Asked to borrow ${near(e.principal)} NEAR, repaying ${near(e.repay)} within ${days(e.duration_ms)}`;
+    case "LoanCancelled": return "Loan request cancelled";
+    case "LoanFunded": return `Loan funded by ${e.lender}, due ${when(e.due_ms)}`;
+    case "LoanRepaid": return `Loan repaid: ${near(e.amount)} NEAR to ${e.lender}`;
+    case "LoanDefaulted": return `Loan not repaid. ${e.lender} took the Pusaka and its BTC`;
     default: return e.kind;
   }
 }
+
+const DAY_MS = 86_400_000;
+const days = (ms) => { const d = Number(ms) / DAY_MS; return d >= 1 ? `${+d.toFixed(2)} day${d === 1 ? "" : "s"}` : `${Math.round(Number(ms) / 60_000)} min`; };
+const when = (ms) => new Date(Number(ms)).toLocaleString();
 
 // ---------- actions ----------
 
@@ -255,23 +265,71 @@ function Actions({ t, accountId, isOwner, onDone }) {
   if (!accountId) return (
     <section className="actions">
       <button onClick={() => connector.connect()}>Connect NEAR wallet</button>
-      <p className="muted">Connect to buy this Pusaka or manage your own.</p>
+      <p className="muted">Connect to buy this Pusaka, lend against it, or manage your own.</p>
     </section>
   );
 
   if (info.pending) return <section className="actions"><p className="warn">The NEAR MPC network is signing a withdrawal. The Pusaka is locked until it finishes.</p></section>;
 
   const status = msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>;
+  const loan = info.loan;
+  const act = (label, idle, busyText, fn, ghost) => (
+    <button className={ghost ? "ghost" : undefined} disabled={!!busy} onClick={() => run(label, fn)}>
+      {busy === label ? busyText : idle}
+    </button>
+  );
 
-  if (!isOwner) {
-    if (!info.listing) return <section className="actions"><p className="muted">This Pusaka isn't for sale.</p></section>;
+  if (loan) {
+    const funded = !!loan.lender;
+    const due = funded && Number(loan.due_ms);
+    const overdue = funded && Date.now() >= due;
+    const terms = <>borrow <strong>{near(loan.principal)} NEAR</strong>, repay <strong>{near(loan.repay)} NEAR</strong> within {days(loan.duration_ms)}</>;
     return (
       <section className="actions">
-        <button disabled={!!busy} onClick={() => run("buy", async () => {
-          await call("buy", { token_id: id, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(info.listing.price) });
+        <h2>Loan</h2>
+        {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka and its {btc(bal.safe)} BTC as collateral.</p>}
+        {funded && <p>{loan.borrower} borrowed {near(loan.principal)} NEAR from {loan.lender}. {near(loan.repay)} NEAR {overdue ? "was" : "is"} due {when(due)}.</p>}
+        {!funded && isOwner && act("cancel-loan", "Cancel loan request", "Cancelling…", async () => {
+          await call("cancel_loan_request", { token_id: id });
+          return "Loan request cancelled. The Pusaka is unlocked.";
+        }, true)}
+        {!funded && !isOwner && <>
+          {act("lend", `Lend ${near(loan.principal)} NEAR`, "Lending…", async () => {
+            await call("fund_loan", { token_id: id, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(loan.principal) });
+            return "Loan funded. The NEAR went to the borrower.";
+          })}
+          <p className="muted">If {near(loan.repay)} NEAR isn't repaid in time, you can take the Pusaka and the {btc(bal.safe)} BTC inside it. While the loan runs, nobody can withdraw, sell or move it.</p>
+        </>}
+        {funded && accountId !== loan.lender && act("repay", `Repay ${near(loan.repay)} NEAR`, "Repaying…", async () => {
+          await call("repay_loan", { token_id: id }, { deposit: BigInt(loan.repay) });
+          return "Loan repaid. The Pusaka is unlocked.";
+        })}
+        {funded && accountId === loan.lender && (overdue
+          ? act("claim", "Take the Pusaka", "Claiming…", async () => {
+            await call("claim_collateral", { token_id: id });
+            return `Pusaka #${id} and its BTC are yours.`;
+          })
+          : <p className="muted">If it isn't repaid by then, you can take the Pusaka here.</p>)}
+        {status}
+      </section>
+    );
+  }
+
+  if (!isOwner) {
+    if (!info.listing) return <section className="actions"><p className="muted">This Pusaka isn't for sale or asking for a loan.</p></section>;
+    const now = info.price_now ?? info.listing.price;
+    const falling = info.listing.floor !== info.listing.price;
+    return (
+      <section className="actions">
+        {act("buy", `Buy for ${near(now)} NEAR`, "Buying…", async () => {
+          // A Dutch auction price only falls, so paying today's price always covers it; the rest is refunded.
+          await call("buy", { token_id: id, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(now) });
           return `You own Pusaka #${id} and the ${btc(bal.safe)} BTC inside it.`;
-        })}>{busy === "buy" ? "Buying…" : `Buy for ${near(info.listing.price)} NEAR`}</button>
-        <p className="muted">You get {btc(bal.safe)} BTC. The NEAR goes to {info.listing.seller}.</p>
+        })}
+        <p className="muted">
+          You get {btc(bal.safe)} BTC. The NEAR goes to {info.listing.seller}.
+          {falling && <> Price falls to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}.</>}
+        </p>
         {status}
       </section>
     );
@@ -279,11 +337,13 @@ function Actions({ t, accountId, isOwner, onDone }) {
 
   if (info.listing) return (
     <section className="actions">
-      <p>Listed for <strong>{near(info.listing.price)} NEAR</strong>. Withdrawals are locked while it's for sale.</p>
-      <button className="ghost" disabled={!!busy} onClick={() => run("cancel", async () => {
+      <p>Listed at <strong>{near(info.price_now ?? info.listing.price)} NEAR</strong>
+        {info.listing.floor !== info.listing.price && <>, falling to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}</>}.
+        Withdrawals are locked while it's for sale.</p>
+      {act("cancel", "Cancel listing", "Cancelling…", async () => {
         await call("cancel_listing", { token_id: id });
         return "Listing cancelled. You can withdraw again.";
-      })}>{busy === "cancel" ? "Cancelling…" : "Cancel listing"}</button>
+      }, true)}
       {status}
     </section>
   );
@@ -294,6 +354,11 @@ function Actions({ t, accountId, isOwner, onDone }) {
 function OwnerForms({ t, busy, run, status }) {
   const { id, bal } = t;
   const [price, setPrice] = useState("1");
+  const [floor, setFloor] = useState("");
+  const [hours, setHours] = useState("24");
+  const [principal, setPrincipal] = useState("1");
+  const [repay, setRepay] = useState("1.1");
+  const [loanDays, setLoanDays] = useState("7");
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const FEE = 300;
@@ -301,9 +366,27 @@ function OwnerForms({ t, busy, run, status }) {
 
   function sell(e) {
     e.preventDefault();
+    const auction = floor !== "" && Number(floor) < Number(price);
     run("list", async () => {
-      await call("list", { token_id: id, price: yocto(price).toString() });
-      return `Listed for ${price} NEAR.`;
+      await call("list", {
+        token_id: id,
+        price: yocto(price).toString(),
+        ...(auction && { floor: yocto(floor).toString(), duration_ms: String(Math.round(Number(hours) * 3_600_000)) }),
+      });
+      return auction ? `Listed at ${price} NEAR, falling to ${floor} NEAR over ${hours} h.` : `Listed for ${price} NEAR.`;
+    });
+  }
+
+  function borrow(e) {
+    e.preventDefault();
+    run("borrow", async () => {
+      await call("request_loan", {
+        token_id: id,
+        principal: yocto(principal).toString(),
+        repay: yocto(repay).toString(),
+        duration_ms: String(Math.round(Number(loanDays) * DAY_MS)),
+      });
+      return "Loan request posted. The Pusaka is locked until it's cancelled, repaid or claimed.";
     });
   }
 
@@ -328,13 +411,33 @@ function OwnerForms({ t, busy, run, status }) {
 
   return (
     <section className="actions">
-      <form onSubmit={sell} className="row">
-        <label>Sell for
-          <input type="number" min="0.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required /> NEAR
+      <form onSubmit={sell} className="stack">
+        <h2>Sell</h2>
+        <label>Price
+          <span className="row"><input type="number" min="0.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required /> NEAR</span>
+        </label>
+        <label>Lower it over time to (optional)
+          <span className="row">
+            <input type="number" min="0.01" step="0.01" max={price} value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="no auction" /> NEAR over
+            <input type="number" min="0.1" step="0.1" value={hours} onChange={(e) => setHours(e.target.value)} disabled={floor === ""} /> h
+          </span>
         </label>
         <button disabled={!!busy}>{busy === "list" ? "Listing…" : "List for sale"}</button>
       </form>
+      <form onSubmit={borrow} className="stack">
+        <h2>Borrow against it</h2>
+        <label>Borrow
+          <span className="row"><input type="number" min="0.01" step="0.01" value={principal} onChange={(e) => setPrincipal(e.target.value)} required /> NEAR</span>
+        </label>
+        <label>Repay
+          <span className="row"><input type="number" min={principal} step="0.01" value={repay} onChange={(e) => setRepay(e.target.value)} required /> NEAR within
+            <input type="number" min="0.001" step="any" value={loanDays} onChange={(e) => setLoanDays(e.target.value)} required /> days</span>
+        </label>
+        <button disabled={!!busy}>{busy === "borrow" ? "Posting…" : "Ask for a loan"}</button>
+        <p className="muted">A lender sends you the NEAR. If you don't repay in time, they take this Pusaka and its BTC.</p>
+      </form>
       <form onSubmit={withdraw} className="stack">
+        <h2>Withdraw</h2>
         <label>Send Bitcoin to
           <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="tb1q…" required spellCheck="false" />
         </label>
