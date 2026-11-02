@@ -28,8 +28,9 @@ const KEY_TGAS: u64 = 10;
 const SIGN_TGAS: u64 = 15;
 const CALLBACK_TGAS: u64 = 20;
 const MAX_HISTORY: usize = 32;
-/// Reserved per token for the BTC key (set in a callback) and the bounded history.
-const TOKEN_RESERVE_BYTES: u64 = 4_000;
+/// Reserved per token, sized for the worst case: 32 history entries of ~170 bytes
+/// (a Sale between two 64-char accounts) + listing + BTC key + pending flag ≈ 5.9 KB.
+const TOKEN_RESERVE_BYTES: u64 = 8_000;
 /// Per recorded signed outpoint (64-char txid + vout + Vec overhead), rounded up.
 const OUTPOINT_BYTES: u64 = 120;
 

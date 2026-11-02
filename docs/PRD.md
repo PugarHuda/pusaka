@@ -10,6 +10,14 @@
 | Track submit | `nfts` (utama), `defi`, `open` |
 | Jaringan | NEAR testnet + Bitcoin testnet4 |
 
+
+> **Catatan implementasi (2 Nov 2026, setelah spike):**
+> - Spike hari 1 **berhasil**: kontrak memanggil `sign` di `v1.signer-prod.testnet` lintas kontrak (deposit 1 yocto/panggilan) dan tx hasilnya diterima Bitcoin testnet4.
+> - Alamat diganti dari P2PKH ke **P2WPKH (BIP143)** — `omni-transaction` 0.5 mendukung sighash SegWit, dan nilai input ikut ditandatangani.
+> - Kunci BTC diambil kontrak sendiri via `derived_public_key` di kontrak MPC (callback `on_key`), bukan dari input user (T6).
+> - Tambahan dari review keamanan: txid dikanonisasi + outpoint duplikat ditolak (T3b); minter/penarik membayar storage; history dibatasi 32 entri.
+> - Hasil ukur: buy ≈ 3.0 s sampai final; tanda tangan MPC 6.8–13.7 s. Status terkini ada di README.
+
 ---
 
 ## 1. Ringkasan

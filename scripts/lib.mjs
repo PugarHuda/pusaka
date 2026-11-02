@@ -4,7 +4,7 @@ import { CONTRACT } from "@pusaka/shared";
 import fs from "node:fs";
 import path from "node:path";
 
-export const RPC = process.env.NEAR_RPC ?? "https://rpc.testnet.near.org";
+export const RPC = process.env.NEAR_RPC ?? "https://test.rpc.fastnear.com";
 
 const KEYS = path.join(import.meta.dirname, "..", ".keys");
 export const provider = new JsonRpcProvider({ url: RPC });

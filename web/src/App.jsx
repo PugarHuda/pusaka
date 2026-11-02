@@ -165,8 +165,8 @@ function Detail({ id, accountId }) {
           <p className="muted">{bal.safe.toLocaleString()} sats you can count on</p>
           {bal.atRisk > 0 && (
             <p className="warn">
-              {bal.atRisk.toLocaleString()} sats are at risk: a past owner holds a signature that can still spend them.
-              They are left out of the amount above.
+              A signature already exists that can spend {bal.atRisk.toLocaleString()} more sats, so they're left out of
+              the amount above. They stop counting as at risk once that transaction lands on Bitcoin.
             </p>
           )}
           {bal.error && <p className="error">mempool.space didn't answer, so the balance may be out of date.</p>}
