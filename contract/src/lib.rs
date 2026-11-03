@@ -1098,6 +1098,9 @@ impl Pusaka {
     #[payable]
     pub fn nft_approve(&mut self, token_id: TokenId, account_id: AccountId, msg: Option<String>) -> Option<Promise> {
         self.assert_unlocked(&token_id);
+        // ponytail: tokens signed for before `signed_at` existed have no entry, so they skip the
+        // cooldown. Only testnet has such tokens, and its window closed 1 h after the migration;
+        // mainnet deploys fresh with `signed_at` from the start.
         if let Some(t) = self.signed_at.get(&token_id) {
             require!(env::block_timestamp_ms() >= t + APPROVE_COOLDOWN_MS,
                 "Cooldown: outside markets can be approved 1 h (mainnet: 24 h) after the last signature");
