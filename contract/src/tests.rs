@@ -483,13 +483,13 @@ fn listing_floor_above_price_rejected() {
 
 // ---------- EVM ----------
 
-const SEPOLIA: u64 = 11155111;
+const CHAIN: u64 = EVM_CHAINS[0]; // Sepolia on testnet builds, Ethereum with --features mainnet
 
 fn withdraw_eth(c: &mut Pusaka, caller: &str, nonce: u64) {
     ctx(caller, NearToken::from_millinear(20), vec![]);
     let _ = c.withdraw_eth(
         "1".into(),
-        U64(SEPOLIA),
+        U64(CHAIN),
         U64(nonce),
         "0x".to_string() + &"ab".repeat(20),
         U128(1_000_000_000_000_000),
@@ -505,8 +505,8 @@ fn e1_nonce_floor_recorded_before_signing() {
     withdraw_eth(&mut c, "alice.testnet", 4);
     // Recorded at request time, while the signature is still in flight.
     assert!(c.token_info("1".into()).unwrap().pending);
-    assert_eq!(c.eth_nonce_floor("1".into(), U64(SEPOLIA)), U64(5));
-    assert_eq!(c.eth_nonce_floor("1".into(), U64(1)), U64(0)); // per chain
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(CHAIN)), U64(5));
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(56)), U64(0)); // per chain
 }
 
 #[test]
@@ -514,10 +514,10 @@ fn e1_floor_never_goes_down() {
     let mut c = setup();
     withdraw_eth(&mut c, "alice.testnet", 7);
     as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
-    let out = c.on_eth_signed("1".into(), U64(SEPOLIA), U64(7), U128(1), "00".into());
+    let out = c.on_eth_signed("1".into(), U64(CHAIN), U64(7), U128(1), "00".into());
     assert!(out.signature.is_some());
     withdraw_eth(&mut c, "alice.testnet", 2); // an older nonce must not lower the floor
-    assert_eq!(c.eth_nonce_floor("1".into(), U64(SEPOLIA)), U64(8));
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(CHAIN)), U64(8));
 }
 
 #[test]
@@ -548,7 +548,7 @@ fn e2_evm_locked_while_collateralised() {
 fn e3_bad_evm_address_rejected() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
-    let _ = c.withdraw_eth("1".into(), U64(SEPOLIA), U64(0), "0x1234".into(),
+    let _ = c.withdraw_eth("1".into(), U64(CHAIN), U64(0), "0x1234".into(),
         U128(1), U128(21_000), U128(1), U128(1));
 }
 
@@ -561,7 +561,7 @@ fn r1_eth_signature_between_check_and_buy_fails() {
     let mut c = setup();
     withdraw_eth(&mut c, "alice.testnet", 0);
     as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
-    c.on_eth_signed("1".into(), U64(SEPOLIA), U64(0), U128(1), "00".into());
+    c.on_eth_signed("1".into(), U64(CHAIN), U64(0), U128(1), "00".into());
     at("alice.testnet", NearToken::from_yoctonear(0), 0);
     c.list("1".into(), NearToken::from_near(5), None, None);
     at("bob.testnet", NearToken::from_near(5), 10);
@@ -595,7 +595,7 @@ fn r2_lender_rejects_changed_terms() {
 fn r3_unlisted_chain_rejected() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
-    let _ = c.withdraw_eth("1".into(), U64(1), U64(0), "0x".to_string() + &"ab".repeat(20),
+    let _ = c.withdraw_eth("1".into(), U64(56), U64(0), "0x".to_string() + &"ab".repeat(20),
         U128(1), U128(21_000), U128(1), U128(1));
 }
 
