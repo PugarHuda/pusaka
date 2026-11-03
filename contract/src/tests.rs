@@ -654,7 +654,7 @@ fn p2_segwit_serialization_rejected() {
 
 fn proven(c: &mut Pusaka, result: &[u8], vout: u32, value: u64) -> bool {
     as_contract(vec![PromiseResult::Successful(result.to_vec())]);
-    c.on_deposit_proven("1".into(), TXID.into(), vout, U64(value))
+    c.on_deposit_proven("1".into(), TXID.into(), vout, U64(value), acc("bob.testnet"))
 }
 
 #[test]

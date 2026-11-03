@@ -263,3 +263,28 @@ export function mintedTokenId(outcome, owner) {
   }
   throw new Error("mint transaction has no nft_mint event for this account");
 }
+
+export const BTC_MIN_CONFIRMATIONS = NETWORK === "mainnet" ? 6 : 1;
+
+/**
+ * Free dry run of a deposit proof: asks the light client (as a view call) exactly what the
+ * contract will ask. Only submit `prove_deposit` when this is true, so nobody pays for a proof
+ * that would fail.
+ */
+export async function preflightProof(p) {
+  const tx = bitcoin.Transaction.fromHex(p.tx_hex);
+  const rev = (h) => Uint8Array.from(h.match(/../g).reverse(), (b) => parseInt(b, 16));
+  const u64 = (n) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(n), true); return b; };
+  const vec = (hs) => { const n = new Uint8Array(4); new DataView(n.buffer).setUint32(0, hs.length, true); return [n, ...hs.map(rev)]; };
+  const parts = [rev(tx.getId()), rev(p.block_hash), u64(p.tx_index), ...vec(p.merkle_proof), rev(p.coinbase_txid),
+    ...vec(p.coinbase_merkle_proof), u64(BTC_MIN_CONFIRMATIONS)];
+  const args = new Uint8Array(parts.reduce((a, x) => a + x.length, 0));
+  parts.reduce((o, x) => (args.set(x, o), o + x.length), 0);
+  const r = await fetch(NEAR_RPC, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
+      request_type: "call_function", finality: "optimistic", account_id: BTC_LIGHT_CLIENT,
+      method_name: "verify_transaction_inclusion_v2", args_base64: btoa(String.fromCharCode(...args)) } }),
+  }).then((x) => x.json());
+  return !!r.result?.result && new TextDecoder().decode(new Uint8Array(r.result.result)) === "true";
+}

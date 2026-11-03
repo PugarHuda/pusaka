@@ -531,13 +531,24 @@ impl Pusaka {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(20))
-                    .on_deposit_proven(token_id, txid, vout, U64(value)),
+                    .on_deposit_proven(token_id, txid, vout, U64(value), env::predecessor_account_id()),
             )
     }
 
     #[private]
-    pub fn on_deposit_proven(&mut self, token_id: TokenId, txid: String, vout: u32, value: U64) -> bool {
+    pub fn on_deposit_proven(
+        &mut self,
+        token_id: TokenId,
+        txid: String,
+        vout: u32,
+        value: U64,
+        payer: AccountId,
+    ) -> bool {
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
+        if !ok {
+            // Nothing was stored: give the prover back the storage they paid for.
+            refund(payer, env::storage_byte_cost().saturating_mul(PROVEN_BYTES as u128));
+        }
         if ok {
             let list = self.proven.entry(token_id).or_default();
             if list.len() < MAX_PROVEN && !list.iter().any(|u| u.txid == txid && u.vout == vout) {

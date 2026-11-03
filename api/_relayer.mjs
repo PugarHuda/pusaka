@@ -3,7 +3,7 @@
 import { Account, JsonRpcProvider, SCHEMA, actions, teraToGas } from "near-api-js";
 import { deserialize } from "borsh";
 import {
-  CONTRACT, NEAR_RPC, PROVE_DEPOSIT, balances, btcAddress, depositProof, lightClientHeight,
+  CONTRACT, NEAR_RPC, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof,
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
@@ -26,7 +26,7 @@ export function checkDelegate(b64) {
   try { sd = deserialize(SCHEMA.SignedDelegate, Buffer.from(b64, "base64")); } catch { throw bad("not a borsh SignedDelegate"); }
   const d = sd.delegateAction;
   if (d.receiverId !== CONTRACT) throw bad(`only calls to ${CONTRACT} are relayed`);
-  if (!d.actions.length) throw bad("no actions");
+  if (d.actions.length !== 1) throw bad("exactly one action per relayed call");
   for (const a of d.actions) {
     const fc = a.functionCall;
     if (!fc) throw bad("only function calls are relayed");
@@ -40,6 +40,14 @@ export function checkDelegate(b64) {
 /** NEP-366: submit the user's signed delegate action, paying the gas. */
 export async function relay(b64) {
   const sd = checkDelegate(b64);
+  // Only relay what would succeed for this sender: they must own the token they're acting on
+  // (claim_collateral: they must be its lender). Saves the relayer from paying for doomed calls.
+  const fc = sd.delegateAction.actions[0].functionCall;
+  const args = JSON.parse(Buffer.from(fc.args).toString());
+  const info = await provider.callFunction({ contractId: CONTRACT, method: "token_info", args: { token_id: String(args.token_id) } });
+  const who = sd.delegateAction.senderId;
+  const allowed = fc.methodName === "claim_collateral" ? info?.loan?.lender === who : info?.token?.owner_id === who;
+  if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
   const res = await relayerAccount().signAndSendTransaction({
     receiverId: sd.delegateAction.senderId,
     actions: [actions.signedDelegate({ delegateAction: sd.delegateAction, signature: sd.signature })],
@@ -57,13 +65,17 @@ export async function proveToken(tokenId) {
   if (!info?.btc_pubkey) throw Object.assign(new Error("no such Pusaka"), { status: 404 });
   const lc = await lightClientHeight();
   const bal = await balances(btcAddress(info.btc_pubkey), info.signed_outpoints);
-  const todo = bal.spendable.filter((u) => u.value >= 10_000 && u.status?.confirmed && u.status.block_height <= lc
+  const todo = bal.spendable.filter((u) => u.value >= 10_000 && u.status?.confirmed
+    && u.status.block_height + BTC_MIN_CONFIRMATIONS - 1 <= lc
     && !info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout)).slice(0, 4);
   const relayer = relayerAccount();
   const results = [];
   for (const u of todo) {
+    const proof = await depositProof(u.txid, u.vout);
+    // Free dry run against the light client first; the relayer only pays for proofs that pass.
+    if (!(await preflightProof(proof))) { results.push({ txid: u.txid, vout: u.vout, sats: u.value, proven: false, skipped: "preflight failed" }); continue; }
     const ok = await relayer.callFunction({ contractId: CONTRACT, methodName: "prove_deposit",
-      args: { token_id: String(tokenId), ...(await depositProof(u.txid, u.vout)) }, deposit: PROVE_DEPOSIT, gas: teraToGas(100) });
+      args: { token_id: String(tokenId), ...proof }, deposit: PROVE_DEPOSIT, gas: teraToGas(100) });
     results.push({ txid: u.txid, vout: u.vout, sats: u.value, proven: ok });
   }
   return { light_client_height: lc, results };

@@ -27,3 +27,6 @@ try { checkDelegate(await sign("buy", { token_id: tokenId, expected_sign_epoch: 
 catch (e) { console.log("refused buy:", e.message); }
 const after = (await owner.getState()).balance.available;
 console.log(`owner balance change: ${(Number(BigInt(after) - BigInt(before)) / 1e24).toFixed(6)} NEAR (gas paid by the relayer)`);
+// 4. refused: acting on a token you don't own
+try { await relay(await sign("list", { token_id: "1", price: "1" })); console.log("UNEXPECTED: relayed for a non-owner"); }
+catch (e) { console.log("refused non-owner:", e.message); }
