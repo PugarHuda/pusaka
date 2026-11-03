@@ -502,12 +502,15 @@ impl Pusaka {
         let tx = hex::decode(&tx_hex).expect("bad tx hex");
         // A 64-byte "transaction" could double as an internal merkle node.
         require!(tx.len() != 64, "64-byte transactions are not accepted");
-        let (value, script) = btc::output(&tx, vout);
-        require!(script == btc::p2wpkh_script(&btc::hash160(&pk)), "output does not pay this Pusaka");
         let txid_internal = btc::sha256d(&tx);
         let mut txid_display = txid_internal;
         txid_display.reverse();
         let txid = hex::encode(txid_display);
+        // A signed outpoint is spent or spendable by a signature holder: proving it would only add a dead entry.
+        let spent = self.signed.get(&token_id).is_some_and(|s| s.iter().any(|o| o.txid == txid && o.vout == vout));
+        require!(!spent, "already signed for; it can't count as verified");
+        let (value, script) = btc::output(&tx, vout);
+        require!(script == btc::p2wpkh_script(&btc::hash160(&pk)), "output does not pay this Pusaka");
         require!(value >= MIN_PROVEN_SATS, "deposit below the minimum that can be proven");
         let list = self.proven.get(&token_id);
         require!(!list.is_some_and(|v| v.iter().any(|u| u.txid == txid && u.vout == vout)), "already proven");

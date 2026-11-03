@@ -743,3 +743,15 @@ fn p6_registry_is_capped() {
     for v in 0..70u32 { proven(&mut c, b"true", v, 20_000); }
     assert_eq!(c.token_info("1".into()).unwrap().proven_utxos.len(), 64);
 }
+
+#[test]
+#[should_panic(expected = "already signed for")]
+fn p7_cannot_reprove_a_signed_outpoint() {
+    // After a withdrawal prunes a proven deposit, re-proving that outpoint must fail,
+    // or dead entries could fill the 64-entry registry.
+    let mut c = setup();
+    ctx("pusaka.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.signed.insert("1".into(), vec![OutPointRef { txid: REAL_TXID.into(), vout: 0 }]);
+    ctx("bob.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.prove_deposit("1".into(), REAL_TX.into(), 0, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+}

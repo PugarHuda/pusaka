@@ -217,3 +217,33 @@ export async function finalizeEth(tx, signed, expectedFrom) {
 export async function broadcastEth(raw) {
   return evmClient.sendRawTransaction({ serializedTransaction: raw });
 }
+
+// ---------- Prices: real market data, for valuing collateral and listings ----------
+// BTC/USD from mempool.space; NEAR and ETH from Rhea (Ref Finance), i.e. NEAR DEX prices.
+// NEAR's on-chain oracles (pyth-oracle.near/.testnet, priceoracle.near) were stale when checked.
+const WETH_ON_NEAR = "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2.factory.bridge.near";
+
+export async function prices() {
+  const [btc, ref] = await Promise.all([
+    fetch("https://mempool.space/api/v1/prices").then((r) => r.json()),
+    fetch("https://api.ref.finance/list-token-price").then((r) => r.json()),
+  ]);
+  const near = Number(ref["wrap.near"]?.price);
+  const eth = Number(ref[WETH_ON_NEAR]?.price);
+  if (!btc?.USD || !near) throw new Error("price sources unavailable");
+  return { btcUsd: btc.USD, nearUsd: near, ethUsd: eth || null, at: btc.time * 1000 };
+}
+
+/** Loan economics from contract terms and live prices. */
+export function loanStats({ principal, repay, duration_ms }, collateralSats, p) {
+  const yocto = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6; // NEAR, 6 dp
+  const principalUsd = yocto(principal) * p.nearUsd;
+  const collateralUsd = (collateralSats / 1e8) * p.btcUsd;
+  const days = Number(duration_ms) / 86_400_000;
+  const interest = yocto(repay) / yocto(principal) - 1;
+  return {
+    principalUsd, collateralUsd,
+    ltv: collateralUsd ? principalUsd / collateralUsd : Infinity,
+    apr: days > 0 ? (interest * 365) / days : 0,
+  };
+}

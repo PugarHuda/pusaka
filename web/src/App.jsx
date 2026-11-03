@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
-  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT,
+  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats,
   EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
 import { formatEther, parseEther, isAddress } from "viem";
@@ -9,6 +9,19 @@ import Emblem from "./Emblem.jsx";
 import { call, connector, near, view, yocto } from "./near.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
+const usd = (x) => x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: x < 100 ? 2 : 0 });
+const pct = (x) => `${(x * 100).toLocaleString(undefined, { maximumFractionDigits: x < 0.1 ? 1 : 0 })}%`;
+
+// One price fetch per page load; a failure just hides the dollar figures.
+let pricePromise;
+function usePrices() {
+  const [p, setP] = useState(null);
+  useEffect(() => {
+    pricePromise ??= prices().catch(() => null);
+    pricePromise.then(setP);
+  }, []);
+  return p;
+}
 const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 
 // ---------- data ----------
@@ -158,6 +171,7 @@ function Detail({ id, accountId }) {
   if (!t) return <p className="muted">Loading Pusaka #{id}…</p>;
 
   const { info, address, bal } = t;
+  const px = usePrices();
   const owner = info.token.owner_id;
   const isOwner = accountId === owner;
   const locked = !!info.listing || !!info.loan || info.pending;
@@ -174,6 +188,7 @@ function Detail({ id, accountId }) {
         <section>
           <h2>Bitcoin inside, verified on NEAR</h2>
           <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
+          {px && Number(info.verified_sats) > 0 && <p className="muted">About {usd(Number(info.verified_sats) / 1e8 * px.btcUsd)} at mainnet BTC prices.</p>}
           <p className="muted">
             {Number(info.verified_sats).toLocaleString()} sats proven by the Bitcoin light client on NEAR and never signed
             for. No indexer needed: only this contract can spend from the address, and it records every signature.
@@ -198,7 +213,7 @@ function Detail({ id, accountId }) {
 
         {t.eth && <EthSection t={t} canWithdraw={isOwner && !info.listing && !info.loan && !info.pending} onDone={refresh} />}
 
-        <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} />
+        <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
 
         <details className="why">
           <summary>Why the seller can't keep the Bitcoin</summary>
@@ -348,7 +363,7 @@ const when = (ms) => new Date(Number(ms)).toLocaleString();
 
 // ---------- actions ----------
 
-function Actions({ t, accountId, isOwner, onDone }) {
+function Actions({ t, accountId, isOwner, onDone, px }) {
   const { id, info, bal } = t;
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
@@ -381,6 +396,15 @@ function Actions({ t, accountId, isOwner, onDone }) {
       <section className="actions">
         <h2>Loan</h2>
         {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka and its {btc(Number(info.verified_sats))} verified BTC as collateral.</p>}
+        {px && (() => {
+          const st = loanStats(loan, Number(info.verified_sats), px);
+          return (
+            <p className="stats">
+              Loan {usd(st.principalUsd)}, collateral {usd(st.collateralUsd)}: loan-to-value <strong>{Number.isFinite(st.ltv) ? pct(st.ltv) : "no verified collateral"}</strong>,
+              interest <strong>{pct(st.apr)} a year</strong>. Mainnet prices from mempool.space and Rhea.
+            </p>
+          );
+        })()}
         {funded && <p>{loan.borrower} borrowed {near(loan.principal)} NEAR from {loan.lender}. {near(loan.repay)} NEAR {overdue ? "was" : "is"} due {when(due)}.</p>}
         {!funded && isOwner && act("cancel-loan", "Cancel loan request", "Cancelling…", async () => {
           await call("cancel_loan_request", { token_id: id });
@@ -419,6 +443,12 @@ function Actions({ t, accountId, isOwner, onDone }) {
           await call("buy", { token_id: id, expected_sign_epoch: info.sign_epoch }, { deposit: BigInt(now) });
           return `You own Pusaka #${id} and the ${btc(Number(info.verified_sats))} BTC inside it.`;
         })}
+        {px && Number(info.verified_sats) > 0 && (() => {
+          const paid = Number(BigInt(now) / 10n ** 18n) / 1e6 * px.nearUsd;
+          const inside = Number(info.verified_sats) / 1e8 * px.btcUsd;
+          const diff = paid / inside - 1;
+          return <p className="stats">You pay about {usd(paid)} for {usd(inside)} of BTC: {diff < 0 ? `${pct(-diff)} below` : `${pct(diff)} above`} its value at mainnet prices.</p>;
+        })()}
         <p className="muted">
           You get {btc(Number(info.verified_sats))} BTC (verified on NEAR). The NEAR goes to {info.listing.seller}.
           {falling && <> Price falls to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}.</>}
