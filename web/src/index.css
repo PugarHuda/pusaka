@@ -209,3 +209,4 @@ footer p { max-width: var(--measure); margin: 0; }
 .prove { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; margin: 0.8rem 0; }
 .prove p { margin: 0; }
 .stats { margin: 0; padding: 0.6rem 0.8rem; background: var(--paper); border-left: 3px solid var(--brass); }
+.link-btn { margin-left: 0.6em; font-size: 0.9rem; color: var(--ink-soft); }

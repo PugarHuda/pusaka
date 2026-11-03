@@ -208,6 +208,7 @@ function Detail({ id, accountId }) {
             <p className="addr">
               <a href={`${EXPLORER}/address/${address}`} target="_blank" rel="noreferrer">{address}</a>
               <CopyButton text={address} />
+              <a className="link-btn" href={`bitcoin:${address}?label=${encodeURIComponent(`Pusaka #${id}`)}`}>Open in a Bitcoin wallet</a>
             </p>
           ) : (
             <p className="muted">The Bitcoin key is still being derived by the NEAR MPC network.</p>
