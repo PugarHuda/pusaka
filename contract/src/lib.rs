@@ -34,6 +34,9 @@ const TOKEN_RESERVE_BYTES: u64 = 8_000;
 const OUTPOINT_BYTES: u64 = 120;
 /// One "{token}:{chain}" -> u64 entry, rounded up.
 const ETH_NONCE_BYTES: u64 = 120;
+/// EVM chains a Pusaka may sign for. Kept to what the UI shows, so a seller can't hide a
+/// signature on a chain buyers don't look at. Testnet build: Sepolia only.
+pub const EVM_CHAINS: [u64; 1] = [11155111];
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -48,6 +51,7 @@ enum Key {
     History,
     Loans,
     EthNonces,
+    SignEpoch,
 }
 
 #[near(serializers = [json, borsh])]
@@ -140,6 +144,8 @@ pub struct TokenInfo {
     pub price_now: Option<NearToken>,
     pub loan: Option<Loan>,
     pub pending: bool,
+    /// Pass this to `buy` / `fund_loan`.
+    pub sign_epoch: u32,
     pub signed_outpoints: Vec<OutPointRef>,
     pub history: Vec<Entry>,
 }
@@ -175,11 +181,14 @@ pub struct Pusaka {
     loans: LookupMap<TokenId, Loan>,
     /// "{token}:{chain_id}" -> lowest EVM nonce that has never been signed for.
     eth_nonces: LookupMap<String, u64>,
+    /// token -> number of signature requests ever made (BTC inputs + EVM txs). Buyers and
+    /// lenders pass the value they checked; any new signature in between fails the call.
+    sign_epoch: LookupMap<TokenId, u32>,
 }
 
-/// State layout before EVM support; used once by `migrate`.
+/// State layout before sign epochs; used once by `migrate`.
 #[near(serializers = [borsh])]
-struct PusakaV2 {
+struct PusakaV3 {
     tokens: NonFungibleToken,
     mpc: AccountId,
     next_id: u64,
@@ -189,6 +198,7 @@ struct PusakaV2 {
     signed: LookupMap<TokenId, Vec<OutPointRef>>,
     history: LookupMap<TokenId, Vec<Entry>>,
     loans: LookupMap<TokenId, Loan>,
+    eth_nonces: LookupMap<String, u64>,
 }
 
 pub fn btc_path(token_id: &str) -> String {
@@ -216,14 +226,16 @@ impl Pusaka {
             history: LookupMap::new(Key::History),
             loans: LookupMap::new(Key::Loans),
             eth_nonces: LookupMap::new(Key::EthNonces),
+            sign_epoch: LookupMap::new(Key::SignEpoch),
         }
     }
 
-    /// One-time upgrade from the pre-EVM layout.
+    /// One-time upgrade from the pre-epoch layout. Epochs start at 0 for every token;
+    /// clients read the current value, so open listings and loan requests keep working.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let old: PusakaV2 = env::state_read().expect("no state");
+        let old: PusakaV3 = env::state_read().expect("no state");
         Self {
             tokens: old.tokens,
             mpc: old.mpc,
@@ -234,7 +246,8 @@ impl Pusaka {
             signed: old.signed,
             history: old.history,
             loans: old.loans,
-            eth_nonces: LookupMap::new(Key::EthNonces),
+            eth_nonces: old.eth_nonces,
+            sign_epoch: LookupMap::new(Key::SignEpoch),
         }
     }
 
@@ -347,6 +360,8 @@ impl Pusaka {
             }
         }
 
+        self.bump_epoch(&token_id, utxos.len() as u32);
+
         let path = btc_path(&token_id);
         let mut signs: Option<Promise> = None;
         for h in &spend.sighashes {
@@ -435,6 +450,7 @@ impl Pusaka {
     ) -> Promise {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
+        require!(EVM_CHAINS.contains(&chain_id.0), "chain not supported; see EVM_CHAINS");
         charge_storage(ETH_NONCE_BYTES, 1);
         let to = parse_evm_address(&to);
         let tx = omni_transaction::evm::EVMTransaction {
@@ -455,6 +471,7 @@ impl Pusaka {
         let key = format!("{token_id}:{}", chain_id.0);
         let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0 + 1);
         self.eth_nonces.insert(key, floor);
+        self.bump_epoch(&token_id, 1);
         self.pending.insert(token_id.clone(), env::block_height());
 
         Promise::new(self.mpc.clone())
@@ -538,20 +555,17 @@ impl Pusaka {
         self.log(&token_id, Event::Unlisted);
     }
 
-    /// Atomic purchase. `expected_signed_count` is the number of signed outpoints the
+    /// Atomic purchase. `expected_sign_epoch` is the token's sign epoch (see TokenInfo) the
     /// buyer saw when checking the token's safe balance; if it changed, the buy fails.
     #[payable]
-    pub fn buy(&mut self, token_id: TokenId, expected_signed_count: u32) {
+    pub fn buy(&mut self, token_id: TokenId, expected_sign_epoch: u32) {
         let listing = self.listings.remove(&token_id).expect("NotListed");
         let buyer = env::predecessor_account_id();
         let paid = env::attached_deposit();
         let price = listing.price_at(env::block_timestamp_ms());
         require!(paid >= price, "InsufficientDeposit");
         require!(buyer != listing.seller, "SelfBuy");
-        require!(
-            self.signed_count(&token_id) == expected_signed_count,
-            "StateChanged: signed outpoints differ from what you checked"
-        );
+        self.assert_epoch(&token_id, expected_sign_epoch);
 
         self.tokens.internal_transfer(&listing.seller, &buyer, &token_id, None, None);
         self.log(
@@ -599,21 +613,31 @@ impl Pusaka {
         self.log(&token_id, Event::LoanCancelled);
     }
 
-    /// Lender sends `principal`, which goes straight to the borrower. Like `buy`, the
-    /// lender passes the signed-outpoint count they checked the collateral against.
+    /// Lender sends `principal`, which goes straight to the borrower. The lender restates
+    /// the terms and sign epoch they reviewed; if the borrower changed either, it fails.
     #[payable]
-    pub fn fund_loan(&mut self, token_id: TokenId, expected_signed_count: u32) {
+    pub fn fund_loan(
+        &mut self,
+        token_id: TokenId,
+        expected_sign_epoch: u32,
+        principal: NearToken,
+        repay: NearToken,
+        duration_ms: U64,
+    ) {
         let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        require!(
+            loan.principal == principal && loan.repay == repay && loan.duration_ms == duration_ms,
+            "TermsChanged: the loan request differs from what you reviewed"
+        );
         require!(loan.lender.is_none(), "LoanAlreadyFunded");
         let lender = env::predecessor_account_id();
         require!(lender != loan.borrower, "SelfLoan");
         let paid = env::attached_deposit();
         require!(paid >= loan.principal, "InsufficientDeposit");
-        require!(
-            self.signed_count(&token_id) == expected_signed_count,
-            "StateChanged: signed outpoints differ from what you checked"
+        self.assert_epoch(&token_id, expected_sign_epoch);
+        let due = U64(
+            env::block_timestamp_ms().checked_add(loan.duration_ms.0).expect("duration too long"),
         );
-        let due = U64(env::block_timestamp_ms() + loan.duration_ms.0);
         loan.lender = Some(lender.clone());
         loan.due_ms = Some(due);
         self.loans.insert(token_id.clone(), loan.clone());
@@ -659,6 +683,7 @@ impl Pusaka {
             price_now: self.listings.get(&token_id).map(|l| l.price_at(env::block_timestamp_ms())),
             loan: self.loans.get(&token_id).cloned(),
             pending: self.pending.contains_key(&token_id),
+            sign_epoch: self.epoch(&token_id),
             signed_outpoints: self.signed.get(&token_id).cloned().unwrap_or_default(),
             history: self.history.get(&token_id).cloned().unwrap_or_default(),
         })
@@ -670,8 +695,20 @@ impl Pusaka {
 
     // ---------- internals ----------
 
-    fn signed_count(&self, token_id: &TokenId) -> u32 {
-        self.signed.get(token_id).map_or(0, |v| v.len() as u32)
+    fn epoch(&self, token_id: &TokenId) -> u32 {
+        self.sign_epoch.get(token_id).copied().unwrap_or(0)
+    }
+
+    fn bump_epoch(&mut self, token_id: &TokenId, by: u32) {
+        let e = self.epoch(token_id) + by;
+        self.sign_epoch.insert(token_id.clone(), e);
+    }
+
+    fn assert_epoch(&self, token_id: &TokenId, expected: u32) {
+        require!(
+            self.epoch(token_id) == expected,
+            "StateChanged: a signature was requested after you checked this Pusaka"
+        );
     }
 
     fn assert_owner(&self, token_id: &TokenId) {

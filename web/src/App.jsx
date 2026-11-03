@@ -347,7 +347,7 @@ function Actions({ t, accountId, isOwner, onDone }) {
         }, true)}
         {!funded && !isOwner && <>
           {act("lend", `Lend ${near(loan.principal)} NEAR`, "Lending…", async () => {
-            await call("fund_loan", { token_id: id, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(loan.principal) });
+            await call("fund_loan", { token_id: id, expected_sign_epoch: info.sign_epoch, principal: loan.principal, repay: loan.repay, duration_ms: loan.duration_ms }, { deposit: BigInt(loan.principal) });
             return "Loan funded. The NEAR went to the borrower.";
           })}
           <p className="muted">If {near(loan.repay)} NEAR isn't repaid in time, you can take the Pusaka and the {btc(bal.safe)} BTC inside it. While the loan runs, nobody can withdraw, sell or move it.</p>
@@ -375,7 +375,7 @@ function Actions({ t, accountId, isOwner, onDone }) {
       <section className="actions">
         {act("buy", `Buy for ${near(now)} NEAR`, "Buying…", async () => {
           // A Dutch auction price only falls, so paying today's price always covers it; the rest is refunded.
-          await call("buy", { token_id: id, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(now) });
+          await call("buy", { token_id: id, expected_sign_epoch: info.sign_epoch }, { deposit: BigInt(now) });
           return `You own Pusaka #${id} and the ${btc(bal.safe)} BTC inside it.`;
         })}
         <p className="muted">

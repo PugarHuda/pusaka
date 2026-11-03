@@ -86,7 +86,7 @@ info = await view("token_info", { token_id: tokenId });
 bal = await balances(addr, info.signed_outpoints);
 ok(`buyer verifies: ${bal.safe} sats safe (confirmed), ${bal.pending} unconfirmed, ${bal.atRisk} at risk, ${info.signed_outpoints.length} signed outpoint(s)`);
 const t0 = Date.now();
-await call(buyer, "buy", { token_id: tokenId, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(PRICE) });
+await call(buyer, "buy", { token_id: tokenId, expected_sign_epoch: info.sign_epoch }, { deposit: BigInt(PRICE) });
 const saleSecs = ((Date.now() - t0) / 1000).toFixed(1);
 info = await view("token_info", { token_id: tokenId });
 ok(`sold in ${saleSecs}s — new owner: ${info.token.owner_id}. The BTC never moved on Bitcoin.`);
@@ -118,7 +118,7 @@ await call(buyer, "request_loan", {
   token_id: tokenId, principal: parseNearAmount("0.5"), repay: parseNearAmount("0.55"), duration_ms: String(LOAN_MS),
 });
 info = await view("token_info", { token_id: tokenId });
-await call(seller, "fund_loan", { token_id: tokenId, expected_signed_count: info.signed_outpoints.length }, { deposit: BigInt(parseNearAmount("0.5")) });
+await call(seller, "fund_loan", { token_id: tokenId, expected_sign_epoch: info.sign_epoch, principal: info.loan.principal, repay: info.loan.repay, duration_ms: info.loan.duration_ms }, { deposit: BigInt(parseNearAmount("0.5")) });
 ok(`${seller.accountId} lent 0.5 NEAR; it went straight to the borrower`);
 await expectFail("borrower tries to withdraw the collateral", () =>
   call(buyer, "withdraw", {

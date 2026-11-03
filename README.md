@@ -29,7 +29,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `45 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
+See: `49 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -83,7 +83,7 @@ npm run dev        # http://localhost:5173
 - **Key derivation.** Token `N` uses MPC derivation path `pusaka-N` with the contract as predecessor. At mint, the contract calls `derived_public_key` on the MPC contract itself and stores the result, so nobody can mint a Pusaka that points at an address they control.
 - **Addresses** are native SegWit (P2WPKH, `tb1q…`). Sighashes follow BIP143, so input values are signed too.
 - **The contract never signs a hash you give it.** It builds the transaction from the UTXOs you name ([`omni-transaction`](https://github.com/near/omni-transaction-rs)) and computes every sighash itself. This is what makes the outpoint registry below trustworthy.
-- **Selling** is `list(price)` then `buy(expected_signed_count)`: one NEAR transaction pays the seller and moves the NFT.
+- **Selling** is `list(price)` then `buy(expected_sign_epoch)`: one NEAR transaction pays the seller and moves the NFT. The sign epoch counts every signature ever requested for the token (BTC inputs and EVM transactions).
 
 ## Why the seller can't keep the Bitcoin
 
@@ -95,7 +95,9 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T2 | Request a signature, then transfer/sell before it arrives | `SignPending` lock blocks transfer, listing and buying until the callback | `t2_transfer_while_pending_fails`, `t2_list_while_pending_fails` |
 | T3 | Get a signature, don't broadcast it, sell, broadcast later | Every outpoint is recorded on NEAR **before** the MPC is asked to sign, so even a signature that arrives late (MPC timeout) is accounted for. Buyers only count UTXOs that were **never** signed; signed-but-unspent coins show as at risk | `t3_outpoints_are_recorded_before_signing_and_lock_released`, `repeated_withdrawals_do_not_duplicate_outpoints` |
 | T3b | Hide a signed outpoint from the registry with an upper-case or duplicated txid | Txids canonicalised to 64 lower-case hex, duplicates rejected, before signing | `uppercase_txid_is_recorded_canonically`, `duplicate_outpoints_rejected` |
-| T4 | Sign something between the buyer's check and the purchase | `buy` takes `expected_signed_count`; if the registry changed, the purchase fails | `t4_buy_with_stale_count_fails` |
+| T4 | Sign something (BTC or ETH) between the buyer's or lender's check and their transaction, e.g. unlist → sign → relist | `buy` and `fund_loan` take `expected_sign_epoch`; any signature request in between makes them fail | `t4_buy_with_stale_count_fails`, `r1_eth_signature_between_check_and_buy_fails`, `l2_lender_with_stale_signed_count_fails` |
+| T11 | Swap in worse loan terms just before the lender's transaction lands | `fund_loan` restates principal, repay and duration; any difference fails with `TermsChanged` | `r2_lender_rejects_changed_terms` |
+| T12 | Get an EVM signature on a chain buyers don't look at | `withdraw_eth` only signs for chains in `EVM_CHAINS`, the same list the UI shows (Sepolia on testnet) | `r3_unlisted_chain_rejected` |
 | T5 | Anyone else requests a signature | Owner check; the MPC path can only be used by the contract account | `t5_non_owner_withdraw_fails`, `seller_cannot_withdraw_after_sale` |
 | T6 | Mint a token whose "address" is really yours | The key comes from the MPC contract via an on-chain call, not from the caller | `key_is_compressed_from_mpc_format` |
 | T7 | Fund the token with an unconfirmed (RBF) transaction, sell, then double-spend the deposit back | The safe balance only counts **confirmed** coins; unconfirmed ones are shown separately and not counted | client logic in `shared/btc.mjs` (`balances`) |
@@ -105,7 +107,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 
 There are no NEP-178 approvals and no `nft_transfer_call`, so no marketplace or third party can move a Pusaka around these locks.
 
-T3 (late signatures), T7, T8 and T9 were found by an independent review pass during QA and fixed with the tests above.
+T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found by independent review passes during QA and fixed with the tests above.
 
 **Limits, stated plainly**
 
@@ -123,7 +125,7 @@ T3 (late signatures), T7, T8 and T9 were found by an independent review pass dur
 | Bitcoin transactions built by the contract and accepted by testnet4 | [bfdcdcf2…](https://mempool.space/testnet4/tx/bfdcdcf22ea5e1816d995dc27166737a11e25d30c7950a881754526d532bb9e7), [1b6a8926…](https://mempool.space/testnet4/tx/1b6a8926a1b46a0f057bbe30c5eaf1de854f749bad098998d741ea1314817349), [79fd2311…](https://mempool.space/testnet4/tx/79fd2311787dddada2079f75721e1648e6c7d8e7bdf1487aa1b75dde45979e77) (Pusaka #1 funding Pusaka #2), [e5272011…](https://mempool.space/testnet4/tx/e527201185af46e04dddb57411a31790ebfaacb42ff06ea273ea04ff112eef90) (demo with fresh accounts), [7232cac5…](https://mempool.space/testnet4/tx/7232cac5c77f2aebd6e07a7f264531550d033a55b80a754d2d2e63face5962ef), [e2553636…](https://mempool.space/testnet4/tx/e2553636a332080c4b0c1d2417971a8ba362c71f41a7b1aecbfeb4ebcb57d5ce) |
 | Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
 | Same key on Ethereum: contract-built EIP-1559 tx for Sepolia, MPC-signed; sighash identical to viem's, signature recovers to the Pusaka's ETH address | passed (`node scripts/withdraw-eth.mjs <owner> 1 --dry`) |
-| Unit tests | 45 / 45 passing |
+| Unit tests | 49 / 49 passing |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

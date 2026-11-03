@@ -310,7 +310,7 @@ fn funded_loan() -> Pusaka {
     at("alice.testnet", NearToken::from_yoctonear(0), 0);
     c.request_loan("1".into(), NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
     at("bob.testnet", NearToken::from_near(10), 1_000);
-    c.fund_loan("1".into(), 0);
+    c.fund_loan("1".into(), 0, NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
     c
 }
 
@@ -365,7 +365,7 @@ fn l2_lender_with_stale_signed_count_fails() {
     at("alice.testnet", NearToken::from_yoctonear(0), 0);
     c.request_loan("1".into(), NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
     at("bob.testnet", NearToken::from_near(10), 1_000);
-    c.fund_loan("1".into(), 0);
+    c.fund_loan("1".into(), 0, NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn l5_borrower_cannot_cancel_funded_loan() {
 fn l5_loan_cannot_be_funded_twice() {
     let mut c = funded_loan();
     at("carol.testnet", NearToken::from_near(10), 2_000);
-    c.fund_loan("1".into(), 0);
+    c.fund_loan("1".into(), 0, NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
 }
 
 #[test]
@@ -549,5 +549,52 @@ fn e3_bad_evm_address_rejected() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
     let _ = c.withdraw_eth("1".into(), U64(SEPOLIA), U64(0), "0x1234".into(),
+        U128(1), U128(21_000), U128(1), U128(1));
+}
+
+// ---------- review round 3: bind ETH state and loan terms ----------
+
+#[test]
+#[should_panic(expected = "StateChanged")]
+fn r1_eth_signature_between_check_and_buy_fails() {
+    // Seller: (buyer checks epoch 0) -> sign an ETH tx -> list -> buyer buys with 0.
+    let mut c = setup();
+    withdraw_eth(&mut c, "alice.testnet", 0);
+    as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
+    c.on_eth_signed("1".into(), U64(SEPOLIA), U64(0), U128(1), "00".into());
+    at("alice.testnet", NearToken::from_yoctonear(0), 0);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    at("bob.testnet", NearToken::from_near(5), 10);
+    c.buy("1".into(), 0);
+}
+
+#[test]
+fn r1_epoch_counts_btc_inputs_and_evm_txs() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0, 1]);
+    sign_ok(&mut c, &[0, 1], &[true, true]);
+    withdraw_eth(&mut c, "alice.testnet", 0);
+    assert_eq!(c.token_info("1".into()).unwrap().sign_epoch, 3);
+}
+
+#[test]
+#[should_panic(expected = "TermsChanged")]
+fn r2_lender_rejects_changed_terms() {
+    let mut c = setup();
+    at("alice.testnet", NearToken::from_yoctonear(0), 0);
+    c.request_loan("1".into(), NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
+    // Borrower swaps in worse terms before the lender's transaction lands.
+    c.cancel_loan_request("1".into());
+    c.request_loan("1".into(), NearToken::from_near(10), NearToken::from_near(10), U64(3650 * DAY_MS));
+    at("bob.testnet", NearToken::from_near(10), 1_000);
+    c.fund_loan("1".into(), 0, NearToken::from_near(10), NearToken::from_near(11), U64(DAY_MS));
+}
+
+#[test]
+#[should_panic(expected = "chain not supported")]
+fn r3_unlisted_chain_rejected() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth("1".into(), U64(1), U64(0), "0x".to_string() + &"ab".repeat(20),
         U128(1), U128(21_000), U128(1), U128(1));
 }
