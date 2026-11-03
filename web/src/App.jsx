@@ -166,12 +166,12 @@ function Detail({ id, accountId }) {
   const [missing, setMissing] = useState(false);
   const refresh = useCallback(() => loadToken(id).then((x) => (x ? setT(x) : setMissing(true))), [id]);
   useEffect(() => { refresh(); }, [refresh]);
+  const px = usePrices(); // hooks before any early return
 
   if (missing) return <p className="error">There is no Pusaka #{id}. <a href="#/">See all Pusaka</a></p>;
   if (!t) return <p className="muted">Loading Pusaka #{id}…</p>;
 
   const { info, address, bal } = t;
-  const px = usePrices();
   const owner = info.token.owner_id;
   const isOwner = accountId === owner;
   const locked = !!info.listing || !!info.loan || info.pending;
@@ -364,7 +364,7 @@ const when = (ms) => new Date(Number(ms)).toLocaleString();
 // ---------- actions ----------
 
 function Actions({ t, accountId, isOwner, onDone, px }) {
-  const { id, info, bal } = t;
+  const { id, info } = t;
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
 
