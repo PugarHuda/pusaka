@@ -44,7 +44,7 @@ const ok = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, (_,
 const fail = (e) => ({ content: [{ type: "text", text: `Error: ${e.message ?? e}` }], isError: true });
 const tool = (fn) => async (args) => { try { return ok(await fn(args)); } catch (e) { return fail(e); } };
 
-async function inspect(token_id) {
+export async function inspect(token_id) {
   const info = await view("token_info", { token_id });
   if (!info) throw new Error(`No Pusaka #${token_id}`);
   const px = await prices().catch(() => null);
