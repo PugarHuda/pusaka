@@ -12,7 +12,7 @@ import { Account, JsonRpcProvider, teraToGas } from "near-api-js";
 import {
   CONTRACT, NEAR_RPC, NETWORK, EXPLORER, EVM, MINT_DEPOSIT, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
-  prices, scriptHex, lightClientHeight,
+  prices, scriptHex, lightClientHeight, mintedTokenId,
 } from "@pusaka/shared";
 
 const provider = new JsonRpcProvider({ url: NEAR_RPC });
@@ -209,10 +209,12 @@ server.registerTool("pusaka_mint", {
   description: "Mint a new Pusaka. Returns its id and native Bitcoin address.",
   inputSchema: {},
 }, tool(async () => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   spend(MINT_DEPOSIT, "mint");
-  await call("nft_mint", {}, { deposit: MINT_DEPOSIT });
-  const id = String(await view("nft_total_supply"));
+  const outcome = await account.callFunctionRaw({ contractId: CONTRACT, methodName: "nft_mint", args: {}, deposit: MINT_DEPOSIT, gas: teraToGas(100) });
+  const id = mintedTokenId(outcome, ACCOUNT_ID);
   const info = await view("token_info", { token_id: id });
+  if (info.token.owner_id !== ACCOUNT_ID) throw new Error(`token ${id} isn't owned by ${ACCOUNT_ID}`);
   return { token_id: id, btc_address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : "deriving…" };
 }));
 

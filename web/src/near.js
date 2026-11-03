@@ -10,7 +10,12 @@ export const view = (method, args = {}) =>
   provider.callFunction({ contractId: CONTRACT, method, args, blockQuery: { finality: "optimistic" } });
 
 /** Signs with the connected wallet and returns the decoded result of the whole receipt chain. */
-export async function call(method, args = {}, { deposit = 0n, tgas = 100 } = {}) {
+export async function call(method, args = {}, opts = {}) {
+  return getTransactionLastResult(await callRaw(method, args, opts));
+}
+
+/** Like call(), but returns the full outcome (logs, receipts). */
+export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100 } = {}) {
   const wallet = await connector.wallet();
   const outcome = await wallet.signAndSendTransaction({
     receiverId: CONTRACT,
@@ -21,7 +26,7 @@ export async function call(method, args = {}, { deposit = 0n, tgas = 100 } = {})
   });
   const failure = outcome?.status?.Failure ?? outcome?.receipts_outcome?.find((r) => r.outcome.status.Failure)?.outcome.status.Failure;
   if (failure) throw new Error(contractError(failure));
-  return getTransactionLastResult(outcome);
+  return outcome;
 }
 
 /** Pulls the panic message (e.g. "NotOwner") out of a NEAR failure object. */

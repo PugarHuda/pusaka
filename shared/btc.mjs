@@ -247,3 +247,19 @@ export function loanStats({ principal, repay, duration_ms }, collateralSats, p) 
     apr: days > 0 ? (interest * 365) / days : 0,
   };
 }
+
+/**
+ * Token id minted by *this* transaction, read from its NEP-297 nft_mint event. Never infer it
+ * from nft_total_supply: a concurrent mint would hand back someone else's token and BTC address.
+ */
+export function mintedTokenId(outcome, owner) {
+  const logs = (outcome?.receipts_outcome ?? []).flatMap((r) => r.outcome.logs ?? []);
+  for (const l of logs) {
+    if (!l.startsWith("EVENT_JSON:")) continue;
+    const e = JSON.parse(l.slice("EVENT_JSON:".length));
+    if (e.standard !== "nep171" || e.event !== "nft_mint") continue;
+    const d = e.data.find((x) => x.owner_id === owner);
+    if (d?.token_ids?.length) return d.token_ids[0];
+  }
+  throw new Error("mint transaction has no nft_mint event for this account");
+}

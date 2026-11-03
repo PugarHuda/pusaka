@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
-  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats,
+  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId,
   EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
 import { formatEther, parseEther, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
-import { call, connector, near, view, yocto } from "./near.js";
+import { call, callRaw, connector, near, view, yocto } from "./near.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
 const usd = (x) => x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: x < 100 ? 2 : 0 });
@@ -74,8 +74,8 @@ export default function App() {
   async function mint() {
     setMinting("Confirm in your wallet…");
     try {
-      await call("nft_mint", {}, { deposit: MINT_DEPOSIT });
-      const id = String(await view("nft_total_supply"));
+      const outcome = await callRaw("nft_mint", {}, { deposit: MINT_DEPOSIT });
+      const id = mintedTokenId(outcome, accountId);
       location.hash = `#/pusaka/${id}`;
       setMinting("");
     } catch (e) {

@@ -8,7 +8,7 @@ import { parseNearAmount } from "near-api-js";
 import fs from "node:fs";
 import {
   CONTRACT, account, balances, broadcast, btcAddress, call, faucetAccount, finalize,
-  keyFile, scriptHex, sleep, view, WITHDRAW_DEPOSIT, MINT_DEPOSIT, PROVE_DEPOSIT, depositProof, lightClientHeight, EXPLORER,
+  keyFile, scriptHex, sleep, view, WITHDRAW_DEPOSIT, MINT_DEPOSIT, PROVE_DEPOSIT, depositProof, lightClientHeight, EXPLORER, callRaw, mintedTokenId,
 } from "./lib.mjs";
 
 const arg = (k) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -43,8 +43,7 @@ let buyer = await ensureAccount(buyerId);
 let tokenId = arg("token");
 if (!tokenId) {
   step(1, "Seller mints a Pusaka");
-  await call(seller, "nft_mint", {}, { deposit: MINT_DEPOSIT });
-  tokenId = String(await view("nft_total_supply"));
+  tokenId = mintedTokenId(await callRaw(seller, "nft_mint", {}, { deposit: MINT_DEPOSIT }), seller.accountId);
 }
 let info = await view("token_info", { token_id: tokenId });
 if (info.token.owner_id !== seller.accountId) [seller, buyer] = [buyer, seller]; // reuse: whoever owns it sells
