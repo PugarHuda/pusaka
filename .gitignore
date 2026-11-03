@@ -8,3 +8,4 @@ dist/
 .vercel
 test-results/
 playwright-report/
+media/

@@ -9,6 +9,7 @@ import Emblem from "./Emblem.jsx";
 import { call, callRaw, connector, near, view, yocto } from "./near.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
+const eth6 = (wei) => Number(formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 6 });
 const usd = (x) => x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: x < 100 ? 2 : 0 });
 const pct = (x) => `${(x * 100).toLocaleString(undefined, { maximumFractionDigits: x < 0.1 ? 1 : 0 })}%`;
 
@@ -338,8 +339,8 @@ function EthSection({ t, canWithdraw, onDone }) {
       <h2>Ether inside ({EVM.chain.name})</h2>
       <p className="muted">The same key also controls an address on every EVM chain.</p>
       {eth.error ? <p className="error">Couldn't reach {EVM.chain.name}, so the ETH balance is unknown.</p> : <>
-        <p className="amount small"><span>{formatEther(eth.safe)}</span> ETH</p>
-        {eth.atRisk > 0n && <p className="warn">{formatEther(eth.atRisk)} ETH is at risk: a signed transaction for nonce {eth.nonce} hasn't been used on {EVM.chain.name} yet, so it could still spend it.</p>}
+        <p className="amount small"><span>{eth6(eth.safe)}</span> ETH</p>
+        {eth.atRisk > 0n && <p className="warn">{eth6(eth.atRisk)} ETH is at risk: a signed transaction for nonce {eth.nonce} hasn't been used on {EVM.chain.name} yet, so it could still spend it.</p>}
       </>}
       <p className="addr"><a href={`${EVM.explorer}/address/${eth.address}`} target="_blank" rel="noreferrer">{eth.address}</a> <CopyButton text={eth.address} /></p>
       {canWithdraw && eth.wei > 0n && (
