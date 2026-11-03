@@ -102,7 +102,7 @@ export default function App() {
       <main>{tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
-          Contract <a href={`${NEAR_EXPLORER}/address/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
+          Contract <a href={`${NEAR_EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
           Signatures (<code>{MPC}</code>). Built at NEAR HACKATHON.
         </p>
       </footer>

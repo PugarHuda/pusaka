@@ -12,7 +12,7 @@ const CONFIG = {
     contract: "pusaka-btc.testnet",
     mpc: "v1.signer-prod.testnet",
     nearRpc: "https://test.rpc.fastnear.com",
-    nearExplorer: "https://testnet.nearblocks.io",
+    nearExplorer: "https://testnet.near.rocks",
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
     mempool: "https://mempool.space/testnet",
     evm: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" },
@@ -21,7 +21,7 @@ const CONFIG = {
     contract: "pusaka.near", // placeholder until the mainnet account exists; override with PUSAKA_CONTRACT
     mpc: "v1.signer",
     nearRpc: "https://free.rpc.fastnear.com",
-    nearExplorer: "https://nearblocks.io",
+    nearExplorer: "https://near.rocks",
     btc: bitcoin.networks.bitcoin,
     mempool: "https://mempool.space",
     evm: { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io" },

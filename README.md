@@ -16,10 +16,10 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 
 | | |
 |---|---|
-| Contract | [`pusaka-btc.testnet`](https://testnet.nearblocks.io/address/pusaka-btc.testnet) (NEAR testnet) |
+| Contract | [`pusaka-btc.testnet`](https://testnet.near.rocks/account/pusaka-btc.testnet) (NEAR testnet) |
 | MPC signer | `v1.signer-prod.testnet` (NEAR Chain Signatures) |
 | Bitcoin network | testnet3 ([mempool.space/testnet](https://mempool.space/testnet)), the network NEAR's Bitcoin light client tracks |
-| Bitcoin light client | [`btc-client-v4.testnet`](https://testnet.nearblocks.io/address/btc-client-v4.testnet) (Near-One / Omni Bridge), verifies every deposit on-chain |
+| Bitcoin light client | [`btc-client-v4.testnet`](https://testnet.near.rocks/account/btc-client-v4.testnet) (Near-One / Omni Bridge), verifies every deposit on-chain |
 | Live demo | **https://pusaka-two.vercel.app** (or run locally, below) |
 
 ## Try it in two minutes (testnet wallet only)
@@ -187,6 +187,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
 | Same key on Ethereum: contract-built EIP-1559 tx for Sepolia, MPC-signed, broadcast | [0x85a7466d…](https://sepolia.etherscan.io/tx/0x85a7466d06d1af540315b8b1fa2b33956a773784742c4352d095f8909478eecb): 0.002 ETH out of Pusaka #1. Before it, the 0.01 ETH deposit showed as **at risk** (an earlier nonce-0 signature existed); once nonce 0 was used on-chain, the rest showed as safe |
 | Trustless deposit proof: testnet3 tx [2caf27f4…](https://mempool.space/testnet/tx/2caf27f4151b0399cb8cc3d89a9b4f9e8dff6d5affe3612be41310a968c035a0) proven by `btc-client-v4.testnet` via `prove_deposit` | `true` in 3.4 s; 176,246 sats verified on NEAR |
+| Gas-free listing from the web app (Meteor *Sign Delegate Action*, NEP-366) | [EN69gz4r…](https://testnet.near.rocks/tx/EN69gz4rrqPk8qyTYJFsNtY5kSZaFHNoXxCKTfrSbdsn): signer `pusaka-relayer.testnet`, a `Delegate` action from `pusaka-w-mvzhtaw8.testnet`; the owner's balance changed by 0 NEAR |
+| Deposit proven by the relayer ("Prove for free", no wallet) | [EYLPHJGX…](https://testnet.near.rocks/tx/EYLPHJGX6rQNDyD6eTMVwmSMR4enPwb75ATDfW4TMWiS): `prove_deposit` signed by `pusaka-relayer.testnet`, returned `true` |
 | Unit tests | 61 / 61 passing |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
