@@ -15,10 +15,10 @@ export async function call(method, args = {}, opts = {}) {
 }
 
 /** Like call(), but returns the full outcome (logs, receipts). */
-export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100 } = {}) {
+export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100, receiver = CONTRACT } = {}) {
   const wallet = await connector.wallet();
   const outcome = await wallet.signAndSendTransaction({
-    receiverId: CONTRACT,
+    receiverId: receiver,
     actions: [{
       type: "FunctionCall",
       params: { methodName: method, args, gas: (BigInt(tgas) * 10n ** 12n).toString(), deposit: deposit.toString() },

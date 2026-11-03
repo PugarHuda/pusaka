@@ -755,3 +755,89 @@ fn p7_cannot_reprove_a_signed_outpoint() {
     ctx("bob.testnet", NearToken::from_millinear(20), vec![]);
     let _ = c.prove_deposit("1".into(), REAL_TX.into(), 0, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
 }
+
+// ---------- NEP-178 / NEP-199: external markets ----------
+
+fn approve(c: &mut Pusaka, market: &str) {
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    let _ = c.nft_approve("1".into(), acc(market), None);
+}
+
+#[test]
+#[should_panic(expected = "Approved")]
+fn m1_withdraw_while_approved_fails() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    withdraw(&mut c, "alice.testnet", &[0]);
+}
+
+#[test]
+#[should_panic(expected = "Approved")]
+fn m1_loan_request_while_approved_fails() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.request_loan("1".into(), NearToken::from_near(1), NearToken::from_near(2), U64(DAY_MS));
+}
+
+#[test]
+fn m2_revoke_all_unlocks_withdrawals() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_revoke_all("1".into());
+    withdraw(&mut c, "alice.testnet", &[0]);
+    assert!(c.token_info("1".into()).unwrap().pending);
+}
+
+#[test]
+fn m3_market_sells_with_payout_to_owner() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    ctx("market.testnet", NearToken::from_yoctonear(1), vec![]);
+    let p = c.nft_transfer_payout(acc("bob.testnet"), "1".into(), Some(1), None, U128(5), Some(10));
+    assert_eq!(p.payout.get(&acc("alice.testnet")), Some(&U128(5)));
+    assert_eq!(p.payout.len(), 1);
+    let t = c.nft_token("1".into()).unwrap();
+    assert_eq!(t.owner_id, acc("bob.testnet"));
+    // approvals are cleared, so the new owner can withdraw
+    withdraw(&mut c, "bob.testnet", &[0]);
+}
+
+#[test]
+#[should_panic]
+fn m4_stale_approval_id_fails() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_revoke_all("1".into());
+    approve(&mut c, "market.testnet"); // new approval id 2
+    ctx("market.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.nft_transfer_payout(acc("bob.testnet"), "1".into(), Some(1), None, U128(5), None);
+}
+
+#[test]
+#[should_panic]
+fn m4_unapproved_account_cannot_sell() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    ctx("mallory.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.nft_transfer_payout(acc("mallory.testnet"), "1".into(), Some(0), None, U128(5), None);
+}
+
+#[test]
+#[should_panic(expected = "Listed")]
+fn m5_approve_while_listed_fails() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    approve(&mut c, "market.testnet");
+}
+
+#[test]
+#[should_panic(expected = "SignPending")]
+fn m5_approve_while_signing_fails() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0]);
+    approve(&mut c, "market.testnet");
+}

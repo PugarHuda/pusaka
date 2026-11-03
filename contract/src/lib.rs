@@ -74,6 +74,7 @@ enum Key {
     EthNonces,
     SignEpoch,
     Proven,
+    Approvals,
 }
 
 /// A deposit proven on NEAR: the Bitcoin light client confirmed its transaction is in the
@@ -156,6 +157,8 @@ pub enum Event {
     LoanRepaid { lender: AccountId, amount: NearToken },
     LoanDefaulted { lender: AccountId },
     WithdrawEth { chain_id: U64, nonce: U64, value_wei: U128, signed: bool },
+    Approved { account: AccountId },
+    ApprovalsRevoked,
 }
 
 #[near(serializers = [json, borsh])]
@@ -226,21 +229,6 @@ pub struct Pusaka {
     proven: LookupMap<TokenId, Vec<ProvenUtxo>>,
 }
 
-/// State layout before light-client proofs; used once by `migrate`.
-#[near(serializers = [borsh])]
-struct PusakaV4 {
-    tokens: NonFungibleToken,
-    mpc: AccountId,
-    next_id: u64,
-    btc_keys: LookupMap<TokenId, Vec<u8>>,
-    listings: LookupMap<TokenId, Listing>,
-    pending: LookupMap<TokenId, u64>,
-    signed: LookupMap<TokenId, Vec<OutPointRef>>,
-    history: LookupMap<TokenId, Vec<Entry>>,
-    loans: LookupMap<TokenId, Loan>,
-    eth_nonces: LookupMap<String, u64>,
-    sign_epoch: LookupMap<TokenId, u32>,
-}
 
 pub fn btc_path(token_id: &str) -> String {
     format!("pusaka-{token_id}")
@@ -256,7 +244,7 @@ impl Pusaka {
                 env::current_account_id(),
                 Some(Key::TokenMeta),
                 Some(Key::Enumeration),
-                None::<Key>, // no NEP-178 approvals: nobody but the owner can move a Pusaka
+                Some(Key::Approvals), // NEP-178: approved markets can sell it; BTC is frozen meanwhile
             ),
             mpc,
             next_id: 1,
@@ -272,25 +260,17 @@ impl Pusaka {
         }
     }
 
-    /// One-time upgrade from the pre-proof layout.
+    /// One-time upgrade: turns on NEP-178 approvals for contracts deployed without them.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let old: PusakaV4 = env::state_read().expect("no state");
-        Self {
-            tokens: old.tokens,
-            mpc: old.mpc,
-            next_id: old.next_id,
-            btc_keys: old.btc_keys,
-            listings: old.listings,
-            pending: old.pending,
-            signed: old.signed,
-            history: old.history,
-            loans: old.loans,
-            eth_nonces: old.eth_nonces,
-            sign_epoch: old.sign_epoch,
-            proven: LookupMap::new(Key::Proven),
+        let mut this: Self = env::state_read().expect("no state");
+        if this.tokens.approvals_by_id.is_none() {
+            let prefix = near_sdk::IntoStorageKey::into_storage_key(Key::Approvals);
+            this.tokens.approvals_by_id = Some(near_sdk::collections::LookupMap::new(prefix.clone()));
+            this.tokens.next_approval_id_by_id = Some(near_sdk::collections::LookupMap::new([prefix, b"n".to_vec()].concat()));
         }
+        this
     }
 
     // ---------- mint ----------
@@ -888,11 +868,26 @@ impl Pusaka {
     }
 
     /// A token may move or sign only when nothing else is in flight.
+    /// Nothing in flight and no sale or loan open. Also no NEP-178 approval: a market that
+    /// can sell the token must not see its BTC or ETH leave first.
     fn assert_free(&self, token_id: &TokenId) {
+        self.assert_unlocked(token_id);
+        require!(!self.has_approvals(token_id), "Approved: call nft_revoke_all first");
+    }
+
+    fn assert_unlocked(&self, token_id: &TokenId) {
         require!(self.btc_keys.contains_key(token_id), "KeyNotReady");
         require!(!self.pending.contains_key(token_id), "SignPending");
         require!(!self.listings.contains_key(token_id), "Listed");
         require!(!self.loans.contains_key(token_id), "Collateralised");
+    }
+
+    fn has_approvals(&self, token_id: &TokenId) -> bool {
+        self.tokens.approvals_by_id.as_ref().and_then(|a| a.get(token_id)).is_some_and(|m| !m.is_empty())
+    }
+
+    fn owner_of(&self, token_id: &TokenId) -> AccountId {
+        self.tokens.owner_by_id.get(token_id).unwrap_or_else(|| env::panic_str("TokenNotFound"))
     }
 
     fn log(&mut self, token_id: &str, event: Event) {
@@ -978,8 +973,9 @@ impl NonFungibleTokenCore for Pusaka {
         approval_id: Option<u64>,
         memo: Option<String>,
     ) {
-        self.assert_free(&token_id);
-        let from = env::predecessor_account_id();
+        // Approvals don't block a transfer: the transfer clears them.
+        self.assert_unlocked(&token_id);
+        let from = self.owner_of(&token_id);
         self.tokens.nft_transfer(receiver_id.clone(), token_id.clone(), approval_id, memo);
         self.log(&token_id, Event::Transfer { from, to: receiver_id });
     }
@@ -1041,3 +1037,67 @@ impl NonFungibleTokenMetadataProvider for Pusaka {
 
 #[cfg(test)]
 mod tests;
+
+// ---------- NEP-178 approvals and NEP-199 payouts: sell on other NEAR markets ----------
+
+/// NEP-199 payout: account -> amount (yoctoNEAR, as a string).
+#[near(serializers = [json])]
+pub struct Payout {
+    pub payout: std::collections::HashMap<AccountId, U128>,
+}
+
+#[near]
+impl Pusaka {
+    /// NEP-178. Only while the token is free; from then on withdrawals, loans and our own
+    /// listing are refused until the owner calls `nft_revoke_all` or the token is sold.
+    #[payable]
+    pub fn nft_approve(&mut self, token_id: TokenId, account_id: AccountId, msg: Option<String>) -> Option<Promise> {
+        self.assert_unlocked(&token_id);
+        self.log(&token_id, Event::Approved { account: account_id.clone() });
+        near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_approve(
+            &mut self.tokens, token_id, account_id, msg)
+    }
+
+    #[payable]
+    pub fn nft_revoke(&mut self, token_id: TokenId, account_id: AccountId) {
+        near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_revoke(
+            &mut self.tokens, token_id.clone(), account_id);
+        if !self.has_approvals(&token_id) {
+            self.log(&token_id, Event::ApprovalsRevoked);
+        }
+    }
+
+    #[payable]
+    pub fn nft_revoke_all(&mut self, token_id: TokenId) {
+        near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_revoke_all(
+            &mut self.tokens, token_id.clone());
+        self.log(&token_id, Event::ApprovalsRevoked);
+    }
+
+    pub fn nft_is_approved(&self, token_id: TokenId, approved_account_id: AccountId, approval_id: Option<u64>) -> bool {
+        near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_is_approved(
+            &self.tokens, token_id, approved_account_id, approval_id)
+    }
+
+    /// NEP-199: the whole sale price goes to the owner (no royalties).
+    pub fn nft_payout(&self, token_id: TokenId, balance: U128, max_len_payout: Option<u32>) -> Payout {
+        require!(max_len_payout.is_none_or(|n| n >= 1), "max_len_payout too small");
+        Payout { payout: [(self.owner_of(&token_id), balance)].into_iter().collect() }
+    }
+
+    /// NEP-199: an approved market transfers the token and gets back who to pay.
+    #[payable]
+    pub fn nft_transfer_payout(
+        &mut self,
+        receiver_id: AccountId,
+        token_id: TokenId,
+        approval_id: Option<u64>,
+        memo: Option<String>,
+        balance: U128,
+        max_len_payout: Option<u32>,
+    ) -> Payout {
+        let payout = self.nft_payout(token_id.clone(), balance, max_len_payout);
+        NonFungibleTokenCore::nft_transfer(self, receiver_id, token_id, approval_id, memo);
+        payout
+    }
+}

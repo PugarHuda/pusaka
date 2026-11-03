@@ -212,3 +212,5 @@ footer p { max-width: var(--measure); margin: 0; }
 .link-btn { margin-left: 0.6em; font-size: 0.9rem; color: var(--ink-soft); }
 .reserves { margin: 1.6rem 0 0; font-size: 1.1rem; max-width: var(--measure); }
 .reserves strong { color: var(--brass-ink); font-variant-numeric: tabular-nums; }
+button.secondary { color: var(--ink); background: transparent; }
+button.secondary:hover:not(:disabled) { background: rgba(20, 33, 61, 0.06); }

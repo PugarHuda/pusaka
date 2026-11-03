@@ -16,6 +16,7 @@ const CONFIG = {
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
     mempool: "https://mempool.space/testnet",
     evm: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" },
+    market: "market-v2-beta.mintspace2.testnet", // Mintbase
   },
   mainnet: {
     contract: "pusaka.near", // placeholder until the mainnet account exists; override with PUSAKA_CONTRACT
@@ -25,6 +26,7 @@ const CONFIG = {
     btc: bitcoin.networks.bitcoin,
     mempool: "https://mempool.space",
     evm: { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io" },
+    market: "simple.market.mintbase1.near", // Mintbase
   },
 }[NETWORK];
 if (!CONFIG) throw new Error(`unknown network ${NETWORK}`);
@@ -164,6 +166,8 @@ export async function broadcast(txHex) {
 // ---------- EVM: the same MPC key also owns one address on every EVM chain ----------
 import { createPublicClient, http, keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex } from "viem";
 export const EVM = CONFIG.evm;
+/** An outside NEP-178/199 market Pusaka can be sold on (Mintbase). */
+export const MARKET = CONFIG.market;
 const evmClient = createPublicClient({ chain: EVM.chain, transport: http(EVM.rpc) });
 
 export function evmAddress(pubkeyHex) {

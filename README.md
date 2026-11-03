@@ -10,6 +10,9 @@ NEAR MPC network and can only be used by the Pusaka contract, and the contract o
 **current NFT owner** requests one. So transferring the NFT transfers control of the BTC, in one NEAR transaction:
 no bridge, no wrapped BTC, no custodian, no private key the seller could keep a copy of.
 
+It is a standard NEAR NFT, so it trades outside our app too: NEP-178 approvals and NEP-199 payouts let any NEAR
+market sell it (tested live on Mintbase's market), and the contract freezes the BTC for as long as a market may sell it.
+
 *Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
 
 Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable DeFi, Open Innovation.
@@ -158,6 +161,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T4 | Sign something (BTC or ETH) between the buyer's or lender's check and their transaction, e.g. unlist → sign → relist | `buy` and `fund_loan` take `expected_sign_epoch`; any signature request in between makes them fail | `t4_buy_with_stale_count_fails`, `r1_eth_signature_between_check_and_buy_fails`, `l2_lender_with_stale_signed_count_fails` |
 | T11 | Swap in worse loan terms just before the lender's transaction lands | `fund_loan` restates principal, repay and duration; any difference fails with `TermsChanged` | `r2_lender_rejects_changed_terms` |
 | T12 | Get an EVM signature on a chain buyers don't look at | `withdraw_eth` only signs for chains in `EVM_CHAINS`, the same list the UI shows (Sepolia on testnet) | `r3_unlisted_chain_rejected` |
+| T13 | List on another market (NEP-178), then withdraw the BTC before the buyer pays there | While any approval exists, `withdraw`, `withdraw_eth`, `request_loan` and `list` refuse (`Approved: call nft_revoke_all first`); `nft_approve` refuses while a signature, sale or loan is open; a revoked approval's id never works again | `m1_withdraw_while_approved_fails`, `m1_loan_request_while_approved_fails`, `m4_stale_approval_id_fails`, `m5_approve_while_signing_fails` |
 | T5 | Anyone else requests a signature | Owner check; the MPC path can only be used by the contract account | `t5_non_owner_withdraw_fails`, `seller_cannot_withdraw_after_sale` |
 | T6 | Mint a token whose "address" is really yours | The key comes from the MPC contract via an on-chain call, not from the caller | `key_is_compressed_from_mpc_format` |
 | T7 | Fund the token with an unconfirmed (RBF) transaction, sell, then double-spend the deposit back | The safe balance only counts **confirmed** coins; unconfirmed ones are shown separately and not counted | client logic in `shared/btc.mjs` (`balances`) |
@@ -189,7 +193,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Trustless deposit proof: testnet3 tx [2caf27f4…](https://mempool.space/testnet/tx/2caf27f4151b0399cb8cc3d89a9b4f9e8dff6d5affe3612be41310a968c035a0) proven by `btc-client-v4.testnet` via `prove_deposit` | `true` in 3.4 s; 176,246 sats verified on NEAR |
 | Gas-free listing from the web app (Meteor *Sign Delegate Action*, NEP-366) | [EN69gz4r…](https://testnet.near.rocks/tx/EN69gz4rrqPk8qyTYJFsNtY5kSZaFHNoXxCKTfrSbdsn): signer `pusaka-relayer.testnet`, a `Delegate` action from `pusaka-w-mvzhtaw8.testnet`; the owner's balance changed by 0 NEAR |
 | Deposit proven by the relayer ("Prove for free", no wallet) | [EYLPHJGX…](https://testnet.near.rocks/tx/EYLPHJGX6rQNDyD6eTMVwmSMR4enPwb75ATDfW4TMWiS): `prove_deposit` signed by `pusaka-relayer.testnet`, returned `true` |
-| Unit tests | 61 / 61 passing |
+| Sold on an outside market: Pusaka #2 listed on Mintbase's testnet market (`nft_approve` with a price), bought there by `pusaka-buyer.testnet`; Mintbase called `nft_transfer_payout` | approve [HK7ski1J…](https://testnet.near.rocks/tx/HK7ski1JBYfEKdZoEFkQSHtJuwGts6ZCcUPhwcZ1hMGS), buy [CCxgRJ7i…](https://testnet.near.rocks/tx/CCxgRJ7iwKccnTEwpToZNC9hg3BW17tqqD5oj2X9VXcB); seller received 0.196 NEAR; a withdrawal attempted while approved was refused |
+| Unit tests | 69 / 69 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

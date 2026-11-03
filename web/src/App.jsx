@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
+  CONTRACT, EXPLORER, MARKET, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId,
   EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
@@ -472,6 +472,11 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
   }
 
   if (!isOwner) {
+    const markets = Object.keys(info.token.approved_account_ids ?? {});
+    if (!info.listing && markets.length > 0) return (
+      <section className="actions"><p>On sale through <code>{markets.join(", ")}</code>. While it is, its Bitcoin is locked:
+        the owner can't withdraw it before the sale.</p></section>
+    );
     if (!info.listing) return <section className="actions"><p className="muted">This Pusaka isn't for sale or asking for a loan.</p></section>;
     const now = info.price_now ?? info.listing.price;
     const falling = info.listing.floor !== info.listing.price;
@@ -539,6 +544,26 @@ function OwnerForms({ t, busy, run, status }) {
     });
   }
 
+  const approved = Object.keys(t.info.token.approved_account_ids ?? {});
+
+  function sellOnMintbase(e) {
+    e.preventDefault();
+    run("mintbase", async () => {
+      // Mintbase wants storage for the listing, then a NEP-178 approval carrying the price.
+      await callRaw("deposit_storage", {}, { deposit: 10n ** 22n, receiver: MARKET });
+      await call("nft_approve", { token_id: id, account_id: MARKET, msg: JSON.stringify({ price: yocto(price).toString() }) },
+        { deposit: 10n ** 22n, tgas: 150 });
+      return `Listed on Mintbase for ${price} NEAR. Bitcoin withdrawals and loans are locked until it sells or you stop.`;
+    });
+  }
+
+  function stopElsewhere() {
+    run("revoke", async () => {
+      await call("nft_revoke_all", { token_id: id }, { deposit: 1n });
+      return "No other market can sell this Pusaka now. Withdrawals are open again.";
+    });
+  }
+
   function borrow(e) {
     e.preventDefault();
     run("borrow", async () => {
@@ -584,7 +609,17 @@ function OwnerForms({ t, busy, run, status }) {
             <input type="number" min="0.1" step="0.1" value={hours} onChange={(e) => setHours(e.target.value)} disabled={floor === ""} /> h
           </span>
         </label>
-        <button disabled={!!busy}>{busy === "list" ? "Listing…" : "List for sale"}</button>
+        <button disabled={!!busy || approved.length > 0}>{busy === "list" ? "Listing…" : "List for sale"}</button>
+        {MARKET && approved.length === 0 && (
+          <button type="button" className="secondary" disabled={!!busy} onClick={sellOnMintbase}>
+            {busy === "mintbase" ? "Listing on Mintbase…" : "List on Mintbase instead"}</button>
+        )}
+        {approved.length > 0 && (
+          <div className="warn">
+            <p>On sale through {approved.join(", ")}. Its Bitcoin can't be withdrawn or borrowed against until it sells or you stop.</p>
+            <button type="button" disabled={!!busy} onClick={stopElsewhere}>{busy === "revoke" ? "Stopping…" : "Stop selling elsewhere"}</button>
+          </div>
+        )}
       </form>
       <form onSubmit={borrow} className="stack">
         <h2>Borrow against it</h2>

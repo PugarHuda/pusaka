@@ -56,8 +56,8 @@ export async function view(method, args = {}, contractId = CONTRACT) {
 }
 
 /** Full outcome (logs, receipts) of a contract call. */
-export async function callRaw(acct, method, args = {}, { deposit = 0n, tgas = 100 } = {}) {
-  return acct.callFunctionRaw({ contractId: CONTRACT, methodName: method, args, deposit, gas: teraToGas(tgas) });
+export async function callRaw(acct, method, args = {}, { deposit = 0n, tgas = 100, receiver = CONTRACT } = {}) {
+  return acct.callFunctionRaw({ contractId: receiver, methodName: method, args, deposit, gas: teraToGas(tgas) });
 }
 
 /** Calls the contract and returns the decoded return value of the whole receipt chain. */
