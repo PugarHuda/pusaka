@@ -1,5 +1,7 @@
 # Pusaka
 
+[![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
+
 **NFTs that hold real Bitcoin. Sell the NFT and the Bitcoin goes with it.**
 
 Each Pusaka is a NEAR NFT (NEP-171) that controls its own native Bitcoin address through
