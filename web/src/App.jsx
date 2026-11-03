@@ -262,18 +262,13 @@ function Actions({ t, accountId, isOwner, onDone }) {
     finally { setBusy(""); }
   }
 
-  if (!accountId) return (
-    <section className="actions">
-      <button onClick={() => connector.connect()}>Connect NEAR wallet</button>
-      <p className="muted">Connect to buy this Pusaka, lend against it, or manage your own.</p>
-    </section>
-  );
-
   if (info.pending) return <section className="actions"><p className="warn">The NEAR MPC network is signing a withdrawal. The Pusaka is locked until it finishes.</p></section>;
 
   const status = msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>;
   const loan = info.loan;
-  const act = (label, idle, busyText, fn, ghost) => (
+  const act = (label, idle, busyText, fn, ghost) => !accountId ? (
+    <button onClick={() => connector.connect()}>Connect NEAR wallet to {idle.charAt(0).toLowerCase() + idle.slice(1)}</button>
+  ) : (
     <button className={ghost ? "ghost" : undefined} disabled={!!busy} onClick={() => run(label, fn)}>
       {busy === label ? busyText : idle}
     </button>
