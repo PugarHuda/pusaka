@@ -47,16 +47,23 @@ const GASLESS = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_
  */
 export async function callGasless(method, args = {}) {
   const wallet = await connector.wallet();
-  if (!GASLESS.has(method) || !wallet.manifest?.features?.signDelegateActions) {
-    await call(method, args);
-    return { gasless: false };
+  const fallback = async () => { await call(method, args); return { gasless: false }; };
+  if (!GASLESS.has(method) || typeof wallet.signDelegateActions !== "function") return fallback();
+  // The runtime manifest doesn't always advertise the feature, so just ask; wallets that
+  // can't sign delegate actions throw, and we fall back. A user rejection is not retried.
+  let signedDelegateActions;
+  try {
+    ({ signedDelegateActions } = await wallet.signDelegateActions({
+      delegateActions: [{
+        receiverId: CONTRACT,
+        actions: [{ type: "FunctionCall", params: { methodName: method, args, gas: (50n * 10n ** 12n).toString(), deposit: "0" } }],
+      }],
+    }));
+  } catch (e) {
+    if (/reject|cancel|denied|closed/i.test(String(e?.message ?? e))) throw e;
+    return fallback();
   }
-  const { signedDelegateActions } = await wallet.signDelegateActions({
-    delegateActions: [{
-      receiverId: CONTRACT,
-      actions: [{ type: "FunctionCall", params: { methodName: method, args, gas: (50n * 10n ** 12n).toString(), deposit: "0" } }],
-    }],
-  });
+  if (!signedDelegateActions?.[0]) return fallback();
   const r = await fetch("/api/relay", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ signed_delegate: signedDelegateActions[0] }),
