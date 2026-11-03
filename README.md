@@ -101,7 +101,26 @@ The web app shows this verified amount first, offers *Prove deposit* for confirm
 
 - **On-chain dynamic image.** `nft_token(s)` returns `media` as an SVG drawn by the contract (`contract/src/art.rs`) from the token's Bitcoin key: the brass ring fills with BTC *verified by the light client*, and a red seal appears while it's listed, collateral, or signing. Any NEAR wallet shows the current state, no server involved.
 - **Live description:** "Holds 0.00174946 BTC verified on NEAR by the Bitcoin light client."
-- **NEP-297 events:** mints emit `nft_mint` (the standard helper we first used didn't, so indexers missed the collection; `emit_mint_events` re-emitted for older tokens). Transfers, sales and loan defaults emit `nft_transfer`.
+- **NEP-297 events:** mints emit `nft_mint` (the standard helper we first used didn't, so indexers missed the collection; `emit_mint_events` re-emitted for older tokens). Transfers, sales and loan defaults emit `nft_transfer`. (NearBlocks' testnet indexer has not processed new blocks since 27 Sep 2026, so the collection doesn't show there yet; the events are on-chain and covered by `n1_mint_emits_nep297_event`.)
+
+## For AI agents: Pusaka over MCP
+
+`mcp/server.mjs` is a Model Context Protocol server, so an agent (Claude, any MCP host) can do due diligence and trade on the live contract:
+
+```json
+{ "mcpServers": { "pusaka": { "command": "node", "args": ["<repo>/mcp/server.mjs"],
+  "env": { "PUSAKA_ACCOUNT_ID": "agent.testnet", "PUSAKA_PRIVATE_KEY": "ed25519:…", "PUSAKA_MAX_SPEND_NEAR": "5" } } } }
+```
+
+Tools: `pusaka_overview`, `pusaka_inspect` (verified BTC, USD value, ETH safe/at-risk, listing premium, loan LTV/APR, sign epoch), `pusaka_buy`, `pusaka_fund_loan`, `pusaka_repay_loan`, `pusaka_claim_collateral`, `pusaka_list`, `pusaka_cancel_listing`, `pusaka_request_loan`, `pusaka_prove_deposits`, `pusaka_withdraw_btc`, `pusaka_mint`.
+Guard rails the agent can't talk its way around: a per-session NEAR spend cap, `max_price_near` on buys, `max_ltv` on loans (it refuses collateral with no verified BTC), and the same sign-epoch / loan-terms binding as the web app.
+**Try:** `npm run smoke -w mcp` (read tools and guards) and `node mcp/trade.mjs <seller> <buyer> <id> <price>`. On testnet one agent listed Pusaka #1 for 0.3 NEAR and another bought it under a 0.35 NEAR cap.
+
+## Gas-free actions: NEP-366 relayer
+
+`api/relay.mjs` (Vercel function) accepts a borsh `SignedDelegate` and submits it from a relayer account that pays the gas. It only relays calls to the Pusaka contract, only `list`, `cancel_listing`, `request_loan`, `cancel_loan_request`, `claim_collateral`, never with a deposit. `api/prove.mjs` proves a token's confirmed deposits through the light client with the relayer paying, which is what the web app's *Prove for free* button calls, so a visitor with no wallet can still make a deposit count.
+**Verified on testnet** (`node scripts/relay-test.mjs <owner> <id>`): the owner signed `list` and `cancel_listing` as meta-transactions, the relayer submitted them, and the owner's balance changed by 0.000000 NEAR; a signed `buy` was refused.
+The deployment needs `RELAYER_ACCOUNT_ID` / `RELAYER_PRIVATE_KEY` set in Vercel; without them the functions answer 503 and the app falls back to proving from the user's wallet.
 
 ## Prices: what a lender or buyer is actually getting
 

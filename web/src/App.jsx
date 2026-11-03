@@ -257,6 +257,21 @@ function ProveDeposits({ t, accountId, onDone }) {
   if (!todo.length && !unconfirmed.length && !msg) return null;
   const sum = (xs) => xs.reduce((a, u) => a + u.value, 0);
 
+  async function proveFree() {
+    setBusy("free"); setMsg(null);
+    try {
+      const r = await fetch("/api/prove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_id: id }) });
+      const body = await r.json().catch(() => ({}));
+      if (r.status === 503) throw new Error("The relayer isn't set up on this deployment. Connect a wallet and prove from it instead.");
+      if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);
+      const n = body.results.filter((x) => x.proven).length;
+      if (!body.results.length) throw new Error(`Nothing the light client can prove yet (it's at Bitcoin block ${body.light_client_height}).`);
+      setMsg({ ok: n === body.results.length, text: `${n} of ${body.results.length} deposit${body.results.length === 1 ? "" : "s"} proven on NEAR, gas paid by the relayer.` });
+      await onDone();
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    finally { setBusy(false); }
+  }
+
   async function prove() {
     setBusy(true); setMsg(null);
     try {
@@ -276,9 +291,11 @@ function ProveDeposits({ t, accountId, onDone }) {
     <div className="prove">
       {todo.length > 0 && <>
         <p>{sum(todo).toLocaleString()} sats are confirmed on Bitcoin but not proven on NEAR yet.</p>
-        {accountId
-          ? <button className="ghost" disabled={busy} onClick={prove}>{busy ? "Proving with the light client…" : `Prove ${todo.length} deposit${todo.length === 1 ? "" : "s"}`}</button>
-          : <button className="ghost" onClick={() => connector.connect()}>Connect NEAR wallet to prove deposits</button>}
+        <span className="row">
+          <button className="ghost" disabled={busy} onClick={proveFree}>{busy === "free" ? "Proving with the light client…" : "Prove for free"}</button>
+          {accountId && <button className="link" disabled={!!busy} onClick={prove}>or prove from my wallet</button>}
+        </span>
+        <p className="muted">Anyone can prove a deposit. "For free" uses Pusaka's relayer, which pays the NEAR gas.</p>
       </>}
       {unconfirmed.length > 0 && <p className="muted">{sum(unconfirmed).toLocaleString()} sats are waiting for a Bitcoin confirmation before they can be proven.</p>}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}

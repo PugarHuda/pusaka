@@ -6,5 +6,6 @@
 !shared
 !scripts
 !web
+!api
 web/node_modules
 web/dist
