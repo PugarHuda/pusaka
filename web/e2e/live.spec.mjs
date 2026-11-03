@@ -26,7 +26,7 @@ test("a Pusaka page shows proven BTC, its address, ETH and history", async ({ pa
   await expect(page.getByRole("heading", { name: "Bitcoin inside, verified on NEAR" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".amount").first()).toHaveText(/\d\.\d{8} BTC/);
   await expect(page.locator(".addr a").first()).toHaveAttribute("href", /mempool\.space\/testnet\/address\/tb1/);
-  await expect(page.getByRole("heading", { name: /Ether inside/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: /Ether and USDC inside/ })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".history li").first()).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -111,4 +111,48 @@ test("home shows the latest contract transactions, linked to the explorer", asyn
   const links = page.locator(".activity a");
   await expect(links.first()).toBeVisible({ timeout: 30_000 });
   await expect(links.first()).toHaveAttribute("href", /near\.rocks\/tx\/[1-9A-HJ-NP-Za-km-z]{43,44}$/);
+});
+
+test("each Pusaka shows its EVM chains with USDC, its SOL, and its own NEAR account", async ({ page }) => {
+  const errors = errorsOf(page);
+  await page.goto("/#/pusaka/5");
+  await expect(page.locator("table.chains tbody tr")).toHaveCount(3, { timeout: 30_000 });
+  await expect(page.locator("table.chains")).toContainText(/Sepolia.*Base Sepolia.*Arbitrum Sepolia/s);
+  await expect(page.getByRole("heading", { name: /SOL inside/ })).toBeVisible();
+  await expect(page.locator("a[href*='explorer.solana.com/address/']")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Its own NEAR account" })).toBeVisible();
+  // the NEAR account is the hex of the same Ed25519 key that is the Solana address
+  await expect(page.locator("a[href*='near.rocks/account/']").filter({ hasText: /^[0-9a-f]{64}$/ })).toHaveCount(1);
+  await expect(page.locator(".ledger")).toContainText("Held by");
+  expect(errors.filter((e) => !/manifest/i.test(e))).toEqual([]);
+});
+
+test("the holder room stays closed without the holder's signature", async ({ page, request }) => {
+  await page.goto("/#/pusaka/5");
+  await expect(page.getByRole("heading", { name: "Holder room" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".holder-room")).toContainText(/Connect the wallet that holds this Pusaka|Only .* can open it|Sign in to open/);
+  const noAuth = await request.post("/api/holder", { data: { token_id: "5" } });
+  expect(noAuth.status()).toBe(400);
+  const forged = await request.post("/api/holder", { data: { token_id: "5", auth: {
+    accountId: "pusaka-seller.testnet", publicKey: "ed25519:12Ync8r3VbEUQXXZJCRmeE1kgB1AorEMm3ERuFxGt8vN",
+    signature: Buffer.alloc(64).toString("base64"), nonce: Buffer.alloc(32).toString("base64"),
+    at: Date.now(), message: `Open the holder room of Pusaka #5\nat ${Date.now()}` } } });
+  expect([400, 401]).toContain(forged.status());
+});
+
+test("proof of reserves and embeddable badges come straight from the contract", async ({ request }) => {
+  const r = await (await request.get("/api/reserves")).json();
+  expect(r.contract).toBe("pusaka-btc.testnet");
+  expect(r.tokens.length).toBeGreaterThanOrEqual(5);
+  expect(r.total_verified_sats).toBe(r.tokens.reduce((s, t) => s + t.verified_sats, 0));
+  const b = await request.get("/api/badge?id=1");
+  expect(b.headers()["content-type"]).toContain("image/svg+xml");
+  expect(await b.text()).toMatch(/Pusaka #1.*BTC verified/s);
+  expect((await request.get("/api/badge?id=x")).status()).toBe(400);
+});
+
+test("the app is installable: manifest and icons are served", async ({ request }) => {
+  const m = await (await request.get("/manifest.webmanifest")).json();
+  expect(m.display).toBe("standalone");
+  for (const i of m.icons) expect((await request.get(i.src)).status()).toBe(200);
 });

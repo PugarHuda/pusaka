@@ -25,7 +25,7 @@ await page.goto(`${URL}/#/pusaka/4`);
 await page.getByText("Bitcoin inside, verified on NEAR").waitFor({ timeout: 30_000 });
 await page.getByText(/at mainnet BTC prices/).waitFor({ timeout: 30_000 });
 await pause(4000);
-await scrollTo("Ether inside");
+await scrollTo("Ether and USDC inside");
 await scrollTo(/You pay about|Buy for/);
 await page.getByText("Why the seller can't keep the Bitcoin").click(); await pause(1500);
 await scrollTo("Every coin ever signed for"); await pause(2000);

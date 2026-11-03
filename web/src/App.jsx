@@ -629,16 +629,16 @@ function Ledger({ history }) {
     if (e.kind === "Royalty") royalties += BigInt(e.amount);
     if (e.kind === "LoanFunded") borrowed += 1n;
     if (e.kind === "Withdraw") out.push(`${Number(e.amount_sat).toLocaleString()} sats`);
-    if (e.kind === "WithdrawEth") out.push(`${formatEther(BigInt(e.value_wei))} ETH`);
-    if (e.kind === "WithdrawErc20") out.push(`${formatUnits(BigInt(e.amount), 6)} USDC`);
-    if (e.kind === "WithdrawSol") out.push(`${sol9(e.lamports)} SOL`);
-    if (e.kind === "WithdrawNear") out.push(`${near(e.amount)} NEAR`);
+    if (e.kind === "WithdrawEth" && e.signed) out.push(`${formatEther(BigInt(e.value_wei))} ETH`);
+    if (e.kind === "WithdrawErc20" && e.signed) out.push(`${formatUnits(BigInt(e.amount), 6)} USDC`);
+    if (e.kind === "WithdrawSol" && e.signed) out.push(`${sol9(e.lamports)} SOL`);
+    if (e.kind === "WithdrawNear" && e.signed) out.push(`${near(e.amount)} NEAR`);
   }
   return (
     <dl className="ledger">
       <dt>Held by</dt><dd>{holders.join(" → ") || "—"}</dd>
-      <dt>Sold for</dt><dd>{near(earned)} NEAR in total{royalties > 0n && `, of which ${near(royalties)} NEAR went to its creator`}</dd>
-      <dt>Paid out</dt><dd>{out.join(", ") || "nothing yet"}</dd>
+      <dt>Sold for</dt><dd>{earned > 0n ? `${near(earned)} NEAR in total` : "never sold"}{royalties > 0n && `, of which ${near(royalties)} NEAR went to its creator`}</dd>
+      <dt>Paid out</dt><dd>{out.length ? `${out.join(", ")} (signed by NEAR MPC)` : "nothing yet"}</dd>
       {borrowed > 0n && <><dt>Loans</dt><dd>{String(borrowed)} funded against it</dd></>}
     </dl>
   );
@@ -667,9 +667,9 @@ function describe(e) {
     case "LoanRepaid": return `Loan repaid: ${near(e.amount)} NEAR to ${e.lender}`;
     case "WithdrawEth": return `Withdrew ${formatEther(BigInt(e.value_wei))} ETH on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
     case "LoanDefaulted": return `Loan not repaid. ${e.lender} took the Pusaka and its BTC`;
-    case "WithdrawErc20": return `Withdrew ${formatUnits(BigInt(e.amount), 6)} USDC on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
-    case "WithdrawSol": return `Withdrew ${sol9(e.lamports)} SOL${e.signed ? "" : " (signature failed)"}`;
-    case "WithdrawNear": return `Sent ${near(e.amount)} NEAR from its own account${e.signed ? "" : " (signature failed)"}`;
+    case "WithdrawErc20": return `Signed a withdrawal of ${formatUnits(BigInt(e.amount), 6)} USDC on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
+    case "WithdrawSol": return `Signed a withdrawal of ${sol9(e.lamports)} SOL${e.signed ? "" : " (signature failed)"}`;
+    case "WithdrawNear": return `Signed a transfer of ${near(e.amount)} NEAR from its own account${e.signed ? "" : " (signature failed)"}`;
     case "Royalty": return `Royalty of ${near(e.amount)} NEAR paid to its creator ${e.creator}`;
     case "Approved": return `Approved ${e.account} to sell it`;
     case "ApprovalsRevoked": return "Stopped selling on outside markets";
