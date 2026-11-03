@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT,
+  CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex,
   EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
@@ -9,6 +9,7 @@ import Emblem from "./Emblem.jsx";
 import { call, connector, near, view, yocto } from "./near.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
+const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 
 // ---------- data ----------
 
@@ -73,7 +74,7 @@ export default function App() {
     <>
       <header className="bar">
         <a href="#/" className="wordmark">Pusaka</a>
-        <span className="net">Testnet demo</span>
+        <span className="net">{NETWORK === "mainnet" ? "Mainnet" : "Testnet demo"}</span>
         {accountId ? (
           <div className="who">
             <button className="ghost" onClick={mint} disabled={!!minting && minting.endsWith("…")}>Mint a Pusaka</button>
@@ -87,8 +88,8 @@ export default function App() {
       <main>{tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
-          Contract <a href={`https://testnet.nearblocks.io/address/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
-          Signatures (<code>v1.signer-prod.testnet</code>). Built at NEAR HACKATHON.
+          Contract <a href={`${NEAR_EXPLORER}/address/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
+          Signatures (<code>{MPC}</code>). Built at NEAR HACKATHON.
         </p>
       </footer>
     </>
@@ -449,7 +450,7 @@ function OwnerForms({ t, busy, run, status }) {
       const sats = Math.round(Number(amount) * 1e8);
       let script;
       try { script = scriptHex(to); } catch { // checked before anything is signed
-        throw new Error("That isn't a Bitcoin testnet address. It should start with tb1.");
+        throw new Error(`That isn't a Bitcoin ${NETWORK} address. It should start with ${BTC_PREFIX}.`);
       }
       const ins = [...bal.spendable].sort((a, b) => b.value - a.value).slice(0, 8);
       const signed = await call("withdraw", {
@@ -492,7 +493,7 @@ function OwnerForms({ t, busy, run, status }) {
       <form onSubmit={withdraw} className="stack">
         <h2>Withdraw</h2>
         <label>Send Bitcoin to
-          <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="tb1q…" required spellCheck="false" />
+          <input value={to} onChange={(e) => setTo(e.target.value)} placeholder={`${BTC_PREFIX}q…`} required spellCheck="false" />
         </label>
         <label>Amount
           <span className="row"><input type="number" min="0.00000546" step="0.00000001" max={(spendableSats - FEE) / 1e8}

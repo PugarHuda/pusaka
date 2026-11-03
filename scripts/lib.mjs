@@ -1,10 +1,10 @@
 // Node helpers for Pusaka scripts: NEAR accounts and contract calls. Bitcoin helpers live in shared/.
 import { Account, JsonRpcProvider, KeyPair, teraToGas } from "near-api-js";
-import { CONTRACT } from "@pusaka/shared";
+import { CONTRACT, NETWORK, NEAR_RPC } from "@pusaka/shared";
 import fs from "node:fs";
 import path from "node:path";
 
-export const RPC = process.env.NEAR_RPC ?? "https://test.rpc.fastnear.com";
+export const RPC = NEAR_RPC;
 
 const KEYS = path.join(import.meta.dirname, "..", ".keys");
 export const provider = new JsonRpcProvider({ url: RPC });
@@ -39,6 +39,7 @@ export async function exists(accountId) {
 
 /** Creates a funded testnet account through the public faucet helper (same one near-cli uses). */
 export async function faucetAccount(accountId) {
+  if (NETWORK !== "testnet") throw new Error(`no faucet on ${NETWORK}: create and fund ${accountId} yourself`);
   const kp = KeyPair.fromRandom("ed25519");
   const res = await fetch("https://helper.nearprotocol.com/account", {
     method: "POST",

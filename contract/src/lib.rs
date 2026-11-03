@@ -35,8 +35,11 @@ const OUTPOINT_BYTES: u64 = 120;
 /// One "{token}:{chain}" -> u64 entry, rounded up.
 const ETH_NONCE_BYTES: u64 = 120;
 /// EVM chains a Pusaka may sign for. Kept to what the UI shows, so a seller can't hide a
-/// signature on a chain buyers don't look at. Testnet build: Sepolia only.
+/// signature on a chain buyers don't look at. Testnet build: Sepolia; `--features mainnet`: Ethereum.
+#[cfg(not(feature = "mainnet"))]
 pub const EVM_CHAINS: [u64; 1] = [11155111];
+#[cfg(feature = "mainnet")]
+pub const EVM_CHAINS: [u64; 1] = [1];
 
 #[derive(BorshStorageKey)]
 #[near]

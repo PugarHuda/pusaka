@@ -7,6 +7,10 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Mainnet build: `cargo near build non-reproducible-wasm --no-abi --features mainnet`
+mainnet = []
+
 [dependencies]
 near-sdk = "5"
 near-contract-standards = "5"

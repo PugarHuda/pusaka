@@ -1,10 +1,9 @@
 import { NearConnector } from "@hot-labs/near-connect";
 import { JsonRpcProvider, getTransactionLastResult } from "near-api-js";
-import { CONTRACT } from "@pusaka/shared";
+import { CONTRACT, NETWORK, NEAR_RPC } from "@pusaka/shared";
 
-const RPC = "https://test.rpc.fastnear.com";
-export const provider = new JsonRpcProvider({ url: RPC });
-export const connector = new NearConnector({ network: "testnet", providers: { testnet: [RPC] } });
+export const provider = new JsonRpcProvider({ url: NEAR_RPC });
+export const connector = new NearConnector({ network: NETWORK, providers: { [NETWORK]: [NEAR_RPC] } });
 
 // optimistic: right after a wallet transaction the UI must see its result, not a block or two behind
 export const view = (method, args = {}) =>

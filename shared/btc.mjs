@@ -1,12 +1,41 @@
 // Pusaka constants + Bitcoin helpers shared by the scripts (Node) and the web app (browser).
 import * as bitcoin from "bitcoinjs-lib";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { mainnet, sepolia } from "viem/chains";
 
-export const CONTRACT = "pusaka-btc.testnet";
-export const MPC = "v1.signer-prod.testnet";
-export const MEMPOOL = "https://mempool.space/testnet4/api";
-export const EXPLORER = "https://mempool.space/testnet4";
-export const NET = bitcoin.networks.testnet; // testnet4 shares testnet address params (tb1…)
+// One switch for everything network-specific. Node: PUSAKA_NETWORK=mainnet; Vite: VITE_NETWORK=mainnet.
+const env = (k) => globalThis.process?.env?.[k] ?? import.meta.env?.[`VITE_${k.replace("PUSAKA_", "")}`];
+export const NETWORK = env("PUSAKA_NETWORK") ?? "testnet";
+
+const CONFIG = {
+  testnet: {
+    contract: "pusaka-btc.testnet",
+    mpc: "v1.signer-prod.testnet",
+    nearRpc: "https://test.rpc.fastnear.com",
+    nearExplorer: "https://testnet.nearblocks.io",
+    btc: bitcoin.networks.testnet, // testnet4 shares testnet address params (tb1…)
+    mempool: "https://mempool.space/testnet4",
+    evm: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" },
+  },
+  mainnet: {
+    contract: "pusaka.near", // placeholder until the mainnet account exists; override with PUSAKA_CONTRACT
+    mpc: "v1.signer",
+    nearRpc: "https://free.rpc.fastnear.com",
+    nearExplorer: "https://nearblocks.io",
+    btc: bitcoin.networks.bitcoin,
+    mempool: "https://mempool.space",
+    evm: { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io" },
+  },
+}[NETWORK];
+if (!CONFIG) throw new Error(`unknown network ${NETWORK}`);
+
+export const CONTRACT = env("PUSAKA_CONTRACT") ?? CONFIG.contract;
+export const MPC = CONFIG.mpc;
+export const NEAR_RPC = env("PUSAKA_NEAR_RPC") ?? CONFIG.nearRpc;
+export const NEAR_EXPLORER = CONFIG.nearExplorer;
+export const MEMPOOL = `${CONFIG.mempool}/api`;
+export const EXPLORER = CONFIG.mempool;
+export const NET = CONFIG.btc;
 
 // Withdraw: 1 yocto per MPC sign + storage for recorded outpoints; excess is refunded.
 export const WITHDRAW_DEPOSIT = 20_000_000_000_000_000_000_000n; // 0.02 NEAR
@@ -89,9 +118,7 @@ export async function broadcast(txHex) {
 
 // ---------- EVM: the same MPC key also owns one address on every EVM chain ----------
 import { createPublicClient, http, keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex } from "viem";
-import { sepolia } from "viem/chains";
-
-export const EVM = { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" };
+export const EVM = CONFIG.evm;
 const evmClient = createPublicClient({ chain: EVM.chain, transport: http(EVM.rpc) });
 
 export function evmAddress(pubkeyHex) {
