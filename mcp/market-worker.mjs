@@ -13,7 +13,11 @@ export async function report(ids) {
   const parts = ["# Pusaka appraisal", "", `Source: live contract on NEAR ${ids.length > 1 ? "for " + ids.map((i) => "#" + i).join(", ") : ""}. Prices: mempool.space (BTC), Rhea (NEAR), mainnet.`, ""];
   for (const id of ids) {
     let d;
-    try { d = await inspect(id); } catch (e) { parts.push(`## Pusaka #${id}`, "", `Couldn't read it: ${e.message}`, ""); continue; }
+    try { d = await inspect(id); } catch (e) {
+      console.error(`inspect ${id}:`, e); // details stay local; the buyer gets a plain message
+      parts.push(`## Pusaka #${id}`, "", "Couldn't read this Pusaka from the contract (it may not exist).", "");
+      continue;
+    }
     const btc = d.btc.verified_sats / 1e8;
     parts.push(`## Pusaka #${id}`, "",
       `- Owner: \`${d.owner}\``,
