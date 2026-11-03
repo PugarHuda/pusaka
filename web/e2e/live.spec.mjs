@@ -74,3 +74,11 @@ test("the NFT image is drawn on-chain and follows verified BTC", async ({ reques
   expect(svg).toContain("<svg");
   expect(token.metadata.description).toMatch(/BTC verified on NEAR/);
 });
+
+test("live prices reach the browser and show dollar values", async ({ page, request }) => {
+  const p = await (await request.get("/api/prices")).json();
+  expect(p.btcUsd).toBeGreaterThan(1000);
+  expect(p.nearUsd).toBeGreaterThan(0);
+  await page.goto("/#/pusaka/4");
+  await expect(page.getByText(/at mainnet BTC prices/)).toBeVisible({ timeout: 30_000 });
+});

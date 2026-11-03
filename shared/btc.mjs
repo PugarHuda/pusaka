@@ -224,6 +224,12 @@ export async function broadcastEth(raw) {
 const WETH_ON_NEAR = "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2.factory.bridge.near";
 
 export async function prices() {
+  // Browsers can't call Rhea's API (no CORS); the app's own /api/prices fetches it server-side.
+  if (typeof window !== "undefined" && !globalThis.process?.versions?.node) {
+    const r = await fetch("/api/prices");
+    if (!r.ok) throw new Error("price sources unavailable");
+    return r.json();
+  }
   const [btc, ref] = await Promise.all([
     fetch("https://mempool.space/api/v1/prices").then((r) => r.json()),
     fetch("https://api.ref.finance/list-token-price").then((r) => r.json()),
