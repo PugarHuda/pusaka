@@ -37,3 +37,32 @@ function contractError(f) {
 
 export const yocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 18n;
 export const near = (y) => (Number(BigInt(y) / 10n ** 18n) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 });
+
+/** Calls Pusaka allows through the relayer (no deposit, nothing that moves money). */
+const GASLESS = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral"]);
+
+/**
+ * NEP-366: if the wallet can sign delegate actions, the user signs and Pusaka's relayer pays
+ * the gas. Otherwise this is a normal call(). Returns { gasless } so the UI can say which happened.
+ */
+export async function callGasless(method, args = {}) {
+  const wallet = await connector.wallet();
+  if (!GASLESS.has(method) || !wallet.manifest?.features?.signDelegateActions) {
+    await call(method, args);
+    return { gasless: false };
+  }
+  const { signedDelegateActions } = await wallet.signDelegateActions({
+    delegateActions: [{
+      receiverId: CONTRACT,
+      actions: [{ type: "FunctionCall", params: { methodName: method, args, gas: (50n * 10n ** 12n).toString(), deposit: "0" } }],
+    }],
+  });
+  const r = await fetch("/api/relay", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ signed_delegate: signedDelegateActions[0] }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);
+  return { gasless: true, tx: body.tx };
+}
+

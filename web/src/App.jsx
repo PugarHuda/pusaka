@@ -6,7 +6,7 @@ import {
 } from "@pusaka/shared";
 import { formatEther, parseEther, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
-import { call, callRaw, connector, near, view, yocto } from "./near.js";
+import { call, callGasless, callRaw, connector, near, view, yocto } from "./near.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
 const eth6 = (wei) => Number(formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 6 });
@@ -432,7 +432,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
         })()}
         {funded && <p>{loan.borrower} borrowed {near(loan.principal)} NEAR from {loan.lender}. {near(loan.repay)} NEAR {overdue ? "was" : "is"} due {when(due)}.</p>}
         {!funded && isOwner && act("cancel-loan", "Cancel loan request", "Cancelling…", async () => {
-          await call("cancel_loan_request", { token_id: id });
+          await callGasless("cancel_loan_request", { token_id: id });
           return "Loan request cancelled. The Pusaka is unlocked.";
         }, true)}
         {!funded && !isOwner && <>
@@ -448,7 +448,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
         })}
         {funded && accountId === loan.lender && (overdue
           ? act("claim", "Take the Pusaka", "Claiming…", async () => {
-            await call("claim_collateral", { token_id: id });
+            await callGasless("claim_collateral", { token_id: id });
             return `Pusaka #${id} and its BTC are yours.`;
           })
           : <p className="muted">If it isn't repaid by then, you can take the Pusaka here.</p>)}
@@ -489,7 +489,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
         {info.listing.floor !== info.listing.price && <>, falling to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}</>}.
         Withdrawals are locked while it's for sale.</p>
       {act("cancel", "Cancel listing", "Cancelling…", async () => {
-        await call("cancel_listing", { token_id: id });
+        await callGasless("cancel_listing", { token_id: id });
         return "Listing cancelled. You can withdraw again.";
       }, true)}
       {status}
@@ -516,7 +516,7 @@ function OwnerForms({ t, busy, run, status }) {
     e.preventDefault();
     const auction = floor !== "" && Number(floor) < Number(price);
     run("list", async () => {
-      await call("list", {
+      await callGasless("list", {
         token_id: id,
         price: yocto(price).toString(),
         ...(auction && { floor: yocto(floor).toString(), duration_ms: String(Math.round(Number(hours) * 3_600_000)) }),
@@ -528,7 +528,7 @@ function OwnerForms({ t, busy, run, status }) {
   function borrow(e) {
     e.preventDefault();
     run("borrow", async () => {
-      await call("request_loan", {
+      await callGasless("request_loan", {
         token_id: id,
         principal: yocto(principal).toString(),
         repay: yocto(repay).toString(),
