@@ -190,8 +190,10 @@ function Detail({ id, accountId }) {
           <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
           {px && Number(info.verified_sats) > 0 && <p className="muted">About {usd(Number(info.verified_sats) / 1e8 * px.btcUsd)} at mainnet BTC prices.</p>}
           <p className="muted">
-            {Number(info.verified_sats).toLocaleString()} sats proven by the Bitcoin light client on NEAR and never signed
-            for. No indexer needed: only this contract can spend from the address, and it records every signature.
+            {Number(info.verified_sats) > 0
+              ? <>{Number(info.verified_sats).toLocaleString()} sats proven by the Bitcoin light client on NEAR and never signed
+                for. No indexer needed: only this contract can spend from the address, and it records every signature.</>
+              : <>Nothing proven yet. Send BTC to the address below; after one confirmation anyone can prove it on NEAR.</>}
           </p>
           <ProveDeposits t={t} accountId={accountId} onDone={refresh} />
           {bal.atRisk > 0 && (
@@ -556,6 +558,7 @@ function OwnerForms({ t, busy, run, status }) {
           <span className="row"><input type="number" min={principal} step="0.01" value={repay} onChange={(e) => setRepay(e.target.value)} required /> NEAR within
             <input type="number" min="0.001" step="any" value={loanDays} onChange={(e) => setLoanDays(e.target.value)} required /> days</span>
         </label>
+        {Number(t.info.verified_sats) === 0 && <p className="warn">This Pusaka has no BTC verified on NEAR, so lenders will see no collateral.</p>}
         <button disabled={!!busy}>{busy === "borrow" ? "Posting…" : "Ask for a loan"}</button>
         <p className="muted">A lender sends you the NEAR. If you don't repay in time, they take this Pusaka and its BTC.</p>
       </form>

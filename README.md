@@ -30,7 +30,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `55 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
+See: `61 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -97,6 +97,16 @@ Anyone can call `prove_deposit(token_id, tx_hex, vout, block_hash, tx_index, mer
 
 The web app shows this verified amount first, offers *Prove deposit* for confirmed deposits that aren't proven yet, and the medallion's ring fills with verified BTC only.
 
+## The NFT itself is alive
+
+- **On-chain dynamic image.** `nft_token(s)` returns `media` as an SVG drawn by the contract (`contract/src/art.rs`) from the token's Bitcoin key: the brass ring fills with BTC *verified by the light client*, and a red seal appears while it's listed, collateral, or signing. Any NEAR wallet shows the current state, no server involved.
+- **Live description:** "Holds 0.00174946 BTC verified on NEAR by the Bitcoin light client."
+- **NEP-297 events:** mints emit `nft_mint` (the standard helper we first used didn't, so indexers missed the collection; `emit_mint_events` re-emitted for older tokens). Transfers, sales and loan defaults emit `nft_transfer`.
+
+## Prices: what a lender or buyer is actually getting
+
+The web app values collateral and listings with live market data: BTC/USD from mempool.space, NEAR (and ETH) from Rhea/Ref, i.e. NEAR DEX prices. A loan shows its loan-to-value and annualised interest; a listing shows how far above or below the BTC's value it is priced. NEAR's on-chain oracles (`pyth-oracle.near`, `pyth-oracle.testnet`, `priceoracle.near`) were all stale when we checked, so the contract doesn't depend on a price; the numbers are labelled as mainnet prices.
+
 ## Why the seller can't keep the Bitcoin
 
 Every way we found for a seller to try to keep the BTC after selling, and what stops it:
@@ -139,7 +149,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
 | Same key on Ethereum: contract-built EIP-1559 tx for Sepolia, MPC-signed; sighash identical to viem's, signature recovers to the Pusaka's ETH address | passed (`node scripts/withdraw-eth.mjs <owner> 1 --dry`) |
 | Trustless deposit proof: testnet3 tx [2caf27f4…](https://mempool.space/testnet/tx/2caf27f4151b0399cb8cc3d89a9b4f9e8dff6d5affe3612be41310a968c035a0) proven by `btc-client-v4.testnet` via `prove_deposit` | `true` in 3.4 s; 176,246 sats verified on NEAR |
-| Unit tests | 55 / 55 passing |
+| Unit tests | 61 / 61 passing |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here
