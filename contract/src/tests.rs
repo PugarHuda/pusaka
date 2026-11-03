@@ -682,3 +682,64 @@ fn p4_proof_args_borsh_layout() {
     assert_eq!(&b[64..72], &5u64.to_le_bytes());
     assert_eq!(&b[72..76], &2u32.to_le_bytes());
 }
+
+// ---------- NEP-297 events and on-chain dynamic art ----------
+
+fn svg_of(c: &Pusaka) -> String {
+    use base64::Engine;
+    let media = c.nft_token("1".into()).unwrap().metadata.unwrap().media.unwrap();
+    let b64 = media.strip_prefix("data:image/svg+xml;base64,").expect("data uri");
+    String::from_utf8(base64::engine::general_purpose::STANDARD.decode(b64).unwrap()).unwrap()
+}
+
+#[test]
+fn n1_mint_emits_nep297_event() {
+    ctx("alice.testnet", NearToken::from_near(1), vec![]);
+    let mut c = Pusaka::new(acc("v1.signer-prod.testnet"));
+    let _ = c.nft_mint(None);
+    let logs = near_sdk::test_utils::get_logs();
+    assert!(logs.iter().any(|l| l.starts_with("EVENT_JSON:") && l.contains("\"event\":\"nft_mint\"") && l.contains("\"1\"")), "{logs:?}");
+}
+
+#[test]
+fn n2_image_follows_verified_btc_and_lock_state() {
+    let mut c = setup();
+    let empty = svg_of(&c);
+    assert!(empty.starts_with("<svg") && empty.ends_with("</svg>"));
+    assert!(empty.contains("stroke-dasharray=\"0.0 578.0\""), "ring empty with no verified BTC");
+    assert!(!empty.contains("#8e2c2c"), "no seal when unlocked");
+
+    proven(&mut c, b"true", 0, 1_000_000); // ~0.01 BTC verified
+    let full = svg_of(&c);
+    assert!(full.contains("stroke-dasharray=\"578.0 578.0\""), "ring full at ~2^20 sats");
+
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    assert!(svg_of(&c).contains("#8e2c2c"), "seal while listed");
+    let desc = c.nft_token("1".into()).unwrap().metadata.unwrap().description.unwrap();
+    assert!(desc.contains("0.01000000 BTC verified") && desc.contains("Locked"), "{desc}");
+}
+
+#[test]
+fn n3_collection_icon_set() {
+    let c = setup();
+    assert!(c.nft_metadata().icon.unwrap().starts_with("data:image/svg+xml;base64,"));
+}
+
+#[test]
+fn p5_withdraw_prunes_spent_proven_deposits() {
+    let mut c = setup();
+    proven(&mut c, b"true", 0, 70_000);
+    proven(&mut c, b"true", 1, 30_000);
+    withdraw(&mut c, "alice.testnet", &[0]);
+    let info = c.token_info("1".into()).unwrap();
+    assert_eq!(info.proven_utxos.len(), 1);
+    assert_eq!(info.verified_sats, U64(30_000));
+}
+
+#[test]
+fn p6_registry_is_capped() {
+    let mut c = setup();
+    for v in 0..70u32 { proven(&mut c, b"true", v, 20_000); }
+    assert_eq!(c.token_info("1".into()).unwrap().proven_utxos.len(), 64);
+}

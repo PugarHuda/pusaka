@@ -1,7 +1,7 @@
 // Prove every confirmed, unproven deposit of a Pusaka through the on-chain Bitcoin light client.
 //   node prove.mjs <any-account.testnet> <token_id> [--wait]
 // Anyone can prove a deposit; the caller only pays a small refundable storage deposit.
-import { account, call, view, btcAddress, utxos, depositProof, PROVE_DEPOSIT, sleep } from "./lib.mjs";
+import { account, call, view, btcAddress, utxos, depositProof, lightClientHeight, PROVE_DEPOSIT, sleep } from "./lib.mjs";
 
 const [callerId, tokenId = "1"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const wait = process.argv.includes("--wait");
@@ -14,9 +14,10 @@ let todo;
 for (;;) {
   const list = await utxos(addr);
   todo = list.filter((u) => !isProven(u));
-  const confirmed = todo.filter((u) => u.status.confirmed);
+  const lc = await lightClientHeight();
+  const confirmed = todo.filter((u) => u.status.confirmed && u.status.block_height <= lc);
   if (confirmed.length || !wait || !todo.length) { todo = confirmed; break; }
-  console.log(`${todo.length} unproven deposit(s) waiting for a Bitcoin confirmation…`);
+  console.log(`${todo.length} unproven deposit(s) waiting for a confirmation and for the light client (at ${lc}) to reach it…`);
   await sleep(20_000);
 }
 if (!todo.length) console.log("nothing to prove");

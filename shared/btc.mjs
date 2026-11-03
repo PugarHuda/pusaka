@@ -114,6 +114,21 @@ export function finalize(signed, inputValues) {
  * The contract re-derives the txid from `tx_hex` and the light client checks the proofs,
  * so a wrong answer from the API can only make the proof fail, never fake a deposit.
  */
+export const BTC_LIGHT_CLIENT = NETWORK === "mainnet" ? env("PUSAKA_BTC_LIGHT_CLIENT") : "btc-client-v4.testnet";
+
+/** Height of the last Bitcoin block NEAR's light client has accepted. */
+export async function lightClientHeight() {
+  const r = await fetch(NEAR_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
+      request_type: "call_function", finality: "optimistic", account_id: BTC_LIGHT_CLIENT,
+      method_name: "get_last_block_height", args_base64: "e30=" } }),
+  }).then((x) => x.json());
+  if (!r.result?.result) throw new Error("Couldn't read NEAR's Bitcoin light client.");
+  return Number(new TextDecoder().decode(new Uint8Array(r.result.result)));
+}
+
 export async function depositProof(txid, vout) {
   const get = (path, as = "json") => fetch(`${MEMPOOL}${path}`).then((r) => {
     if (!r.ok) throw new Error(`mempool.space answered ${r.status} for ${path}`);
@@ -121,6 +136,11 @@ export async function depositProof(txid, vout) {
   });
   const status = await get(`/tx/${txid}/status`);
   if (!status.confirmed) throw new Error("This deposit has no Bitcoin confirmation yet. Try again after the next block.");
+  // Relayers feed the light client a block or so behind; a proof for a block it hasn't seen would fail.
+  const lc = await lightClientHeight();
+  if (lc < status.block_height) {
+    throw new Error(`NEAR's light client is at Bitcoin block ${lc} and this deposit is in block ${status.block_height}. Try again in a few minutes.`);
+  }
   const tx = bitcoin.Transaction.fromHex(await get(`/tx/${txid}/hex`, "text"));
   tx.ins.forEach((i) => { i.witness = []; }); // non-witness serialization: its hash is the txid
   const [proof, coinbase] = await Promise.all([get(`/tx/${txid}/merkle-proof`), get(`/block/${status.block_hash}/txid/0`, "text")]);

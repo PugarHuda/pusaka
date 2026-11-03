@@ -17,6 +17,7 @@ near-contract-standards = "5"
 omni-transaction = { version = "0.5", default-features = false, features = ["bitcoin", "evm"] }
 bs58 = "0.5"
 hex = "0.4"
+base64 = "0.22"
 
 [dev-dependencies]
 near-sdk = { version = "5", features = ["unit-testing"] }

@@ -4,6 +4,7 @@
 //! Only this contract can request signatures for it, and it only does so for the current
 //! NFT owner. Owning the NFT therefore *is* owning the BTC.
 
+mod art;
 mod btc;
 
 use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
@@ -11,6 +12,7 @@ use near_contract_standards::non_fungible_token::enumeration::NonFungibleTokenEn
 use near_contract_standards::non_fungible_token::metadata::{
     NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
 };
+use near_contract_standards::non_fungible_token::events::NftMint;
 use near_contract_standards::non_fungible_token::{NonFungibleToken, Token, TokenId};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{self, json, Value};
@@ -37,6 +39,10 @@ const ETH_NONCE_BYTES: u64 = 120;
 /// One proven UTXO (64-char txid + vout + value + Vec overhead), rounded up.
 const PROVEN_BYTES: u64 = 140;
 const PROOF_TGAS: u64 = 40;
+/// Proving dust would let anyone bloat a token's registry; below this a deposit isn't provable.
+const MIN_PROVEN_SATS: u64 = 10_000;
+/// Proven, unspent deposits kept per token (withdrawing consolidates them).
+const MAX_PROVEN: usize = 64;
 /// Near-One's Bitcoin light client (Omni Bridge). Testnet build tracks Bitcoin testnet3.
 #[cfg(not(feature = "mainnet"))]
 const BTC_LIGHT_CLIENT: &str = "btc-client-v4.testnet";
@@ -306,6 +312,8 @@ impl Pusaka {
             }),
             None,
         );
+        // internal_mint_with_refund doesn't emit NEP-297; without it indexers and wallets never see the token.
+        NftMint { owner_id: &owner, token_ids: &[&id], memo: None }.emit();
         self.log(&id, Event::Mint { owner });
         // The minter pays for everything this token stores, including the BTC key
         // and history that land later.
@@ -397,6 +405,10 @@ impl Pusaka {
         }
 
         self.bump_epoch(&token_id, utxos.len() as u32);
+        // Proven deposits being spent no longer count; drop them so the list only holds live UTXOs.
+        if let Some(list) = self.proven.get_mut(&token_id) {
+            list.retain(|p| !utxos.iter().any(|u| u.txid == p.txid && u.vout == p.vout));
+        }
 
         let path = btc_path(&token_id);
         let mut signs: Option<Promise> = None;
@@ -496,8 +508,10 @@ impl Pusaka {
         let mut txid_display = txid_internal;
         txid_display.reverse();
         let txid = hex::encode(txid_display);
-        let known = self.proven.get(&token_id).is_some_and(|v| v.iter().any(|u| u.txid == txid && u.vout == vout));
-        require!(!known, "already proven");
+        require!(value >= MIN_PROVEN_SATS, "deposit below the minimum that can be proven");
+        let list = self.proven.get(&token_id);
+        require!(!list.is_some_and(|v| v.iter().any(|u| u.txid == txid && u.vout == vout)), "already proven");
+        require!(list.map_or(0, |v| v.len()) < MAX_PROVEN, "too many proven deposits; withdraw to consolidate");
         charge_storage(PROVEN_BYTES, 0);
 
         let args = btc::proof_args_borsh(
@@ -513,7 +527,7 @@ impl Pusaka {
             .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
             .then(
                 Self::ext(env::current_account_id())
-                    .with_static_gas(Gas::from_tgas(10))
+                    .with_static_gas(Gas::from_tgas(20))
                     .on_deposit_proven(token_id, txid, vout, U64(value)),
             )
     }
@@ -523,7 +537,7 @@ impl Pusaka {
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
         if ok {
             let list = self.proven.entry(token_id).or_default();
-            if !list.iter().any(|u| u.txid == txid && u.vout == vout) {
+            if list.len() < MAX_PROVEN && !list.iter().any(|u| u.txid == txid && u.vout == vout) {
                 list.push(ProvenUtxo { txid, vout, value });
             }
         }
@@ -772,6 +786,16 @@ impl Pusaka {
         self.log(&token_id, Event::LoanDefaulted { lender });
     }
 
+    /// Re-emits NEP-297 mint events for tokens minted before the contract emitted them,
+    /// so indexers and wallets pick them up. Events only; no state changes.
+    #[private]
+    pub fn emit_mint_events(&mut self, token_ids: Vec<TokenId>) {
+        for id in &token_ids {
+            let owner = self.tokens.owner_by_id.get(id).expect("NoToken");
+            NftMint { owner_id: &owner, token_ids: &[id], memo: Some("re-emitted for indexers") }.emit();
+        }
+    }
+
     // ---------- views ----------
 
     pub fn token_info(&self, token_id: TokenId) -> Option<TokenInfo> {
@@ -797,6 +821,24 @@ impl Pusaka {
     }
 
     // ---------- internals ----------
+
+    /// Live metadata: the image and description follow the BTC verified inside and the lock state.
+    fn with_art(&self, mut t: Token) -> Token {
+        let sats = self.verified_sats(&t.token_id);
+        let locked = self.listings.contains_key(&t.token_id)
+            || self.loans.contains_key(&t.token_id)
+            || self.pending.contains_key(&t.token_id);
+        if let (Some(m), Some(pk)) = (t.metadata.as_mut(), self.btc_keys.get(&t.token_id)) {
+            m.media = Some(art::data_uri(&art::emblem_svg(pk, sats, locked)));
+            m.description = Some(format!(
+                "Holds {}.{:08} BTC verified on NEAR by the Bitcoin light client.{}",
+                sats / 100_000_000,
+                sats % 100_000_000,
+                if locked { " Locked: listed, collateral, or signing." } else { "" }
+            ));
+        }
+        t
+    }
 
     fn verified_sats(&self, token_id: &TokenId) -> u64 {
         let signed = self.signed.get(token_id);
@@ -943,7 +985,7 @@ impl NonFungibleTokenCore for Pusaka {
     }
 
     fn nft_token(&self, token_id: TokenId) -> Option<Token> {
-        self.tokens.nft_token(token_id)
+        self.tokens.nft_token(token_id).map(|t| self.with_art(t))
     }
 }
 
@@ -953,7 +995,7 @@ impl NonFungibleTokenEnumeration for Pusaka {
         self.tokens.nft_total_supply()
     }
     fn nft_tokens(&self, from_index: Option<near_sdk::json_types::U128>, limit: Option<u64>) -> Vec<Token> {
-        self.tokens.nft_tokens(from_index, limit)
+        self.tokens.nft_tokens(from_index, limit).into_iter().map(|t| self.with_art(t)).collect()
     }
     fn nft_supply_for_owner(&self, account_id: AccountId) -> near_sdk::json_types::U128 {
         self.tokens.nft_supply_for_owner(account_id)
@@ -964,7 +1006,7 @@ impl NonFungibleTokenEnumeration for Pusaka {
         from_index: Option<near_sdk::json_types::U128>,
         limit: Option<u64>,
     ) -> Vec<Token> {
-        self.tokens.nft_tokens_for_owner(account_id, from_index, limit)
+        self.tokens.nft_tokens_for_owner(account_id, from_index, limit).into_iter().map(|t| self.with_art(t)).collect()
     }
 }
 
@@ -975,7 +1017,7 @@ impl NonFungibleTokenMetadataProvider for Pusaka {
             spec: NFT_METADATA_SPEC.to_string(),
             name: "Pusaka".into(),
             symbol: "PUSAKA".into(),
-            icon: None,
+            icon: Some(art::icon()),
             base_uri: None,
             reference: None,
             reference_hash: None,

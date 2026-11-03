@@ -8,7 +8,7 @@ import { parseNearAmount } from "near-api-js";
 import fs from "node:fs";
 import {
   CONTRACT, account, balances, broadcast, btcAddress, call, faucetAccount, finalize,
-  keyFile, scriptHex, sleep, view, WITHDRAW_DEPOSIT, MINT_DEPOSIT, PROVE_DEPOSIT, depositProof, EXPLORER,
+  keyFile, scriptHex, sleep, view, WITHDRAW_DEPOSIT, MINT_DEPOSIT, PROVE_DEPOSIT, depositProof, lightClientHeight, EXPLORER,
 } from "./lib.mjs";
 
 const arg = (k) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -64,7 +64,13 @@ const proven = (u) => info.proven_utxos.some((p) => p.txid === u.txid && p.vout 
 let toProve = bal.spendable.filter((u) => !proven(u));
 if (toProve.length) {
   console.log(`   waiting for a Bitcoin confirmation, then proving ${toProve.length} deposit(s) through the light client…`);
-  while ((bal = await balances(addr, info.signed_outpoints)).spendable.some((u) => !proven(u) && !u.status.confirmed)) await sleep(20000);
+  // Bitcoin confirmation first, then the light client must have accepted that block (relayers lag a little).
+  const ready = async () => {
+    const lc = await lightClientHeight();
+    bal = await balances(addr, info.signed_outpoints);
+    return !bal.spendable.some((u) => !proven(u) && !(u.status.confirmed && u.status.block_height <= lc));
+  };
+  while (!(await ready())) await sleep(20000);
   for (const u of bal.spendable.filter((u) => !proven(u))) {
     const res = await call(buyer, "prove_deposit", { token_id: tokenId, ...(await depositProof(u.txid, u.vout)) }, { deposit: PROVE_DEPOSIT, tgas: 100 });
     ok(`${u.value} sats in ${u.txid.slice(0, 10)}… proven by btc-client-v4.testnet: ${res}`);
