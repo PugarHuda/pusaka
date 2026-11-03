@@ -198,9 +198,10 @@ function Activity() {
         {rows.map((r) => (
           <li key={r.hash}>
             <a href={`${NEAR_EXPLORER}/tx/${r.hash}`} target="_blank" rel="noreferrer">
-              {r.by ?? r.signer} {r.receiver === MARKET && r.method === "buy" ? "bought one on Mintbase" : ACTIVITY[r.method] ?? `called ${r.method}`}
+              {String(r.by ?? r.signer)} {r.receiver === MARKET && r.method === "buy" ? "bought one on Mintbase"
+                : Object.hasOwn(ACTIVITY, r.method) ? ACTIVITY[r.method] : `called ${String(r.method).slice(0, 40)}`}
             </a>
-            {r.by && <span className="muted"> (gas paid by {r.signer})</span>}
+            {r.by && <span className="muted"> (gas paid by {String(r.signer)})</span>}
             {!r.ok && <span className="muted"> (failed)</span>}
             <span className="muted"> · {ago(r.at)}</span>
           </li>
