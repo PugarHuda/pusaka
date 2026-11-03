@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT,
   balances, broadcast, btcAddress, finalize, scriptHex,
+  EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
+import { formatEther, parseEther, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
 import { call, connector, near, view, yocto } from "./near.js";
 
@@ -16,7 +18,13 @@ async function loadToken(id) {
   const address = info.btc_pubkey ? btcAddress(info.btc_pubkey) : null;
   let bal = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
   if (address) bal = await balances(address, info.signed_outpoints).catch(() => ({ ...bal, error: true }));
-  return { id, info, address, bal };
+  let eth = null;
+  if (info.btc_pubkey) {
+    const ethAddr = evmAddress(info.btc_pubkey);
+    const floor = await view("eth_nonce_floor", { token_id: id, chain_id: String(EVM.chain.id) });
+    eth = await evmBalances(ethAddr, floor).then((b) => ({ ...b, address: ethAddr, floor })).catch(() => ({ address: ethAddr, error: true }));
+  }
+  return { id, info, address, bal, eth };
 }
 
 function useAccount() {
@@ -187,6 +195,8 @@ function Detail({ id, accountId }) {
           )}
         </section>
 
+        {t.eth && <EthSection t={t} canWithdraw={isOwner && !info.listing && !info.loan && !info.pending} onDone={refresh} />}
+
         <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} />
 
         <details className="why">
@@ -218,6 +228,52 @@ function Detail({ id, accountId }) {
   );
 }
 
+function EthSection({ t, canWithdraw, onDone }) {
+  const { id, eth } = t;
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  async function send(e) {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      if (!isAddress(to)) throw new Error("That isn't an Ethereum address (0x followed by 40 hex characters).");
+      const tx = evmTx({ ...(await evmTxParams(eth.address)), to, value: parseEther(amount) });
+      const signed = await call("withdraw_eth", {
+        token_id: id, chain_id: String(tx.chainId), nonce: String(tx.nonce), to: tx.to,
+        value_wei: String(tx.value), gas_limit: String(tx.gas),
+        max_fee_per_gas: String(tx.maxFeePerGas), max_priority_fee_per_gas: String(tx.maxPriorityFeePerGas),
+      }, { deposit: WITHDRAW_DEPOSIT, tgas: 150 });
+      const hash = await broadcastEth(await finalizeEth(tx, signed, eth.address));
+      setMsg({ ok: true, text: <>Sent. <a href={`${EVM.explorer}/tx/${hash}`} target="_blank" rel="noreferrer">View on Etherscan</a></> });
+      await onDone();
+    } catch (err) { setMsg({ ok: false, text: err.shortMessage ?? err.message }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <section>
+      <h2>Ether inside ({EVM.chain.name})</h2>
+      <p className="muted">The same key also controls an address on every EVM chain.</p>
+      {eth.error ? <p className="error">Couldn't reach {EVM.chain.name}, so the ETH balance is unknown.</p> : <>
+        <p className="amount small"><span>{formatEther(eth.safe)}</span> ETH</p>
+        {eth.atRisk > 0n && <p className="warn">{formatEther(eth.atRisk)} ETH is at risk: a signed transaction for nonce {eth.nonce} hasn't been used on {EVM.chain.name} yet, so it could still spend it.</p>}
+      </>}
+      <p className="addr"><a href={`${EVM.explorer}/address/${eth.address}`} target="_blank" rel="noreferrer">{eth.address}</a> <CopyButton text={eth.address} /></p>
+      {canWithdraw && eth.wei > 0n && (
+        <form onSubmit={send} className="stack">
+          <label>Send ETH to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" required spellCheck="false" /></label>
+          <label>Amount <span className="row"><input type="number" min="0" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> ETH</span></label>
+          <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Withdraw ETH"}</button>
+        </form>
+      )}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
 function CopyButton({ text }) {
   const [done, setDone] = useState(false);
   return (
@@ -239,6 +295,7 @@ function describe(e) {
     case "LoanCancelled": return "Loan request cancelled";
     case "LoanFunded": return `Loan funded by ${e.lender}, due ${when(e.due_ms)}`;
     case "LoanRepaid": return `Loan repaid: ${near(e.amount)} NEAR to ${e.lender}`;
+    case "WithdrawEth": return `Withdrew ${formatEther(BigInt(e.value_wei))} ETH on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
     case "LoanDefaulted": return `Loan not repaid. ${e.lender} took the Pusaka and its BTC`;
     default: return e.kind;
   }

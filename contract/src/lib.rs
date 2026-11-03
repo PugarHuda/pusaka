@@ -12,7 +12,7 @@ use near_contract_standards::non_fungible_token::metadata::{
     NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
 };
 use near_contract_standards::non_fungible_token::{NonFungibleToken, Token, TokenId};
-use near_sdk::json_types::U64;
+use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{self, json, Value};
 use near_sdk::store::LookupMap;
 use near_sdk::{
@@ -32,6 +32,8 @@ const PENDING_TIMEOUT_BLOCKS: u64 = 600;
 const TOKEN_RESERVE_BYTES: u64 = 8_000;
 /// Per recorded signed outpoint (64-char txid + vout + Vec overhead), rounded up.
 const OUTPOINT_BYTES: u64 = 120;
+/// One "{token}:{chain}" -> u64 entry, rounded up.
+const ETH_NONCE_BYTES: u64 = 120;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -45,6 +47,7 @@ enum Key {
     Signed,
     History,
     Loans,
+    EthNonces,
 }
 
 #[near(serializers = [json, borsh])]
@@ -115,6 +118,7 @@ pub enum Event {
     LoanFunded { lender: AccountId, due_ms: U64 },
     LoanRepaid { lender: AccountId, amount: NearToken },
     LoanDefaulted { lender: AccountId },
+    WithdrawEth { chain_id: U64, nonce: U64, value_wei: U128, signed: bool },
 }
 
 #[near(serializers = [json, borsh])]
@@ -140,6 +144,14 @@ pub struct TokenInfo {
     pub history: Vec<Entry>,
 }
 
+/// Returned by `on_eth_signed`: the client serialises the EIP-1559 tx with this signature.
+#[near(serializers = [json])]
+pub struct SignedEth {
+    /// keccak256 of the unsigned EIP-1559 payload the MPC signed (hex).
+    pub sighash: String,
+    pub signature: Option<Value>,
+}
+
 /// Returned by `on_signed`: the client attaches witnesses and broadcasts.
 #[near(serializers = [json])]
 pub struct SignedSpend {
@@ -161,11 +173,13 @@ pub struct Pusaka {
     signed: LookupMap<TokenId, Vec<OutPointRef>>,
     history: LookupMap<TokenId, Vec<Entry>>,
     loans: LookupMap<TokenId, Loan>,
+    /// "{token}:{chain_id}" -> lowest EVM nonce that has never been signed for.
+    eth_nonces: LookupMap<String, u64>,
 }
 
-/// State layout before loans existed; used once by `migrate`.
+/// State layout before EVM support; used once by `migrate`.
 #[near(serializers = [borsh])]
-struct PusakaV1 {
+struct PusakaV2 {
     tokens: NonFungibleToken,
     mpc: AccountId,
     next_id: u64,
@@ -174,6 +188,7 @@ struct PusakaV1 {
     pending: LookupMap<TokenId, u64>,
     signed: LookupMap<TokenId, Vec<OutPointRef>>,
     history: LookupMap<TokenId, Vec<Entry>>,
+    loans: LookupMap<TokenId, Loan>,
 }
 
 pub fn btc_path(token_id: &str) -> String {
@@ -200,15 +215,15 @@ impl Pusaka {
             signed: LookupMap::new(Key::Signed),
             history: LookupMap::new(Key::History),
             loans: LookupMap::new(Key::Loans),
+            eth_nonces: LookupMap::new(Key::EthNonces),
         }
     }
 
-    /// One-time upgrade from the pre-loan layout. Requires no active listings
-    /// (the Listing format changed); cancel them before upgrading.
+    /// One-time upgrade from the pre-EVM layout.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let old: PusakaV1 = env::state_read().expect("no state");
+        let old: PusakaV2 = env::state_read().expect("no state");
         Self {
             tokens: old.tokens,
             mpc: old.mpc,
@@ -218,7 +233,8 @@ impl Pusaka {
             pending: old.pending,
             signed: old.signed,
             history: old.history,
-            loans: LookupMap::new(Key::Loans),
+            loans: old.loans,
+            eth_nonces: LookupMap::new(Key::EthNonces),
         }
     }
 
@@ -397,6 +413,92 @@ impl Pusaka {
             "still waiting for the MPC network"
         );
         self.pending.remove(&token_id);
+    }
+
+    // ---------- EVM ----------
+
+    /// Owner-only. The same MPC key that holds the token's BTC also controls one address
+    /// on every EVM chain. Builds an EIP-1559 transfer of `value_wei` to `to` and asks the
+    /// MPC network to sign it. Attach ~0.01 NEAR (storage, refunded) and 100 TGas.
+    #[payable]
+    #[allow(clippy::too_many_arguments)]
+    pub fn withdraw_eth(
+        &mut self,
+        token_id: TokenId,
+        chain_id: U64,
+        nonce: U64,
+        to: String,
+        value_wei: U128,
+        gas_limit: U128,
+        max_fee_per_gas: U128,
+        max_priority_fee_per_gas: U128,
+    ) -> Promise {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        charge_storage(ETH_NONCE_BYTES, 1);
+        let to = parse_evm_address(&to);
+        let tx = omni_transaction::evm::EVMTransaction {
+            chain_id: chain_id.0,
+            nonce: nonce.0,
+            to: Some(to),
+            value: value_wei.0,
+            input: vec![],
+            gas_limit: gas_limit.0,
+            max_fee_per_gas: max_fee_per_gas.0,
+            max_priority_fee_per_gas: max_priority_fee_per_gas.0,
+            access_list: vec![],
+        };
+        let sighash = env::keccak256_array(&tx.build_for_signing());
+
+        // Before signing: every nonce below the floor may have a signature in the wild.
+        // A buyer only trusts the balance once the chain's nonce has passed the floor.
+        let key = format!("{token_id}:{}", chain_id.0);
+        let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0 + 1);
+        self.eth_nonces.insert(key, floor);
+        self.pending.insert(token_id.clone(), env::block_height());
+
+        Promise::new(self.mpc.clone())
+            .function_call_weight(
+                "sign",
+                json!({"request": {"path": btc_path(&token_id), "payload_v2": {"Ecdsa": hex::encode(sighash)}, "domain_id": 0}})
+                    .to_string()
+                    .into_bytes(),
+                NearToken::from_yoctonear(1),
+                Gas::from_tgas(SIGN_TGAS),
+                GasWeight(1),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(10))
+                    .with_unused_gas_weight(0)
+                    .on_eth_signed(token_id, chain_id, nonce, value_wei, hex::encode(sighash)),
+            )
+    }
+
+    #[private]
+    pub fn on_eth_signed(
+        &mut self,
+        token_id: TokenId,
+        chain_id: U64,
+        nonce: U64,
+        value_wei: U128,
+        sighash: String,
+    ) -> SignedEth {
+        self.pending.remove(&token_id);
+        let signature: Option<Value> = match env::promise_result_checked(0, 1024) {
+            Ok(b) => serde_json::from_slice(&b).ok(),
+            _ => None,
+        };
+        self.log(
+            &token_id,
+            Event::WithdrawEth { chain_id, nonce, value_wei, signed: signature.is_some() },
+        );
+        SignedEth { sighash, signature }
+    }
+
+    /// Lowest nonce on `chain_id` that has never been signed for this token (0 if none).
+    pub fn eth_nonce_floor(&self, token_id: TokenId, chain_id: U64) -> U64 {
+        U64(self.eth_nonces.get(&format!("{token_id}:{}", chain_id.0)).copied().unwrap_or(0))
     }
 
     // ---------- market ----------
@@ -630,6 +732,13 @@ fn canonical_utxos(utxos: Vec<Utxo>) -> Vec<Utxo> {
             u
         })
         .collect()
+}
+
+fn parse_evm_address(s: &str) -> [u8; 20] {
+    let h = s.strip_prefix("0x").unwrap_or(s);
+    let b = hex::decode(h).unwrap_or_default();
+    require!(b.len() == 20, "to must be a 0x-prefixed 20-byte address");
+    b.try_into().unwrap()
 }
 
 fn empty_meta() -> TokenMetadata {

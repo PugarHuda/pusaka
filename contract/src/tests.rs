@@ -1,6 +1,7 @@
 //! Unit tests for the threat model in docs/PRD.md §8 (T1–T6).
 
 use super::*;
+use near_sdk::json_types::U128;
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{test_vm_config, testing_env, PromiseResult, RuntimeFeesConfig};
 
@@ -478,4 +479,75 @@ fn listing_floor_above_price_rejected() {
     let mut c = setup();
     at("alice.testnet", NearToken::from_yoctonear(0), 0);
     c.list("1".into(), NearToken::from_near(2), Some(NearToken::from_near(3)), Some(U64(1_000)));
+}
+
+// ---------- EVM ----------
+
+const SEPOLIA: u64 = 11155111;
+
+fn withdraw_eth(c: &mut Pusaka, caller: &str, nonce: u64) {
+    ctx(caller, NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth(
+        "1".into(),
+        U64(SEPOLIA),
+        U64(nonce),
+        "0x".to_string() + &"ab".repeat(20),
+        U128(1_000_000_000_000_000),
+        U128(21_000),
+        U128(30_000_000_000),
+        U128(1_000_000_000),
+    );
+}
+
+#[test]
+fn e1_nonce_floor_recorded_before_signing() {
+    let mut c = setup();
+    withdraw_eth(&mut c, "alice.testnet", 4);
+    // Recorded at request time, while the signature is still in flight.
+    assert!(c.token_info("1".into()).unwrap().pending);
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(SEPOLIA)), U64(5));
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(1)), U64(0)); // per chain
+}
+
+#[test]
+fn e1_floor_never_goes_down() {
+    let mut c = setup();
+    withdraw_eth(&mut c, "alice.testnet", 7);
+    as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
+    let out = c.on_eth_signed("1".into(), U64(SEPOLIA), U64(7), U128(1), "00".into());
+    assert!(out.signature.is_some());
+    withdraw_eth(&mut c, "alice.testnet", 2); // an older nonce must not lower the floor
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(SEPOLIA)), U64(8));
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn e2_non_owner_cannot_sign_evm() {
+    let mut c = setup();
+    withdraw_eth(&mut c, "mallory.testnet", 0);
+}
+
+#[test]
+#[should_panic(expected = "Listed")]
+fn e2_evm_locked_while_listed() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    withdraw_eth(&mut c, "alice.testnet", 0);
+}
+
+#[test]
+#[should_panic(expected = "Collateralised")]
+fn e2_evm_locked_while_collateralised() {
+    let mut c = funded_loan();
+    withdraw_eth(&mut c, "alice.testnet", 0);
+}
+
+#[test]
+#[should_panic(expected = "to must be a 0x-prefixed 20-byte address")]
+fn e3_bad_evm_address_rejected() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth("1".into(), U64(SEPOLIA), U64(0), "0x1234".into(),
+        U128(1), U128(21_000), U128(1), U128(1));
 }

@@ -29,7 +29,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `39 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
+See: `45 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -64,6 +64,7 @@ npm run dev        # http://localhost:5173
 ## Borrow against your Bitcoin, sell by auction
 
 - **Loans:** the owner posts `request_loan(principal, repay, duration)`. A lender funds it with `fund_loan` and the NEAR goes straight to the borrower. While the loan is open the Pusaka can't be withdrawn from, sold or moved (`Collateralised`). The borrower repays with `repay_loan`; if they don't by the due date, the lender calls `claim_collateral` and receives the NFT, and with it the native BTC. No bridge, no oracle, no liquidation bot.
+- **Ether too:** the MPC key behind `pusaka-N` also controls one address on every EVM chain. `withdraw_eth` builds an EIP-1559 transaction in the contract (Sepolia in the demo) and gets it signed the same way, so a Pusaka can hold BTC and ETH and both change hands with the NFT.
 - **Dutch auctions:** `list(price, floor, duration_ms)` lowers the price linearly to `floor`; `buy` pays the current price and refunds the rest.
 
 ## How it works
@@ -99,6 +100,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T6 | Mint a token whose "address" is really yours | The key comes from the MPC contract via an on-chain call, not from the caller | `key_is_compressed_from_mpc_format` |
 | T7 | Fund the token with an unconfirmed (RBF) transaction, sell, then double-spend the deposit back | The safe balance only counts **confirmed** coins; unconfirmed ones are shown separately and not counted | client logic in `shared/btc.mjs` (`balances`) |
 | T8 | `nft_transfer_call` gives the receiver the token mid-call; it withdraws the BTC, then returns an empty token | `nft_transfer_call` is disabled; Pusaka moves only by `nft_transfer` or the built-in market | `transfer_call_is_disabled` |
+| T10 | Get an EVM transaction signed, keep it, sell, broadcast later | The contract records a per-chain **nonce floor** (highest signed nonce + 1) before signing. A buyer only counts the ETH once the account's on-chain nonce reaches the floor; until then it shows as at risk | `e1_nonce_floor_recorded_before_signing`, `e1_floor_never_goes_down` |
 | T9 | A failed callback leaves the token locked forever | After ~600 blocks the owner can `unlock_stale`; safe because outpoints were recorded before signing | `unlock_stale_waits_for_timeout`, `unlock_stale_releases_after_timeout` |
 
 There are no NEP-178 approvals and no `nft_transfer_call`, so no marketplace or third party can move a Pusaka around these locks.
@@ -120,7 +122,8 @@ T3 (late signatures), T7, T8 and T9 were found by an independent review pass dur
 | MPC signature for a 1-input withdrawal (request to signed tx) | 6.8 s – 13.7 s across 5 runs |
 | Bitcoin transactions built by the contract and accepted by testnet4 | [bfdcdcf2…](https://mempool.space/testnet4/tx/bfdcdcf22ea5e1816d995dc27166737a11e25d30c7950a881754526d532bb9e7), [1b6a8926…](https://mempool.space/testnet4/tx/1b6a8926a1b46a0f057bbe30c5eaf1de854f749bad098998d741ea1314817349), [79fd2311…](https://mempool.space/testnet4/tx/79fd2311787dddada2079f75721e1648e6c7d8e7bdf1487aa1b75dde45979e77) (Pusaka #1 funding Pusaka #2), [e5272011…](https://mempool.space/testnet4/tx/e527201185af46e04dddb57411a31790ebfaacb42ff06ea273ea04ff112eef90) (demo with fresh accounts), [7232cac5…](https://mempool.space/testnet4/tx/7232cac5c77f2aebd6e07a7f264531550d033a55b80a754d2d2e63face5962ef), [e2553636…](https://mempool.space/testnet4/tx/e2553636a332080c4b0c1d2417971a8ba362c71f41a7b1aecbfeb4ebcb57d5ce) |
 | Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
-| Unit tests | 39 / 39 passing |
+| Same key on Ethereum: contract-built EIP-1559 tx for Sepolia, MPC-signed; sighash identical to viem's, signature recovers to the Pusaka's ETH address | passed (`node scripts/withdraw-eth.mjs <owner> 1 --dry`) |
+| Unit tests | 45 / 45 passing |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

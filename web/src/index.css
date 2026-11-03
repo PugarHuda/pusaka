@@ -204,3 +204,4 @@ footer p { max-width: var(--measure); margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+.amount.small { font-size: clamp(1.6rem, 3.5vw, 2.2rem); }

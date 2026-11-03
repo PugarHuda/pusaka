@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 near-sdk = "5"
 near-contract-standards = "5"
-omni-transaction = { version = "0.5", default-features = false, features = ["bitcoin"] }
+omni-transaction = { version = "0.5", default-features = false, features = ["bitcoin", "evm"] }
 bs58 = "0.5"
 hex = "0.4"
 

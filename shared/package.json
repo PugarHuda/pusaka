@@ -2,6 +2,12 @@
   "name": "@pusaka/shared",
   "private": true,
   "type": "module",
-  "exports": { ".": "./btc.mjs" },
-  "dependencies": { "bitcoinjs-lib": "^7.0.0", "@noble/curves": "^2.0.0" }
+  "exports": {
+    ".": "./btc.mjs"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.0",
+    "bitcoinjs-lib": "^7.0.0",
+    "viem": "^2.57.14"
+  }
 }
