@@ -25,6 +25,8 @@ await rejects(holderRoom({ token_id: tokenId, auth: sign(other) }, HOST), /doesn
 console.log("someone else is refused");
 await rejects(holderRoom({ token_id: tokenId, auth: sign(holder, { at: Date.now() - 10 * 60_000 }) }, HOST), /expired/);
 console.log("a 10-minute-old signature is refused");
+await rejects(holderRoom({ token_id: tokenId, auth: { ...sign(holder), at: "soon" } }, HOST), /expired/);
+console.log("a non-numeric timestamp is refused");
 await rejects(holderRoom({ token_id: tokenId, auth: sign(holder, { recipient: "evil.example" }) }, HOST), /doesn't match/);
 console.log("a signature made for another site is refused");
 await rejects(holderRoom({ token_id: tokenId, auth: { ...sign(holder), accountId: other } }, HOST), /full-access key/);

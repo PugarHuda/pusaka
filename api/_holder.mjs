@@ -27,8 +27,10 @@ export function nep413Hash({ message, nonce, recipient }) {
 export async function verifyHolder(tokenId, auth, recipient) {
   const { accountId, publicKey, signature, message, nonce, at } = auth ?? {};
   if (!accountId || !publicKey?.startsWith("ed25519:") || !signature || !nonce) throw fail(400, "sign in with your NEAR wallet first");
-  if (message !== accessMessage(tokenId, at)) throw fail(400, "wrong message signed");
-  if (Math.abs(Date.now() - Number(at)) > MAX_AGE_MS) throw fail(401, "signature expired; sign in again");
+  const ts = Number(at);
+  // NaN would compare false and pass the age check, so require a real millisecond timestamp.
+  if (!Number.isSafeInteger(ts) || Math.abs(Date.now() - ts) > MAX_AGE_MS) throw fail(401, "signature expired; sign in again");
+  if (message !== accessMessage(tokenId, ts)) throw fail(400, "wrong message signed");
   const nonceBytes = Buffer.from(nonce, "base64");
   if (nonceBytes.length !== 32) throw fail(400, "nonce must be 32 bytes");
   const hash = nep413Hash({ message, nonce: nonceBytes, recipient });
