@@ -82,3 +82,12 @@ test("live prices reach the browser and show dollar values", async ({ page, requ
   await page.goto("/#/pusaka/4");
   await expect(page.getByText(/at mainnet BTC prices/)).toBeVisible({ timeout: 30_000 });
 });
+
+test("home shows total BTC verified and the social card is served", async ({ page, request }) => {
+  await page.goto("/#/");
+  await expect(page.locator(".reserves")).toContainText(/BTC verified on NEAR across \d+ Pusaka/, { timeout: 30_000 });
+  const og = await request.get("/og.png");
+  expect(og.status()).toBe(200);
+  expect(og.headers()["content-type"]).toContain("image/png");
+  expect(await page.locator('meta[property="og:image"]').getAttribute("content")).toMatch(/og\.png$/);
+});

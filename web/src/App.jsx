@@ -115,6 +115,7 @@ export default function App() {
 function Home() {
   const [tokens, setTokens] = useState(null);
   const [error, setError] = useState("");
+  const px = usePrices();
   useEffect(() => {
     view("nft_tokens", { from_index: "0", limit: 60 })
       // allSettled: one token that fails to load must not hide the rest of the gallery
@@ -132,6 +133,17 @@ function Home() {
           transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep.
         </p>
       </section>
+
+      {tokens?.length > 0 && (() => {
+        const sats = tokens.reduce((a, t) => a + Number(t.info.verified_sats), 0);
+        return (
+          <p className="reserves">
+            <strong>{btc(sats)} BTC</strong> verified on NEAR across {tokens.length} Pusaka
+            {px && <> (about {usd(sats / 1e8 * px.btcUsd)})</>}. Every satoshi is proven by NEAR's Bitcoin light client,
+            not reported by us.
+          </p>
+        );
+      })()}
 
       <section className="lifecycle" aria-label="How a Pusaka changes hands">
         <ol>
