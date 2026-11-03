@@ -62,9 +62,13 @@ const BTC_MIN_CONFIRMATIONS: u64 = 6;
 /// EVM chains a Pusaka may sign for. Kept to what the UI shows, so a seller can't hide a
 /// signature on a chain buyers don't look at. Testnet build: Sepolia; `--features mainnet`: Ethereum.
 #[cfg(not(feature = "mainnet"))]
-pub const EVM_CHAINS: [u64; 1] = [11155111];
+pub const EVM_CHAINS: [u64; 3] = [11155111, 84532, 421614]; // Sepolia, Base Sepolia, Arbitrum Sepolia
 #[cfg(feature = "mainnet")]
-pub const EVM_CHAINS: [u64; 1] = [1];
+pub const EVM_CHAINS: [u64; 3] = [1, 8453, 42161]; // Ethereum, Base, Arbitrum One
+/// Creator royalty on every resale (basis points), paid by our market and by NEP-199 markets.
+pub const ROYALTY_BPS: u128 = 250;
+/// Ed25519 domain of the MPC network (Solana keys).
+const ED25519_DOMAIN: u32 = 1;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -167,6 +171,9 @@ pub enum Event {
     WithdrawEth { chain_id: U64, nonce: U64, value_wei: U128, signed: bool },
     Approved { account: AccountId },
     ApprovalsRevoked,
+    WithdrawErc20 { chain_id: U64, nonce: U64, token: String, amount: U128, signed: bool },
+    WithdrawSol { lamports: U64, signed: bool },
+    Royalty { creator: AccountId, amount: NearToken },
 }
 
 #[near(serializers = [json, borsh])]
@@ -205,6 +212,16 @@ pub struct TokenInfo {
 pub struct SignedEth {
     /// keccak256 of the unsigned EIP-1559 payload the MPC signed (hex).
     pub sighash: String,
+    pub signature: Option<Value>,
+}
+
+/// Returned by `withdraw_sol`: the client prepends the signature to the message and broadcasts.
+#[near(serializers = [json])]
+pub struct SignedSol {
+    /// The Solana legacy message the MPC signed (base64).
+    pub message: String,
+    /// The token's Solana address (base58).
+    pub from: String,
     pub signature: Option<Value>,
 }
 
@@ -332,6 +349,9 @@ impl Pusaka {
             Some(TokenMetadata {
                 title: Some(format!("Pusaka #{id}")),
                 description: Some("An NFT that holds native Bitcoin.".into()),
+                // ponytail: creator lives in metadata.extra so royalties need no new state; tokens
+                // minted before this have none and pay no royalty.
+                extra: Some(json!({ "creator": env::predecessor_account_id() }).to_string()),
                 ..empty_meta()
             }),
             None,
@@ -599,17 +619,23 @@ impl Pusaka {
         gas_limit: U128,
         max_fee_per_gas: U128,
         max_priority_fee_per_gas: U128,
+        erc20: Option<String>,
     ) -> Promise {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
         require!(EVM_CHAINS.contains(&chain_id.0), "chain not supported; see EVM_CHAINS");
         let to = parse_evm_address(&to);
+        // ERC-20: the tx calls token.transfer(to, value_wei) and moves no ETH.
+        let (tx_to, value, input) = match &erc20 {
+            None => (to, value_wei.0, vec![]),
+            Some(t) => (parse_evm_address(t), 0, erc20_transfer_calldata(&to, value_wei.0)),
+        };
         let tx = omni_transaction::evm::EVMTransaction {
             chain_id: chain_id.0,
             nonce: nonce.0,
-            to: Some(to),
-            value: value_wei.0,
-            input: vec![],
+            to: Some(tx_to),
+            value,
+            input,
             gas_limit: gas_limit.0,
             max_fee_per_gas: max_fee_per_gas.0,
             max_priority_fee_per_gas: max_priority_fee_per_gas.0,
@@ -641,7 +667,7 @@ impl Pusaka {
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(10))
                     .with_unused_gas_weight(0)
-                    .on_eth_signed(token_id, chain_id, nonce, value_wei, hex::encode(sighash)),
+                    .on_eth_signed(token_id, chain_id, nonce, value_wei, hex::encode(sighash), erc20.map(|t| t.to_ascii_lowercase())),
             )
     }
 
@@ -653,17 +679,95 @@ impl Pusaka {
         nonce: U64,
         value_wei: U128,
         sighash: String,
+        erc20: Option<String>,
     ) -> SignedEth {
         self.pending.remove(&token_id);
         let signature: Option<Value> = match env::promise_result_checked(0, 1024) {
             Ok(b) => serde_json::from_slice(&b).ok(),
             _ => None,
         };
-        self.log(
-            &token_id,
-            Event::WithdrawEth { chain_id, nonce, value_wei, signed: signature.is_some() },
-        );
+        let signed = signature.is_some();
+        self.log(&token_id, match erc20 {
+            None => Event::WithdrawEth { chain_id, nonce, value_wei, signed },
+            Some(token) => Event::WithdrawErc20 { chain_id, nonce, token, amount: value_wei, signed },
+        });
         SignedEth { sighash, signature }
+    }
+
+    // ---------- Solana ----------
+
+    /// Owner-only. The token's Ed25519 MPC key (same path, domain 1) is a Solana address.
+    /// Builds a System transfer of `lamports` to `to` and asks the MPC network to sign it.
+    /// The contract fixes the message shape (no durable-nonce instruction), so a signature
+    /// dies with `recent_blockhash` after ~150 slots: buyers wait that out, not a nonce.
+    /// Attach 1 yoctoNEAR and 300 TGas.
+    #[payable]
+    pub fn withdraw_sol(&mut self, token_id: TokenId, to: String, lamports: U64, recent_blockhash: String) -> Promise {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        let to = parse_b58_32(&to, "to");
+        let blockhash = parse_b58_32(&recent_blockhash, "recent_blockhash");
+        require!(lamports.0 > 0, "lamports must be > 0");
+        charge_storage(0, 1);
+        self.bump_epoch(&token_id, 1);
+        self.pending.insert(token_id.clone(), env::block_height());
+        Promise::new(self.mpc.clone())
+            .function_call(
+                "derived_public_key",
+                json!({"path": btc_path(&token_id), "predecessor": env::current_account_id(), "domain_id": ED25519_DOMAIN})
+                    .to_string()
+                    .into_bytes(),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(KEY_TGAS),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(SIGN_TGAS + 25))
+                    .on_sol_key(token_id, to, lamports, blockhash),
+            )
+    }
+
+    #[private]
+    pub fn on_sol_key(&mut self, token_id: TokenId, to: [u8; 32], lamports: U64, blockhash: [u8; 32]) -> PromiseOrValue<SignedSol> {
+        let key = env::promise_result_checked(0, 256).ok()
+            .and_then(|b| serde_json::from_slice::<String>(&b).ok())
+            .and_then(|s| s.strip_prefix("ed25519:").and_then(|k| bs58::decode(k).into_vec().ok()))
+            .filter(|k| k.len() == 32)
+            .map(|k| <[u8; 32]>::try_from(k).unwrap())
+            .filter(|k| *k != to); // sending to itself: give up here, a panic would leave the lock on
+        let Some(from) = key else {
+            self.pending.remove(&token_id);
+            self.log(&token_id, Event::WithdrawSol { lamports, signed: false });
+            return PromiseOrValue::Value(SignedSol { message: String::new(), from: String::new(), signature: None });
+        };
+        let message = sol_transfer_message(&from, &to, lamports.0, &blockhash);
+        PromiseOrValue::Promise(
+            Promise::new(self.mpc.clone())
+                .function_call(
+                    "sign",
+                    json!({"request": {"path": btc_path(&token_id), "payload_v2": {"Eddsa": hex::encode(&message)}, "domain_id": ED25519_DOMAIN}})
+                        .to_string()
+                        .into_bytes(),
+                    NearToken::from_yoctonear(1),
+                    Gas::from_tgas(SIGN_TGAS),
+                )
+                .then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(Gas::from_tgas(8))
+                        .on_sol_signed(token_id, lamports, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &message), bs58::encode(from).into_string()),
+                ),
+        )
+    }
+
+    #[private]
+    pub fn on_sol_signed(&mut self, token_id: TokenId, lamports: U64, message: String, from: String) -> SignedSol {
+        self.pending.remove(&token_id);
+        let signature: Option<Value> = match env::promise_result_checked(0, 1024) {
+            Ok(b) => serde_json::from_slice(&b).ok(),
+            _ => None,
+        };
+        self.log(&token_id, Event::WithdrawSol { lamports, signed: signature.is_some() });
+        SignedSol { message, from, signature }
     }
 
     /// Lowest nonce on `chain_id` that has never been signed for this token (0 if none).
@@ -725,7 +829,12 @@ impl Pusaka {
             &token_id,
             Event::Sale { from: listing.seller.clone(), to: buyer.clone(), price },
         );
-        Promise::new(listing.seller).transfer(price).detach();
+        for (to, amount) in self.split(&token_id, &listing.seller, price.as_yoctonear()) {
+            if to != listing.seller {
+                self.log(&token_id, Event::Royalty { creator: to.clone(), amount: NearToken::from_yoctonear(amount) });
+            }
+            refund(to, NearToken::from_yoctonear(amount));
+        }
         refund(buyer, paid.saturating_sub(price));
     }
 
@@ -890,6 +999,23 @@ impl Pusaka {
         })
     }
 
+    /// Token creator, from metadata.extra (None for tokens minted before royalties).
+    fn creator(&self, token_id: &TokenId) -> Option<AccountId> {
+        let extra = self.tokens.token_metadata_by_id.as_ref()?.get(token_id)?.extra?;
+        serde_json::from_str::<Value>(&extra).ok()?.get("creator")?.as_str()?.parse().ok()
+    }
+
+    /// Who gets what from a sale by `seller`: royalty to the creator unless they are the seller.
+    fn split(&self, token_id: &TokenId, seller: &AccountId, amount: u128) -> Vec<(AccountId, u128)> {
+        match self.creator(token_id).filter(|c| c != seller) {
+            Some(c) => {
+                let r = amount * ROYALTY_BPS / 10_000;
+                vec![(seller.clone(), amount - r), (c, r)]
+            }
+            None => vec![(seller.clone(), amount)],
+        }
+    }
+
     fn epoch(&self, token_id: &TokenId) -> u32 {
         self.sign_epoch.get(token_id).copied().unwrap_or(0)
     }
@@ -987,6 +1113,35 @@ fn parse_evm_address(s: &str) -> [u8; 20] {
     let b = hex::decode(h).unwrap_or_default();
     require!(b.len() == 20, "to must be a 0x-prefixed 20-byte address");
     b.try_into().unwrap()
+}
+
+/// ABI for `transfer(address,uint256)`.
+fn erc20_transfer_calldata(to: &[u8; 20], amount: u128) -> Vec<u8> {
+    let mut d = vec![0xa9, 0x05, 0x9c, 0xbb];
+    d.extend([0u8; 12]);
+    d.extend(to);
+    d.extend([0u8; 16]);
+    d.extend(amount.to_be_bytes());
+    d
+}
+
+fn parse_b58_32(s: &str, what: &str) -> [u8; 32] {
+    let b = bs58::decode(s).into_vec().unwrap_or_default();
+    require!(b.len() == 32, format!("{what} must be a base58 32-byte value"));
+    b.try_into().unwrap()
+}
+
+/// Solana legacy message: one System Program `Transfer` from `from` (sole signer) to `to`.
+pub fn sol_transfer_message(from: &[u8; 32], to: &[u8; 32], lamports: u64, blockhash: &[u8; 32]) -> Vec<u8> {
+    let mut m = vec![1, 0, 1, 3]; // header (1 signer, 0 ro-signed, 1 ro-unsigned), 3 account keys
+    m.extend(from);
+    m.extend(to);
+    m.extend([0u8; 32]); // System Program
+    m.extend(blockhash);
+    m.extend([1, 2, 2, 0, 1, 12]); // 1 ix: program #2, accounts [0, 1], 12 data bytes
+    m.extend(2u32.to_le_bytes()); // SystemInstruction::Transfer
+    m.extend(lamports.to_le_bytes());
+    m
 }
 
 fn empty_meta() -> TokenMetadata {
@@ -1131,10 +1286,11 @@ impl Pusaka {
             &self.tokens, token_id, approved_account_id, approval_id)
     }
 
-    /// NEP-199: the whole sale price goes to the owner (no royalties).
+    /// NEP-199: the creator gets ROYALTY_BPS, the owner the rest.
     pub fn nft_payout(&self, token_id: TokenId, balance: U128, max_len_payout: Option<u32>) -> Payout {
-        require!(max_len_payout.is_none_or(|n| n >= 1), "max_len_payout too small");
-        Payout { payout: [(self.owner_of(&token_id), balance)].into_iter().collect() }
+        let split = self.split(&token_id, &self.owner_of(&token_id), balance.0);
+        require!(max_len_payout.is_none_or(|n| n as usize >= split.len()), "max_len_payout too small");
+        Payout { payout: split.into_iter().map(|(a, v)| (a, U128(v))).collect() }
     }
 
     /// NEP-199: an approved market transfers the token and gets back who to pay.

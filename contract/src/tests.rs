@@ -496,6 +496,7 @@ fn withdraw_eth(c: &mut Pusaka, caller: &str, nonce: u64) {
         U128(21_000),
         U128(30_000_000_000),
         U128(1_000_000_000),
+        None,
     );
 }
 
@@ -514,7 +515,7 @@ fn e1_floor_never_goes_down() {
     let mut c = setup();
     withdraw_eth(&mut c, "alice.testnet", 7);
     as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
-    let out = c.on_eth_signed("1".into(), U64(CHAIN), U64(7), U128(1), "00".into());
+    let out = c.on_eth_signed("1".into(), U64(CHAIN), U64(7), U128(1), "00".into(), None);
     assert!(out.signature.is_some());
     withdraw_eth(&mut c, "alice.testnet", 2); // an older nonce must not lower the floor
     assert_eq!(c.eth_nonce_floor("1".into(), U64(CHAIN)), U64(8));
@@ -549,7 +550,7 @@ fn e3_bad_evm_address_rejected() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
     let _ = c.withdraw_eth("1".into(), U64(CHAIN), U64(0), "0x1234".into(),
-        U128(1), U128(21_000), U128(1), U128(1));
+        U128(1), U128(21_000), U128(1), U128(1), None);
 }
 
 // ---------- review round 3: bind ETH state and loan terms ----------
@@ -561,7 +562,7 @@ fn r1_eth_signature_between_check_and_buy_fails() {
     let mut c = setup();
     withdraw_eth(&mut c, "alice.testnet", 0);
     as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
-    c.on_eth_signed("1".into(), U64(CHAIN), U64(0), U128(1), "00".into());
+    c.on_eth_signed("1".into(), U64(CHAIN), U64(0), U128(1), "00".into(), None);
     at("alice.testnet", NearToken::from_yoctonear(0), 0);
     c.list("1".into(), NearToken::from_near(5), None, None);
     at("bob.testnet", NearToken::from_near(5), 10);
@@ -596,7 +597,7 @@ fn r3_unlisted_chain_rejected() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
     let _ = c.withdraw_eth("1".into(), U64(56), U64(0), "0x".to_string() + &"ab".repeat(20),
-        U128(1), U128(21_000), U128(1), U128(1));
+        U128(1), U128(21_000), U128(1), U128(1), None);
 }
 
 #[test]
@@ -859,4 +860,165 @@ fn m6_approve_after_cooldown_works() {
     at("alice.testnet", NearToken::from_millinear(10), APPROVE_COOLDOWN_MS);
     let _ = c.nft_approve("1".into(), acc("market.testnet"), None);
     assert!(c.nft_is_approved("1".into(), acc("market.testnet"), None));
+}
+
+// ---------- ERC-20, more EVM chains, Solana, royalties ----------
+
+#[test]
+fn x1_erc20_calldata_is_transfer_to_amount() {
+    let to = [0xab; 20];
+    let d = erc20_transfer_calldata(&to, 1_000_000);
+    assert_eq!(hex::encode(&d[..4]), "a9059cbb");
+    assert_eq!(d.len(), 4 + 32 + 32);
+    assert_eq!(&d[16..36], &to);
+    assert_eq!(u128::from_be_bytes(d[52..68].try_into().unwrap()), 1_000_000);
+}
+
+#[test]
+fn x2_erc20_withdrawal_shares_the_nonce_floor_and_is_logged() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let usdc = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238".to_string();
+    let _ = c.withdraw_eth("1".into(), U64(CHAIN), U64(3), "0x".to_string() + &"ab".repeat(20),
+        U128(5_000_000), U128(80_000), U128(1), U128(1), Some(usdc.clone()));
+    assert_eq!(c.eth_nonce_floor("1".into(), U64(CHAIN)), U64(4));
+    as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
+    let _ = c.on_eth_signed("1".into(), U64(CHAIN), U64(3), U128(5_000_000), "00".into(), Some(usdc.to_ascii_lowercase()));
+    let h = c.token_info("1".into()).unwrap().history;
+    assert!(matches!(&h.last().unwrap().event, Event::WithdrawErc20 { token, amount, .. } if token == &usdc.to_ascii_lowercase() && amount.0 == 5_000_000));
+}
+
+#[test]
+fn x3_every_listed_evm_chain_is_accepted() {
+    let mut c = setup();
+    for (i, chain) in EVM_CHAINS.iter().enumerate() {
+        ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+        let _ = c.withdraw_eth("1".into(), U64(*chain), U64(i as u64), "0x".to_string() + &"ab".repeat(20),
+            U128(1), U128(21_000), U128(1), U128(1), None);
+        assert_eq!(c.eth_nonce_floor("1".into(), U64(*chain)), U64(i as u64 + 1));
+        as_contract(vec![PromiseResult::Successful(SIG.as_bytes().to_vec())]);
+        let _ = c.on_eth_signed("1".into(), U64(*chain), U64(i as u64), U128(1), "00".into(), None);
+    }
+}
+
+const SOL_TO: &str = "11111111111111111111111111111112"; // any 32-byte base58 key
+const SOL_KEY: &str = "\"ed25519:BDW6jsm1qFKjVac7dsBCUpDJAeXX2Emzn2bjnuYrVKxQ\"";
+
+fn withdraw_sol(c: &mut Pusaka, caller: &str) {
+    ctx(caller, NearToken::from_yoctonear(1), vec![]);
+    let _ = c.withdraw_sol("1".into(), SOL_TO.into(), U64(1_000_000), SOL_TO.into());
+}
+
+#[test]
+fn s1_solana_message_layout() {
+    let (a, b, h) = ([1u8; 32], [2u8; 32], [3u8; 32]);
+    let m = sol_transfer_message(&a, &b, 42, &h);
+    assert_eq!(m.len(), 4 + 96 + 32 + 6 + 12);
+    assert_eq!(&m[..4], &[1, 0, 1, 3]);
+    assert_eq!(&m[4..36], &a);
+    assert_eq!(&m[68..100], &[0u8; 32]);
+    assert_eq!(&m[100..132], &h);
+    assert_eq!(u32::from_le_bytes(m[138..142].try_into().unwrap()), 2);
+    assert_eq!(u64::from_le_bytes(m[142..150].try_into().unwrap()), 42);
+}
+
+#[test]
+fn s2_sol_withdrawal_locks_and_bumps_epoch() {
+    let mut c = setup();
+    let before = c.token_info("1".into()).unwrap().sign_epoch;
+    withdraw_sol(&mut c, "alice.testnet");
+    let i = c.token_info("1".into()).unwrap();
+    assert!(i.pending);
+    assert_eq!(i.sign_epoch, before + 1);
+    as_contract(vec![PromiseResult::Successful(SOL_KEY.as_bytes().to_vec())]);
+    assert!(matches!(c.on_sol_key("1".into(), [9; 32], U64(1_000_000), [3; 32]), PromiseOrValue::Promise(_)));
+    as_contract(vec![PromiseResult::Successful(br#"{"scheme":"Ed25519","signature":[1]}"#.to_vec())]);
+    let out = c.on_sol_signed("1".into(), U64(1_000_000), "AA==".into(), "x".into());
+    assert!(out.signature.is_some());
+    assert!(!c.token_info("1".into()).unwrap().pending);
+}
+
+#[test]
+fn s3_failed_key_or_self_send_releases_the_lock() {
+    let mut c = setup();
+    withdraw_sol(&mut c, "alice.testnet");
+    as_contract(vec![PromiseResult::Failed]);
+    assert!(matches!(c.on_sol_key("1".into(), [9; 32], U64(1), [3; 32]), PromiseOrValue::Value(_)));
+    assert!(!c.token_info("1".into()).unwrap().pending);
+    withdraw_sol(&mut c, "alice.testnet");
+    let own: [u8; 32] = bs58::decode("BDW6jsm1qFKjVac7dsBCUpDJAeXX2Emzn2bjnuYrVKxQ").into_vec().unwrap().try_into().unwrap();
+    as_contract(vec![PromiseResult::Successful(SOL_KEY.as_bytes().to_vec())]);
+    assert!(matches!(c.on_sol_key("1".into(), own, U64(1), [3; 32]), PromiseOrValue::Value(_)));
+    assert!(!c.token_info("1".into()).unwrap().pending);
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn s4_non_owner_cannot_sign_solana() {
+    let mut c = setup();
+    withdraw_sol(&mut c, "bob.testnet");
+}
+
+#[test]
+#[should_panic(expected = "Listed")]
+fn s4_solana_locked_while_listed() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    withdraw_sol(&mut c, "alice.testnet");
+}
+
+#[test]
+#[should_panic(expected = "base58")]
+fn s5_bad_solana_address_rejected() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.withdraw_sol("1".into(), "0xdead".into(), U64(1), SOL_TO.into());
+}
+
+/// alice mints, sells to bob; bob's resale pays alice the royalty.
+fn resold() -> Pusaka {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    let e = c.token_info("1".into()).unwrap().sign_epoch;
+    ctx("bob.testnet", NearToken::from_near(1), vec![]);
+    c.buy("1".into(), e);
+    c
+}
+
+#[test]
+fn y1_creator_recorded_and_no_royalty_on_first_sale() {
+    let c = resold();
+    let h = c.token_info("1".into()).unwrap().history;
+    assert!(!h.iter().any(|e| matches!(e.event, Event::Royalty { .. })));
+    assert_eq!(c.creator(&"1".to_string()), Some(acc("alice.testnet")));
+}
+
+#[test]
+fn y2_resale_pays_creator_royalty() {
+    let mut c = resold();
+    ctx("bob.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(2), None, None);
+    let e = c.token_info("1".into()).unwrap().sign_epoch;
+    ctx("carol.testnet", NearToken::from_near(2), vec![]);
+    c.buy("1".into(), e);
+    let h = c.token_info("1".into()).unwrap().history;
+    let r = h.iter().find_map(|e| match &e.event { Event::Royalty { creator, amount } => Some((creator.clone(), *amount)), _ => None });
+    assert_eq!(r, Some((acc("alice.testnet"), NearToken::from_millinear(50))));
+}
+
+#[test]
+fn y3_nep199_payout_includes_creator() {
+    let c = resold();
+    let p = c.nft_payout("1".into(), U128(10_000), Some(5));
+    assert_eq!(p.payout.get(&acc("bob.testnet")), Some(&U128(9_750)));
+    assert_eq!(p.payout.get(&acc("alice.testnet")), Some(&U128(250)));
+}
+
+#[test]
+#[should_panic(expected = "max_len_payout")]
+fn y3_payout_respects_max_len() {
+    let c = resold();
+    let _ = c.nft_payout("1".into(), U128(10_000), Some(1));
 }

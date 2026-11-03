@@ -1,7 +1,9 @@
 // Pusaka constants + Bitcoin helpers shared by the scripts (Node) and the web app (browser).
 import * as bitcoin from "bitcoinjs-lib";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { mainnet, sepolia } from "viem/chains";
+import { mainnet, sepolia, base, baseSepolia, arbitrum, arbitrumSepolia } from "viem/chains";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { base58, base64 } from "@scure/base";
 
 // One switch for everything network-specific. Node: PUSAKA_NETWORK=mainnet; Vite: VITE_NETWORK=mainnet.
 const env = (k) => globalThis.process?.env?.[k] ?? import.meta.env?.[`VITE_${k.replace("PUSAKA_", "")}`];
@@ -16,7 +18,13 @@ const CONFIG = {
     txApi: "https://tx.test.fastnear.com", // FastNear transactions API (CORS-enabled)
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
     mempool: "https://mempool.space/testnet",
-    evm: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" },
+    // Same order as EVM_CHAINS in the contract. USDC: Circle's official testnet deployments.
+    evm: [
+      { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io", usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
+      { chain: baseSepolia, rpc: "https://base-sepolia-rpc.publicnode.com", explorer: "https://sepolia.basescan.org", usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
+      { chain: arbitrumSepolia, rpc: "https://arbitrum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.arbiscan.io", usdc: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d" },
+    ],
+    sol: { rpc: "https://api.devnet.solana.com", explorer: (a) => `https://explorer.solana.com/${a}?cluster=devnet`, name: "Solana devnet" },
     market: "market-v2-beta.mintspace2.testnet", // Mintbase
   },
   mainnet: {
@@ -27,7 +35,12 @@ const CONFIG = {
     txApi: "https://tx.main.fastnear.com",
     btc: bitcoin.networks.bitcoin,
     mempool: "https://mempool.space",
-    evm: { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io" },
+    evm: [
+      { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io", usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },
+      { chain: base, rpc: "https://base-rpc.publicnode.com", explorer: "https://basescan.org", usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+      { chain: arbitrum, rpc: "https://arbitrum-one-rpc.publicnode.com", explorer: "https://arbiscan.io", usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" },
+    ],
+    sol: { rpc: "https://api.mainnet-beta.solana.com", explorer: (a) => `https://explorer.solana.com/${a}`, name: "Solana" },
     market: "simple.market.mintbase1.near", // Mintbase
   },
 }[NETWORK];
@@ -166,11 +179,13 @@ export async function broadcast(txHex) {
 }
 
 // ---------- EVM: the same MPC key also owns one address on every EVM chain ----------
-import { createPublicClient, http, keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex } from "viem";
-export const EVM = CONFIG.evm;
+import { createPublicClient, http, keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex, encodeFunctionData, erc20Abi } from "viem";
+/** Every EVM chain the contract signs for (EVM_CHAINS), each with a client. */
+export const EVM_CHAINS = CONFIG.evm.map((c) => ({ ...c, client: createPublicClient({ chain: c.chain, transport: http(c.rpc) }) }));
+export const EVM = EVM_CHAINS[0];
+const chainOf = (id) => EVM_CHAINS.find((c) => c.chain.id === Number(id ?? EVM.chain.id)) ?? (() => { throw new Error(`chain ${id} not supported`); })();
 /** An outside NEP-178/199 market Pusaka can be sold on (Mintbase). */
 export const MARKET = CONFIG.market;
-const evmClient = createPublicClient({ chain: EVM.chain, transport: http(EVM.rpc) });
 
 export function evmAddress(pubkeyHex) {
   const uncompressed = secp256k1.Point.fromHex(pubkeyHex).toBytes(false); // 65 bytes, 0x04 prefix
@@ -181,27 +196,36 @@ export function evmAddress(pubkeyHex) {
  * ETH a buyer can rely on. Every nonce below `floor` may have a signed tx in the wild,
  * so the balance only counts once the account's on-chain nonce has reached the floor.
  */
-export async function evmBalances(address, floor) {
-  const [wei, nonce] = await Promise.all([
-    evmClient.getBalance({ address }),
+export async function evmBalances(address, floor, chainId) {
+  const { client, usdc } = chainOf(chainId);
+  const [wei, nonce, usdcUnits] = await Promise.all([
+    client.getBalance({ address }),
     // latest, not pending: a signed tx still sitting in the mempool must keep the ETH at risk
-    evmClient.getTransactionCount({ address, blockTag: "latest" }),
+    client.getTransactionCount({ address, blockTag: "latest" }),
+    client.readContract({ address: usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] }),
   ]);
+  // One nonce sequence covers ETH and every token on the chain, so the same floor clears both.
   const clear = nonce >= Number(floor);
-  return { wei, nonce, safe: clear ? wei : 0n, atRisk: clear ? 0n : wei };
+  return { wei, nonce, usdc: usdcUnits, safe: clear ? wei : 0n, atRisk: clear ? 0n : wei, usdcSafe: clear ? usdcUnits : 0n, usdcAtRisk: clear ? 0n : usdcUnits };
 }
 
-export async function evmTxParams(address) {
+/** ERC-20 transfers need more than 21k gas; `erc20` set means a USDC transfer. */
+export async function evmTxParams(address, chainId, erc20) {
+  const { client } = chainOf(chainId);
   const [nonce, fees] = await Promise.all([
-    evmClient.getTransactionCount({ address, blockTag: "pending" }),
-    evmClient.estimateFeesPerGas(),
+    client.getTransactionCount({ address, blockTag: "pending" }),
+    client.estimateFeesPerGas(),
   ]);
-  return { nonce, gas: 21000n, maxFeePerGas: fees.maxFeePerGas * 2n, maxPriorityFeePerGas: fees.maxPriorityFeePerGas };
+  return { chainId: chainOf(chainId).chain.id, nonce, gas: erc20 ? 100_000n : 21000n, maxFeePerGas: fees.maxFeePerGas * 2n, maxPriorityFeePerGas: fees.maxPriorityFeePerGas };
 }
 
-/** Unsigned EIP-1559 tx with exactly the fields the contract hashed. */
-export function evmTx({ nonce, to, value, gas, maxFeePerGas, maxPriorityFeePerGas }) {
-  return { type: "eip1559", chainId: EVM.chain.id, nonce, to, value, gas, maxFeePerGas, maxPriorityFeePerGas };
+/** Unsigned EIP-1559 tx with exactly the fields the contract hashed. With `erc20`, `value` is token units. */
+export function evmTx({ chainId = EVM.chain.id, nonce, to, value, gas, maxFeePerGas, maxPriorityFeePerGas, erc20 }) {
+  if (erc20) {
+    const data = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [to, value] });
+    return { type: "eip1559", chainId, nonce, to: getAddress(erc20), value: 0n, data, gas, maxFeePerGas, maxPriorityFeePerGas };
+  }
+  return { type: "eip1559", chainId, nonce, to, value, gas, maxFeePerGas, maxPriorityFeePerGas };
 }
 
 /**
@@ -220,9 +244,58 @@ export async function finalizeEth(tx, signed, expectedFrom) {
   return serializeTransaction(tx, signature);
 }
 
-export async function broadcastEth(raw) {
-  return evmClient.sendRawTransaction({ serializedTransaction: raw });
+export async function broadcastEth(raw, chainId) {
+  return chainOf(chainId).client.sendRawTransaction({ serializedTransaction: raw });
 }
+
+// ---------- Solana: the token's Ed25519 MPC key (same path, domain 1) is a Solana address ----------
+export const SOL = CONFIG.sol;
+/** A Solana signature dies with its blockhash (~150 slots, about a minute); this leaves margin. */
+export const SOL_SIGNATURE_TTL_MS = 3 * 60_000;
+const solRpc = (method, params = []) => fetch(SOL.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
+  .then((r) => r.json()).then((j) => { if (j.error) throw new Error(`Solana: ${j.error.message}`); return j.result; });
+
+/** Asks the MPC contract which Solana address belongs to this token. */
+export async function solAddress(tokenId) {
+  const args = { path: `pusaka-${tokenId}`, predecessor: CONTRACT, domain_id: 1 };
+  const r = await fetch(NEAR_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
+    request_type: "call_function", finality: "optimistic", account_id: MPC, method_name: "derived_public_key",
+    args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) } }) }).then((x) => x.json());
+  if (!r.result?.result) throw new Error("MPC key lookup failed");
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(r.result.result))).replace("ed25519:", "");
+}
+
+/**
+ * SOL a buyer can rely on. Signatures can't outlive their blockhash and the contract only
+ * signs plain transfers (no durable nonce), so a few minutes after the last SOL signature
+ * nothing signed can still land.
+ */
+export async function solBalances(address, history = []) {
+  const { value: lamports } = await solRpc("getBalance", [address, { commitment: "confirmed" }]);
+  const last = Math.max(0, ...history.filter((h) => h.event.kind === "WithdrawSol").map((h) => Number(h.at_ms)));
+  const clear = Date.now() - last > SOL_SIGNATURE_TTL_MS;
+  return { lamports: BigInt(lamports), safe: clear ? BigInt(lamports) : 0n, atRisk: clear ? 0n : BigInt(lamports), clearAt: clear ? null : last + SOL_SIGNATURE_TTL_MS };
+}
+
+export async function solBlockhash() {
+  return (await solRpc("getLatestBlockhash", [{ commitment: "finalized" }])).value.blockhash;
+}
+
+/** Checks the MPC signature against the token's key and the message, then builds the wire tx (base64). */
+export function finalizeSol(signed) {
+  if (!signed.signature) throw new Error("the MPC network returned no signature");
+  const raw = signed.signature.signature ?? signed.signature;
+  const sig = typeof raw === "string" ? fromHex(raw) : Uint8Array.from(raw);
+  const message = base64.decode(signed.message);
+  if (!ed25519.verify(sig, message, base58.decode(signed.from))) throw new Error("signature doesn't verify for this Pusaka's Solana key");
+  return base64.encode(Uint8Array.from([1, ...sig, ...message]));
+}
+
+export async function broadcastSol(b64) {
+  return solRpc("sendTransaction", [b64, { encoding: "base64", preflightCommitment: "confirmed" }]);
+}
+
+export const isSolAddress = (a) => { try { return base58.decode(a.trim()).length === 32; } catch { return false; } };
 
 // ---------- Prices: real market data, for valuing collateral and listings ----------
 // BTC/USD from mempool.space; NEAR and ETH from Rhea (Ref Finance), i.e. NEAR DEX prices.
