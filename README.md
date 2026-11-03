@@ -51,6 +51,14 @@ What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the 
 
 Already have accounts in `.keys/` and a funded token? `npm run demo -- --token 1 --seller a.testnet --buyer b.testnet` skips steps 1–3.
 
+### 2b. End-to-end checks against the live app (~20 s)
+
+```sh
+npm run e2e -w web          # Playwright, against https://pusaka-two.vercel.app
+```
+
+See: `7 passed` (home, detail, not-found recovery, phone layout, no-wallet actions, relayer input checks, on-chain NFT image).
+
 ### 3. Use the web app
 
 ```sh
@@ -114,6 +122,7 @@ The web app shows this verified amount first, offers *Prove deposit* for confirm
 
 Tools: `pusaka_overview`, `pusaka_inspect` (verified BTC, USD value, ETH safe/at-risk, listing premium, loan LTV/APR, sign epoch), `pusaka_buy`, `pusaka_fund_loan`, `pusaka_repay_loan`, `pusaka_claim_collateral`, `pusaka_list`, `pusaka_cancel_listing`, `pusaka_request_loan`, `pusaka_prove_deposits`, `pusaka_withdraw_btc`, `pusaka_mint`.
 Guard rails the agent can't talk its way around: a per-session NEAR spend cap, `max_price_near` on buys, `max_ltv` on loans (it refuses collateral with no verified BTC), and the same sign-epoch / loan-terms binding as the web app.
+**Remote, no install:** point any MCP client at `https://pusaka-two.vercel.app/api/mcp` (Streamable HTTP) for the read-only tools (`pusaka_overview`, `pusaka_inspect`); check it with `node mcp/remote-smoke.mjs`. Trading tools stay local so the agent's key never leaves its machine.
 **Try:** `npm run smoke -w mcp` (read tools and guards) and `node mcp/trade.mjs <seller> <buyer> <id> <price>`. On testnet one agent listed Pusaka #1 for 0.3 NEAR and another bought it under a 0.35 NEAR cap.
 
 ## Gas-free actions: NEP-366 relayer
