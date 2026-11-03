@@ -2,7 +2,12 @@
   "name": "pusaka",
   "private": true,
   "type": "module",
-  "workspaces": ["shared", "scripts", "web"],
+  "workspaces": [
+    "shared",
+    "scripts",
+    "web",
+    "mcp"
+  ],
   "scripts": {
     "demo": "npm run demo -w scripts --",
     "setup": "npm run setup -w scripts",
