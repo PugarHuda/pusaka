@@ -6,7 +6,9 @@ const RPC = "https://test.rpc.fastnear.com";
 export const provider = new JsonRpcProvider({ url: RPC });
 export const connector = new NearConnector({ network: "testnet", providers: { testnet: [RPC] } });
 
-export const view = (method, args = {}) => provider.callFunction({ contractId: CONTRACT, method, args });
+// optimistic: right after a wallet transaction the UI must see its result, not a block or two behind
+export const view = (method, args = {}) =>
+  provider.callFunction({ contractId: CONTRACT, method, args, blockQuery: { finality: "optimistic" } });
 
 /** Signs with the connected wallet and returns the decoded result of the whole receipt chain. */
 export async function call(method, args = {}, { deposit = 0n, tgas = 100 } = {}) {

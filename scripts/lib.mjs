@@ -51,7 +51,7 @@ export async function faucetAccount(accountId) {
 }
 
 export async function view(method, args = {}, contractId = CONTRACT) {
-  return provider.callFunction({ contractId, method, args });
+  return provider.callFunction({ contractId, method, args, blockQuery: { finality: "optimistic" } });
 }
 
 /** Calls the contract and returns the decoded return value of the whole receipt chain. */
