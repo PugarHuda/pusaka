@@ -13,6 +13,7 @@ const CONFIG = {
     mpc: "v1.signer-prod.testnet",
     nearRpc: "https://test.rpc.fastnear.com",
     nearExplorer: "https://testnet.near.rocks",
+    txApi: "https://tx.test.fastnear.com", // FastNear transactions API (CORS-enabled)
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
     mempool: "https://mempool.space/testnet",
     evm: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" },
@@ -23,6 +24,7 @@ const CONFIG = {
     mpc: "v1.signer",
     nearRpc: "https://free.rpc.fastnear.com",
     nearExplorer: "https://near.rocks",
+    txApi: "https://tx.main.fastnear.com",
     btc: bitcoin.networks.bitcoin,
     mempool: "https://mempool.space",
     evm: { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io" },
@@ -245,6 +247,36 @@ export async function prices() {
 }
 
 /** Loan economics from contract terms and live prices. */
+/**
+ * Latest transactions touching the contract, newest first, from FastNear's indexer:
+ * [{ hash, at, signer, by, method, ok }]. `by` is the account that signed a relayed (NEP-366)
+ * call when a relayer paid for it.
+ */
+export async function recentActivity(n = 8) {
+  const post = (p, body) => fetch(`${CONFIG.txApi}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    .then((r) => { if (!r.ok) throw new Error(`FastNear ${r.status}`); return r.json(); });
+  const { account_txs } = await post("/v0/account", { account_id: CONTRACT });
+  const latest = account_txs.slice(0, n);
+  const { transactions } = await post("/v0/transactions", { tx_hashes: latest.map((t) => t.transaction_hash) });
+  const byHash = new Map(transactions.map((t) => [t.transaction.hash, t.transaction]));
+  return latest.map((a) => {
+    const tx = byHash.get(a.transaction_hash);
+    const act = tx?.actions?.[0] ?? {};
+    const inner = act.Delegate?.delegate_action;
+    const fc = (inner?.actions?.[0] ?? act).FunctionCall;
+    const method = fc?.method_name ?? Object.keys(inner?.actions?.[0] ?? act)[0] ?? "?";
+    return {
+      hash: a.transaction_hash,
+      at: Number(BigInt(a.tx_block_timestamp) / 1_000_000n),
+      signer: tx?.signer_id,
+      by: inner?.sender_id,
+      receiver: inner?.receiver_id ?? tx?.receiver_id,
+      method: typeof method === "string" ? method : "?",
+      ok: a.is_success,
+    };
+  });
+}
+
 export function loanStats({ principal, repay, duration_ms }, collateralSats, p) {
   const yocto = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6; // NEAR, 6 dp
   const principalUsd = yocto(principal) * p.nearUsd;

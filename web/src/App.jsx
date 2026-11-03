@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CONTRACT, EXPLORER, MARKET, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
-  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId,
+  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
   EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
 import { formatEther, parseEther, isAddress } from "viem";
@@ -153,22 +153,60 @@ function Home() {
         </ol>
       </section>
 
+      <Activity />
+
       <section className="gallery" aria-label="All Pusaka">
         {error && <p className="error">{error}</p>}
         {!tokens && !error && <p className="muted">Reading the contract…</p>}
         {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
         {tokens?.map((t) => (
           <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
-            <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} locked={!!t.info.listing || !!t.info.loan || t.info.pending} size={168} />
+            <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
             <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
             {t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
             {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
+            {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
         ))}
       </section>
     </>
+  );
+}
+
+const ACTIVITY = {
+  nft_mint: "minted a Pusaka", list: "listed one for sale", cancel_listing: "took one off sale", buy: "bought one",
+  withdraw: "withdrew BTC", withdraw_eth: "withdrew ETH", prove_deposit: "proved a BTC deposit",
+  request_loan: "asked for a loan", cancel_loan_request: "cancelled a loan request", fund_loan: "funded a loan",
+  repay_loan: "repaid a loan", claim_collateral: "claimed collateral", nft_approve: "listed one on Mintbase",
+  nft_revoke_all: "stopped selling on Mintbase", nft_transfer: "transferred one", migrate: "upgraded the contract",
+  DeployContract: "upgraded the contract",
+};
+
+/** Latest contract transactions from FastNear's indexer, each linking to the explorer. */
+function Activity() {
+  const [rows, setRows] = useState(null);
+  const [now] = useState(() => Date.now());
+  useEffect(() => { recentActivity(6).then(setRows).catch(() => setRows([])); }, []);
+  if (!rows?.length) return null;
+  const ago = (ms) => { const m = Math.max(0, Math.round((now - ms) / 60_000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+  return (
+    <section className="activity" aria-label="Latest on-chain activity">
+      <h2>Latest on NEAR</h2>
+      <ul>
+        {rows.map((r) => (
+          <li key={r.hash}>
+            <a href={`${NEAR_EXPLORER}/tx/${r.hash}`} target="_blank" rel="noreferrer">
+              {r.by ?? r.signer} {r.receiver === MARKET && r.method === "buy" ? "bought one on Mintbase" : ACTIVITY[r.method] ?? `called ${r.method}`}
+            </a>
+            {r.by && <span className="muted"> (gas paid by {r.signer})</span>}
+            {!r.ok && <span className="muted"> (failed)</span>}
+            <span className="muted"> · {ago(r.at)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -187,7 +225,7 @@ function Detail({ id, accountId }) {
   const { info, address, bal } = t;
   const owner = info.token.owner_id;
   const isOwner = accountId === owner;
-  const locked = !!info.listing || !!info.loan || info.pending;
+  const locked = !!info.listing || !!info.loan || info.pending || Object.keys(info.token.approved_account_ids ?? {}).length > 0;
 
   return (
     <article className="detail">

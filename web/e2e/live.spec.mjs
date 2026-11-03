@@ -105,3 +105,10 @@ test("a Pusaka on sale through an outside market shows it, and that its BTC is l
   await expect(page.locator(".actions")).toContainText(/On sale through .*mintspace2\.testnet/, { timeout: 30_000 });
   await expect(page.locator(".actions")).toContainText(/Bitcoin is locked/);
 });
+
+test("home shows the latest contract transactions, linked to the explorer", async ({ page }) => {
+  await page.goto("/#/");
+  const links = page.locator(".activity a");
+  await expect(links.first()).toBeVisible({ timeout: 30_000 });
+  await expect(links.first()).toHaveAttribute("href", /near\.rocks\/tx\/[1-9A-HJ-NP-Za-km-z]{43,44}$/);
+});
