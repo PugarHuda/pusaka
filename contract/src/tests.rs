@@ -598,3 +598,19 @@ fn r3_unlisted_chain_rejected() {
     let _ = c.withdraw_eth("1".into(), U64(1), U64(0), "0x".to_string() + &"ab".repeat(20),
         U128(1), U128(21_000), U128(1), U128(1));
 }
+
+#[test]
+fn r4_huge_auction_does_not_overflow() {
+    // 1M NEAR falling to 1 NEAR over 7 days used to overflow u128 after ~3.9 days.
+    let l = Listing {
+        seller: acc("alice.testnet"),
+        price: NearToken::from_near(1_000_000),
+        floor: NearToken::from_near(1),
+        start_ms: U64(0),
+        end_ms: U64(7 * DAY_MS),
+    };
+    let mid = l.price_at(7 * DAY_MS / 2).as_near();
+    assert!((499_999..=500_001).contains(&mid), "midpoint {mid}");
+    assert_eq!(l.price_at(6 * DAY_MS + 1).as_yoctonear() > NearToken::from_near(1).as_yoctonear(), true);
+    assert_eq!(l.price_at(8 * DAY_MS), NearToken::from_near(1));
+}

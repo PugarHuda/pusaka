@@ -89,8 +89,9 @@ impl Listing {
             return self.floor;
         }
         let (hi, lo) = (self.price.as_yoctonear(), self.floor.as_yoctonear());
-        let elapsed = now_ms.saturating_sub(start) as u128;
-        NearToken::from_yoctonear(hi - (hi - lo) * elapsed / (end - start) as u128)
+        let (span, e, d) = (hi - lo, now_ms.saturating_sub(start) as u128, (end - start) as u128);
+        // span * e / d without overflowing u128 for large prices and long auctions
+        NearToken::from_yoctonear(hi - (span / d * e + span % d * e / d))
     }
 }
 
@@ -451,7 +452,6 @@ impl Pusaka {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
         require!(EVM_CHAINS.contains(&chain_id.0), "chain not supported; see EVM_CHAINS");
-        charge_storage(ETH_NONCE_BYTES, 1);
         let to = parse_evm_address(&to);
         let tx = omni_transaction::evm::EVMTransaction {
             chain_id: chain_id.0,
@@ -469,6 +469,8 @@ impl Pusaka {
         // Before signing: every nonce below the floor may have a signature in the wild.
         // A buyer only trusts the balance once the chain's nonce has passed the floor.
         let key = format!("{token_id}:{}", chain_id.0);
+        let new_entry = !self.eth_nonces.contains_key(&key);
+        charge_storage(if new_entry { ETH_NONCE_BYTES } else { 0 }, 1);
         let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0 + 1);
         self.eth_nonces.insert(key, floor);
         self.bump_epoch(&token_id, 1);

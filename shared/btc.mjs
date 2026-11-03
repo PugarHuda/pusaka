@@ -106,7 +106,8 @@ export function evmAddress(pubkeyHex) {
 export async function evmBalances(address, floor) {
   const [wei, nonce] = await Promise.all([
     evmClient.getBalance({ address }),
-    evmClient.getTransactionCount({ address, blockTag: "pending" }),
+    // latest, not pending: a signed tx still sitting in the mempool must keep the ETH at risk
+    evmClient.getTransactionCount({ address, blockTag: "latest" }),
   ]);
   const clear = nonce >= Number(floor);
   return { wei, nonce, safe: clear ? wei : 0n, atRisk: clear ? 0n : wei };

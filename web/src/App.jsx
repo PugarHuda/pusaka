@@ -102,8 +102,9 @@ function Home() {
   const [error, setError] = useState("");
   useEffect(() => {
     view("nft_tokens", { from_index: "0", limit: 60 })
-      .then((ts) => Promise.all(ts.map((t) => loadToken(t.token_id))))
-      .then((list) => setTokens(list.filter(Boolean).reverse()))
+      // allSettled: one token that fails to load must not hide the rest of the gallery
+      .then((ts) => Promise.allSettled(ts.map((t) => loadToken(t.token_id))))
+      .then((rs) => setTokens(rs.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value).reverse()))
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
   }, []);
 
