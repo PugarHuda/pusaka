@@ -614,3 +614,71 @@ fn r4_huge_auction_does_not_overflow() {
     assert_eq!(l.price_at(6 * DAY_MS + 1).as_yoctonear() > NearToken::from_near(1).as_yoctonear(), true);
     assert_eq!(l.price_at(8 * DAY_MS), NearToken::from_near(1));
 }
+
+// ---------- trustless deposits (light client) ----------
+
+/// Real Bitcoin testnet3 tx 077f4f07…00c3 (block 5260738), non-witness serialization.
+const REAL_TX: &str = "0100000002715ab11ef9d3e33640b57d78c4f2df234d6157ab78065402f9864c6f962ed2e70000000000ffffffff5a83e222d73ed0b88b383534930b9ab2358b1f3ab9c28de891731af33a4d97c40000000000ffffffff0238e4010000000000160014e309c53e7ecc118d6197598f83dab4c3d99a006bd477000000000000160014bc0cd3cd486c63fbeaa51c9dc5b562165e616a0700000000";
+const REAL_TXID: &str = "077f4f07163041c6c255499261248b2887a389f493d11230b9d0722ce8b600c3";
+
+#[test]
+fn p1_parses_real_bitcoin_tx_and_computes_txid() {
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    let tx = hex::decode(REAL_TX).unwrap();
+    let (v0, s0) = btc::output(&tx, 0);
+    let (v1, s1) = btc::output(&tx, 1);
+    assert_eq!((v0, hex::encode(s0)), (123_960, "0014e309c53e7ecc118d6197598f83dab4c3d99a006b".to_string()));
+    assert_eq!((v1, hex::encode(s1)), (30_676, "0014bc0cd3cd486c63fbeaa51c9dc5b562165e616a07".to_string()));
+    let mut id = btc::sha256d(&tx);
+    id.reverse();
+    assert_eq!(hex::encode(id), REAL_TXID);
+}
+
+#[test]
+#[should_panic(expected = "output does not pay this Pusaka")]
+fn p2_deposit_to_someone_else_rejected() {
+    let mut c = setup();
+    ctx("bob.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.prove_deposit("1".into(), REAL_TX.into(), 0, "00".repeat(32), U64(1), vec![],
+        "00".repeat(32), vec![]);
+}
+
+#[test]
+#[should_panic(expected = "non-witness serialization")]
+fn p2_segwit_serialization_rejected() {
+    let mut c = setup();
+    ctx("bob.testnet", NearToken::from_millinear(20), vec![]);
+    let segwit = format!("{}0001{}", &REAL_TX[..8], &REAL_TX[8..]);
+    let _ = c.prove_deposit("1".into(), segwit, 0, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+}
+
+fn proven(c: &mut Pusaka, result: &[u8], vout: u32, value: u64) -> bool {
+    as_contract(vec![PromiseResult::Successful(result.to_vec())]);
+    c.on_deposit_proven("1".into(), TXID.into(), vout, U64(value))
+}
+
+#[test]
+fn p3_verified_balance_counts_only_proven_never_signed() {
+    let mut c = setup();
+    assert!(proven(&mut c, b"true", 0, 70_000));
+    assert!(proven(&mut c, b"true", 1, 30_000));
+    assert!(!proven(&mut c, b"false", 2, 99_999)); // light client said no
+    assert!(proven(&mut c, b"true", 0, 70_000)); // duplicate: not double counted
+    let info = c.token_info("1".into()).unwrap();
+    assert_eq!(info.proven_utxos.len(), 2);
+    assert_eq!(info.verified_sats, U64(100_000));
+
+    // Once outpoint 0 is signed for, it no longer counts: someone holds a signature.
+    withdraw(&mut c, "alice.testnet", &[0]);
+    assert_eq!(c.token_info("1".into()).unwrap().verified_sats, U64(30_000));
+}
+
+#[test]
+fn p4_proof_args_borsh_layout() {
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    let h = "11".repeat(32);
+    let b = btc::proof_args_borsh(&[7u8; 32], &h, 5, &[h.clone(), h.clone()], &h, &[h.clone()], 1);
+    assert_eq!(b.len(), 32 + 32 + 8 + 4 + 64 + 32 + 4 + 32 + 8);
+    assert_eq!(&b[64..72], &5u64.to_le_bytes());
+    assert_eq!(&b[72..76], &2u32.to_le_bytes());
+}

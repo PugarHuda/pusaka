@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
-  balances, broadcast, btcAddress, finalize, scriptHex,
+  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT,
   EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
 } from "@pusaka/shared";
 import { formatEther, parseEther, isAddress } from "viem";
@@ -133,10 +133,10 @@ function Home() {
         {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
         {tokens?.map((t) => (
           <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
-            <Emblem pubkey={t.info.btc_pubkey} sats={t.bal.safe} locked={!!t.info.listing || !!t.info.loan || t.info.pending} size={168} />
+            <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} locked={!!t.info.listing || !!t.info.loan || t.info.pending} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
-            <span className="piece-btc">{btc(t.bal.safe)} BTC</span>
-            {t.bal.pending > 0 && <span className="piece-pending">+{btc(t.bal.pending)} confirming</span>}
+            <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
+            {t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
             {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
@@ -165,26 +165,24 @@ function Detail({ id, accountId }) {
   return (
     <article className="detail">
       <div className="detail-face">
-        <Emblem pubkey={info.btc_pubkey} sats={bal.safe} locked={locked} size={320} />
+        <Emblem pubkey={info.btc_pubkey} sats={Number(info.verified_sats)} locked={locked} size={320} />
         <h1>Pusaka #{id}</h1>
         <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong></p>
       </div>
 
       <div className="detail-body">
         <section>
-          <h2>Bitcoin inside</h2>
-          <p className="amount"><span>{btc(bal.safe)}</span> BTC</p>
-          <p className="muted">{bal.safe.toLocaleString()} sats you can count on</p>
+          <h2>Bitcoin inside, verified on NEAR</h2>
+          <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
+          <p className="muted">
+            {Number(info.verified_sats).toLocaleString()} sats proven by the Bitcoin light client on NEAR and never signed
+            for. No indexer needed: only this contract can spend from the address, and it records every signature.
+          </p>
+          <ProveDeposits t={t} accountId={accountId} onDone={refresh} />
           {bal.atRisk > 0 && (
             <p className="warn">
               A signature already exists that can spend {bal.atRisk.toLocaleString()} more sats, so they're left out of
               the amount above. They stop counting as at risk once that transaction lands on Bitcoin.
-            </p>
-          )}
-          {bal.pending > 0 && (
-            <p className="muted">
-              {bal.pending.toLocaleString()} more sats are waiting for a Bitcoin confirmation. Until then whoever sent
-              them could still replace that transaction, so they aren't counted yet.
             </p>
           )}
           {bal.error && <p className="error">mempool.space didn't answer, so the balance may be out of date.</p>}
@@ -228,6 +226,46 @@ function Detail({ id, accountId }) {
         </section>
       </div>
     </article>
+  );
+}
+
+/** Deposits mempool.space sees as confirmed that aren't proven on NEAR yet; anyone can prove them. */
+function ProveDeposits({ t, accountId, onDone }) {
+  const { id, info, bal } = t;
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const proven = (u) => info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout);
+  const todo = bal.spendable.filter((u) => u.status?.confirmed && !proven(u));
+  const unconfirmed = bal.spendable.filter((u) => !u.status?.confirmed);
+  if (!todo.length && !unconfirmed.length && !msg) return null;
+  const sum = (xs) => xs.reduce((a, u) => a + u.value, 0);
+
+  async function prove() {
+    setBusy(true); setMsg(null);
+    try {
+      let n = 0;
+      for (const u of todo) {
+        const ok = await call("prove_deposit", { token_id: id, ...(await depositProof(u.txid, u.vout)) }, { deposit: PROVE_DEPOSIT, tgas: 100 });
+        if (!ok) throw new Error(`The light client didn't accept the proof for ${u.txid.slice(0, 10)}…`);
+        n++;
+      }
+      setMsg({ ok: true, text: `${n} deposit${n === 1 ? "" : "s"} proven on NEAR.` });
+      await onDone();
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="prove">
+      {todo.length > 0 && <>
+        <p>{sum(todo).toLocaleString()} sats are confirmed on Bitcoin but not proven on NEAR yet.</p>
+        {accountId
+          ? <button className="ghost" disabled={busy} onClick={prove}>{busy ? "Proving with the light client…" : `Prove ${todo.length} deposit${todo.length === 1 ? "" : "s"}`}</button>
+          : <button className="ghost" onClick={() => connector.connect()}>Connect NEAR wallet to prove deposits</button>}
+      </>}
+      {unconfirmed.length > 0 && <p className="muted">{sum(unconfirmed).toLocaleString()} sats are waiting for a Bitcoin confirmation before they can be proven.</p>}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </div>
   );
 }
 
@@ -342,7 +380,7 @@ function Actions({ t, accountId, isOwner, onDone }) {
     return (
       <section className="actions">
         <h2>Loan</h2>
-        {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka and its {btc(bal.safe)} BTC as collateral.</p>}
+        {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka and its {btc(Number(info.verified_sats))} verified BTC as collateral.</p>}
         {funded && <p>{loan.borrower} borrowed {near(loan.principal)} NEAR from {loan.lender}. {near(loan.repay)} NEAR {overdue ? "was" : "is"} due {when(due)}.</p>}
         {!funded && isOwner && act("cancel-loan", "Cancel loan request", "Cancelling…", async () => {
           await call("cancel_loan_request", { token_id: id });
@@ -353,7 +391,7 @@ function Actions({ t, accountId, isOwner, onDone }) {
             await call("fund_loan", { token_id: id, expected_sign_epoch: info.sign_epoch, principal: loan.principal, repay: loan.repay, duration_ms: loan.duration_ms }, { deposit: BigInt(loan.principal) });
             return "Loan funded. The NEAR went to the borrower.";
           })}
-          <p className="muted">If {near(loan.repay)} NEAR isn't repaid in time, you can take the Pusaka and the {btc(bal.safe)} BTC inside it. While the loan runs, nobody can withdraw, sell or move it.</p>
+          <p className="muted">If {near(loan.repay)} NEAR isn't repaid in time, you can take the Pusaka and the {btc(Number(info.verified_sats))} verified BTC inside it. While the loan runs, nobody can withdraw, sell or move it.</p>
         </>}
         {funded && accountId !== loan.lender && act("repay", `Repay ${near(loan.repay)} NEAR`, "Repaying…", async () => {
           await call("repay_loan", { token_id: id }, { deposit: BigInt(loan.repay) });
@@ -379,10 +417,10 @@ function Actions({ t, accountId, isOwner, onDone }) {
         {act("buy", `Buy for ${near(now)} NEAR`, "Buying…", async () => {
           // A Dutch auction price only falls, so paying today's price always covers it; the rest is refunded.
           await call("buy", { token_id: id, expected_sign_epoch: info.sign_epoch }, { deposit: BigInt(now) });
-          return `You own Pusaka #${id} and the ${btc(bal.safe)} BTC inside it.`;
+          return `You own Pusaka #${id} and the ${btc(Number(info.verified_sats))} BTC inside it.`;
         })}
         <p className="muted">
-          You get {btc(bal.safe)} BTC. The NEAR goes to {info.listing.seller}.
+          You get {btc(Number(info.verified_sats))} BTC (verified on NEAR). The NEAR goes to {info.listing.seller}.
           {falling && <> Price falls to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}.</>}
         </p>
         {status}

@@ -206,3 +206,5 @@ footer p { max-width: var(--measure); margin: 0; }
 }
 .amount.small { font-size: clamp(1.6rem, 3.5vw, 2.2rem); }
 .piece-pending { color: var(--ink-soft); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.prove { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; margin: 0.8rem 0; }
+.prove p { margin: 0; }

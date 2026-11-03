@@ -13,8 +13,8 @@ const CONFIG = {
     mpc: "v1.signer-prod.testnet",
     nearRpc: "https://test.rpc.fastnear.com",
     nearExplorer: "https://testnet.nearblocks.io",
-    btc: bitcoin.networks.testnet, // testnet4 shares testnet address params (tb1…)
-    mempool: "https://mempool.space/testnet4",
+    btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
+    mempool: "https://mempool.space/testnet",
     evm: { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io" },
   },
   mainnet: {
@@ -108,6 +108,31 @@ export function finalize(signed, inputValues) {
   });
   return tx;
 }
+
+/**
+ * Everything `prove_deposit` needs for output `vout` of `txid`, from any Esplora API.
+ * The contract re-derives the txid from `tx_hex` and the light client checks the proofs,
+ * so a wrong answer from the API can only make the proof fail, never fake a deposit.
+ */
+export async function depositProof(txid, vout) {
+  const get = (path, as = "json") => fetch(`${MEMPOOL}${path}`).then((r) => {
+    if (!r.ok) throw new Error(`mempool.space answered ${r.status} for ${path}`);
+    return as === "json" ? r.json() : r.text();
+  });
+  const status = await get(`/tx/${txid}/status`);
+  if (!status.confirmed) throw new Error("This deposit has no Bitcoin confirmation yet. Try again after the next block.");
+  const tx = bitcoin.Transaction.fromHex(await get(`/tx/${txid}/hex`, "text"));
+  tx.ins.forEach((i) => { i.witness = []; }); // non-witness serialization: its hash is the txid
+  const [proof, coinbase] = await Promise.all([get(`/tx/${txid}/merkle-proof`), get(`/block/${status.block_hash}/txid/0`, "text")]);
+  const coinbaseProof = await get(`/tx/${coinbase}/merkle-proof`);
+  return {
+    tx_hex: tx.toHex(), vout, block_hash: status.block_hash, tx_index: String(proof.pos),
+    merkle_proof: proof.merkle, coinbase_txid: coinbase, coinbase_merkle_proof: coinbaseProof.merkle,
+  };
+}
+
+// Proving a deposit: storage for one record, excess refunded.
+export const PROVE_DEPOSIT = 10_000_000_000_000_000_000_000n; // 0.01 NEAR
 
 export async function broadcast(txHex) {
   const r = await fetch(`${MEMPOOL}/tx`, { method: "POST", body: txHex });

@@ -34,6 +34,18 @@ const TOKEN_RESERVE_BYTES: u64 = 8_000;
 const OUTPOINT_BYTES: u64 = 120;
 /// One "{token}:{chain}" -> u64 entry, rounded up.
 const ETH_NONCE_BYTES: u64 = 120;
+/// One proven UTXO (64-char txid + vout + value + Vec overhead), rounded up.
+const PROVEN_BYTES: u64 = 140;
+const PROOF_TGAS: u64 = 40;
+/// Near-One's Bitcoin light client (Omni Bridge). Testnet build tracks Bitcoin testnet3.
+#[cfg(not(feature = "mainnet"))]
+const BTC_LIGHT_CLIENT: &str = "btc-client-v4.testnet";
+#[cfg(not(feature = "mainnet"))]
+const BTC_MIN_CONFIRMATIONS: u64 = 1;
+#[cfg(feature = "mainnet")]
+const BTC_LIGHT_CLIENT: &str = env!("PUSAKA_BTC_LIGHT_CLIENT", "set PUSAKA_BTC_LIGHT_CLIENT to the mainnet light client account when building --features mainnet");
+#[cfg(feature = "mainnet")]
+const BTC_MIN_CONFIRMATIONS: u64 = 6;
 /// EVM chains a Pusaka may sign for. Kept to what the UI shows, so a seller can't hide a
 /// signature on a chain buyers don't look at. Testnet build: Sepolia; `--features mainnet`: Ethereum.
 #[cfg(not(feature = "mainnet"))]
@@ -55,6 +67,17 @@ enum Key {
     Loans,
     EthNonces,
     SignEpoch,
+    Proven,
+}
+
+/// A deposit proven on NEAR: the Bitcoin light client confirmed its transaction is in the
+/// main chain, and the contract checked the output pays this token's address.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, PartialEq, Debug)]
+pub struct ProvenUtxo {
+    pub txid: String,
+    pub vout: u32,
+    pub value: U64,
 }
 
 #[near(serializers = [json, borsh])]
@@ -151,6 +174,12 @@ pub struct TokenInfo {
     /// Pass this to `buy` / `fund_loan`.
     pub sign_epoch: u32,
     pub signed_outpoints: Vec<OutPointRef>,
+    /// Deposits proven by the on-chain Bitcoin light client.
+    pub proven_utxos: Vec<ProvenUtxo>,
+    /// Sum of proven deposits that were never signed for: trustless, no indexer needed.
+    /// Only this contract can request signatures for the address, and every signature
+    /// request is recorded, so a proven, never-signed UTXO cannot have been spent.
+    pub verified_sats: U64,
     pub history: Vec<Entry>,
 }
 
@@ -188,11 +217,12 @@ pub struct Pusaka {
     /// token -> number of signature requests ever made (BTC inputs + EVM txs). Buyers and
     /// lenders pass the value they checked; any new signature in between fails the call.
     sign_epoch: LookupMap<TokenId, u32>,
+    proven: LookupMap<TokenId, Vec<ProvenUtxo>>,
 }
 
-/// State layout before sign epochs; used once by `migrate`.
+/// State layout before light-client proofs; used once by `migrate`.
 #[near(serializers = [borsh])]
-struct PusakaV3 {
+struct PusakaV4 {
     tokens: NonFungibleToken,
     mpc: AccountId,
     next_id: u64,
@@ -203,6 +233,7 @@ struct PusakaV3 {
     history: LookupMap<TokenId, Vec<Entry>>,
     loans: LookupMap<TokenId, Loan>,
     eth_nonces: LookupMap<String, u64>,
+    sign_epoch: LookupMap<TokenId, u32>,
 }
 
 pub fn btc_path(token_id: &str) -> String {
@@ -231,15 +262,15 @@ impl Pusaka {
             loans: LookupMap::new(Key::Loans),
             eth_nonces: LookupMap::new(Key::EthNonces),
             sign_epoch: LookupMap::new(Key::SignEpoch),
+            proven: LookupMap::new(Key::Proven),
         }
     }
 
-    /// One-time upgrade from the pre-epoch layout. Epochs start at 0 for every token;
-    /// clients read the current value, so open listings and loan requests keep working.
+    /// One-time upgrade from the pre-proof layout.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let old: PusakaV3 = env::state_read().expect("no state");
+        let old: PusakaV4 = env::state_read().expect("no state");
         Self {
             tokens: old.tokens,
             mpc: old.mpc,
@@ -251,7 +282,8 @@ impl Pusaka {
             history: old.history,
             loans: old.loans,
             eth_nonces: old.eth_nonces,
-            sign_epoch: LookupMap::new(Key::SignEpoch),
+            sign_epoch: old.sign_epoch,
+            proven: LookupMap::new(Key::Proven),
         }
     }
 
@@ -432,6 +464,70 @@ impl Pusaka {
             "still waiting for the MPC network"
         );
         self.pending.remove(&token_id);
+    }
+
+    // ---------- trustless deposits (Bitcoin light client) ----------
+
+    /// Anyone can prove a deposit into a Pusaka. The contract parses the transaction,
+    /// checks output `vout` pays this token's P2WPKH address, and asks the on-chain Bitcoin
+    /// light client to verify the transaction is in the main chain with enough
+    /// confirmations. `tx_hex` is the non-witness serialization (so its hash is the txid);
+    /// hashes are in explorer (display) byte order. Attach ~0.01 NEAR (storage, refunded).
+    #[payable]
+    #[allow(clippy::too_many_arguments)]
+    pub fn prove_deposit(
+        &mut self,
+        token_id: TokenId,
+        tx_hex: String,
+        vout: u32,
+        block_hash: String,
+        tx_index: U64,
+        merkle_proof: Vec<String>,
+        coinbase_txid: String,
+        coinbase_merkle_proof: Vec<String>,
+    ) -> Promise {
+        let pk = self.btc_keys.get(&token_id).expect("KeyNotReady").clone();
+        let tx = hex::decode(&tx_hex).expect("bad tx hex");
+        // A 64-byte "transaction" could double as an internal merkle node.
+        require!(tx.len() != 64, "64-byte transactions are not accepted");
+        let (value, script) = btc::output(&tx, vout);
+        require!(script == btc::p2wpkh_script(&btc::hash160(&pk)), "output does not pay this Pusaka");
+        let txid_internal = btc::sha256d(&tx);
+        let mut txid_display = txid_internal;
+        txid_display.reverse();
+        let txid = hex::encode(txid_display);
+        let known = self.proven.get(&token_id).is_some_and(|v| v.iter().any(|u| u.txid == txid && u.vout == vout));
+        require!(!known, "already proven");
+        charge_storage(PROVEN_BYTES, 0);
+
+        let args = btc::proof_args_borsh(
+            &txid_internal,
+            &block_hash,
+            tx_index.0,
+            &merkle_proof,
+            &coinbase_txid,
+            &coinbase_merkle_proof,
+            BTC_MIN_CONFIRMATIONS,
+        );
+        Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
+            .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(10))
+                    .on_deposit_proven(token_id, txid, vout, U64(value)),
+            )
+    }
+
+    #[private]
+    pub fn on_deposit_proven(&mut self, token_id: TokenId, txid: String, vout: u32, value: U64) -> bool {
+        let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
+        if ok {
+            let list = self.proven.entry(token_id).or_default();
+            if !list.iter().any(|u| u.txid == txid && u.vout == vout) {
+                list.push(ProvenUtxo { txid, vout, value });
+            }
+        }
+        ok
     }
 
     // ---------- EVM ----------
@@ -690,6 +786,8 @@ impl Pusaka {
             pending: self.pending.contains_key(&token_id),
             sign_epoch: self.epoch(&token_id),
             signed_outpoints: self.signed.get(&token_id).cloned().unwrap_or_default(),
+            proven_utxos: self.proven.get(&token_id).cloned().unwrap_or_default(),
+            verified_sats: U64(self.verified_sats(&token_id)),
             history: self.history.get(&token_id).cloned().unwrap_or_default(),
         })
     }
@@ -699,6 +797,18 @@ impl Pusaka {
     }
 
     // ---------- internals ----------
+
+    fn verified_sats(&self, token_id: &TokenId) -> u64 {
+        let signed = self.signed.get(token_id);
+        self.proven.get(token_id).map_or(0, |list| {
+            list.iter()
+                .filter(|u| {
+                    !signed.is_some_and(|s| s.iter().any(|o| o.txid == u.txid && o.vout == u.vout))
+                })
+                .map(|u| u.value.0)
+                .sum()
+        })
+    }
 
     fn epoch(&self, token_id: &TokenId) -> u32 {
         self.sign_epoch.get(token_id).copied().unwrap_or(0)

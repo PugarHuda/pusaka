@@ -11,6 +11,87 @@ use omni_transaction::{TransactionBuilder, TxBuilder, BITCOIN};
 
 pub const DUST_SAT: u64 = 546;
 
+pub fn sha256d(data: &[u8]) -> [u8; 32] {
+    env::sha256_array(&env::sha256_array(data))
+}
+
+fn varint(b: &[u8], i: &mut usize) -> u64 {
+    let first = b[*i];
+    *i += 1;
+    let n = match first {
+        0xfd => 2,
+        0xfe => 4,
+        0xff => 8,
+        x => return x as u64,
+    };
+    let mut v = 0u64;
+    for k in 0..n {
+        v |= (b[*i + k] as u64) << (8 * k);
+    }
+    *i += n;
+    v
+}
+
+/// (value, scriptPubKey) of output `vout` in a non-witness serialized transaction.
+/// Panics on malformed input or a SegWit-serialized transaction.
+pub fn output(tx: &[u8], vout: u32) -> (u64, Vec<u8>) {
+    assert!(tx.len() > 10, "tx too short");
+    assert!(!(tx[4] == 0 && tx[5] == 1), "send the non-witness serialization (txid preimage)");
+    let mut i = 4;
+    let n_in = varint(tx, &mut i);
+    for _ in 0..n_in {
+        i += 36;
+        let len = varint(tx, &mut i) as usize;
+        i += len + 4;
+    }
+    let n_out = varint(tx, &mut i);
+    assert!((vout as u64) < n_out, "vout out of range");
+    for k in 0..n_out {
+        let value = u64::from_le_bytes(tx[i..i + 8].try_into().unwrap());
+        i += 8;
+        let len = varint(tx, &mut i) as usize;
+        let script = tx[i..i + len].to_vec();
+        i += len;
+        if k == vout as u64 {
+            return (value, script);
+        }
+    }
+    unreachable!()
+}
+
+fn display_hash(h: &str) -> [u8; 32] {
+    let mut b: [u8; 32] = hex::decode(h).expect("bad hash hex").try_into().expect("hash must be 32 bytes");
+    b.reverse(); // explorer order -> internal order, which the light client stores
+    b
+}
+
+/// Borsh encoding of the light client's `ProofArgsV2`.
+pub fn proof_args_borsh(
+    txid_internal: &[u8; 32],
+    block_hash: &str,
+    tx_index: u64,
+    merkle_proof: &[String],
+    coinbase_txid: &str,
+    coinbase_merkle_proof: &[String],
+    confirmations: u64,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    let vec = |out: &mut Vec<u8>, hs: &[String]| {
+        out.extend_from_slice(&(hs.len() as u32).to_le_bytes());
+        for h in hs {
+            out.extend_from_slice(&display_hash(h));
+        }
+    };
+    out.extend_from_slice(txid_internal);
+    out.extend_from_slice(&display_hash(block_hash));
+    out.extend_from_slice(&tx_index.to_le_bytes());
+    vec(&mut out, merkle_proof);
+    out.extend_from_slice(&display_hash(coinbase_txid));
+    vec(&mut out, coinbase_merkle_proof);
+    out.extend_from_slice(&confirmations.to_le_bytes());
+    out
+}
+
 /// `secp256k1:<base58 of 64-byte X||Y>` (MPC `derived_public_key` format) -> 33-byte compressed key.
 pub fn compress_mpc_key(s: &str) -> Vec<u8> {
     let b58 = s.strip_prefix("secp256k1:").expect("not a secp256k1 key");

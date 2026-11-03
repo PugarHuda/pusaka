@@ -16,7 +16,8 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 |---|---|
 | Contract | [`pusaka-btc.testnet`](https://testnet.nearblocks.io/address/pusaka-btc.testnet) (NEAR testnet) |
 | MPC signer | `v1.signer-prod.testnet` (NEAR Chain Signatures) |
-| Bitcoin network | testnet4 ([mempool.space/testnet4](https://mempool.space/testnet4)) |
+| Bitcoin network | testnet3 ([mempool.space/testnet](https://mempool.space/testnet)), the network NEAR's Bitcoin light client tracks |
+| Bitcoin light client | [`btc-client-v4.testnet`](https://testnet.nearblocks.io/address/btc-client-v4.testnet) (Near-One / Omni Bridge), verifies every deposit on-chain |
 | Live demo | **https://pusaka-two.vercel.app** (or run locally, below) |
 
 ## Try it
@@ -29,7 +30,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `49 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
+See: `55 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -38,15 +39,15 @@ npm install
 npm run demo
 ```
 
-What happens, step by step (all on NEAR testnet + Bitcoin testnet4, against the deployed contract):
+What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the deployed contract):
 
 1. Two fresh NEAR accounts are created through the public NEAR testnet faucet. **See:** `created pusaka-s-….testnet`.
 2. The seller mints a Pusaka. The contract fetches its Bitcoin key from the MPC contract on-chain. **See:** a `tb1q…` address.
-3. **The one manual step:** send testnet4 BTC to that address, e.g. one click at [coinfaucet.eu/en/btc-testnet4](https://coinfaucet.eu/en/btc-testnet4/) (limited to one request per IP per 12 h; any testnet4 faucet works). The script waits until the deposit has **1 Bitcoin confirmation** (testnet4 blocks take ~10 min), because buyers only count confirmed coins.
+3. **The one manual step:** send testnet3 BTC to that address, e.g. one click at [coinfaucet.eu/en/btc-testnet](https://coinfaucet.eu/en/btc-testnet/) (one request per IP per 12 h; any testnet3 faucet works). The script waits for **1 Bitcoin confirmation**, then calls `prove_deposit`: the contract parses the transaction, checks it pays this Pusaka, and the on-chain light client verifies the merkle proof. **See:** `proven by btc-client-v4.testnet: true` and `verified on NEAR: … sats`.
 4. The seller lists it for 1 NEAR, then tries to withdraw. **See:** `rejected (Listed)`.
 5. The buyer checks the safe balance and buys. **See:** `sold in ~3s — new owner: pusaka-b-…`. Nothing happened on Bitcoin.
 6. The old owner tries to withdraw. **See:** `rejected (NotOwner)`.
-7. The new owner withdraws 1000 sats. The contract builds the Bitcoin transaction, the MPC network signs it, the script verifies each signature locally and broadcasts. **See:** a `mempool.space/testnet4/tx/…` link that the Bitcoin network accepted.
+7. The new owner withdraws 1000 sats. The contract builds the Bitcoin transaction, the MPC network signs it, the script verifies each signature locally and broadcasts. **See:** a `mempool.space/testnet/tx/…` link that the Bitcoin network accepted.
 
 Already have accounts in `.keys/` and a funded token? `npm run demo -- --token 1 --seller a.testnet --buyer b.testnet` skips steps 1–3.
 
@@ -57,7 +58,8 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-- **Do:** open the home page. **See:** every Pusaka as a medallion generated from its Bitcoin key, with the BTC it holds read live from Bitcoin testnet4.
+- **Do:** open the home page. **See:** every Pusaka as a medallion generated from its Bitcoin key, with the BTC **verified on NEAR** by the light client, plus anything still waiting to be proven.
+- **Do:** open a Pusaka whose deposit is confirmed but not proven and click *Prove deposit* (any connected account can). **See:** the verified amount go up after the light client accepts the proof.
 - **Do:** open a Pusaka. **See:** its Bitcoin address (links to mempool.space), safe balance, at-risk balance if any, and on-chain history.
 - **Do:** connect a NEAR testnet wallet (tested with Meteor Wallet) and click *Mint a Pusaka*. Then *List for sale*, *Buy* from a second account, or *Withdraw* to any `tb1…` address.
 
@@ -77,13 +79,23 @@ npm run dev        # http://localhost:5173
                                          │ records the signed outpoints              │
           signed tx  ◀──on_signed()──────┘◀──────────── signature ───────────────────┘
              │
-             └── client attaches witnesses, verifies each signature, broadcasts to Bitcoin testnet4
+             └── client attaches witnesses, verifies each signature, broadcasts to Bitcoin testnet3
 ```
 
 - **Key derivation.** Token `N` uses MPC derivation path `pusaka-N` with the contract as predecessor. At mint, the contract calls `derived_public_key` on the MPC contract itself and stores the result, so nobody can mint a Pusaka that points at an address they control.
 - **Addresses** are native SegWit (P2WPKH, `tb1q…`). Sighashes follow BIP143, so input values are signed too.
 - **The contract never signs a hash you give it.** It builds the transaction from the UTXOs you name ([`omni-transaction`](https://github.com/near/omni-transaction-rs)) and computes every sighash itself. This is what makes the outpoint registry below trustworthy.
 - **Selling** is `list(price)` then `buy(expected_sign_epoch)`: one NEAR transaction pays the seller and moves the NFT. The sign epoch counts every signature ever requested for the token (BTC inputs and EVM transactions).
+
+## Trustless balance: NEAR's Bitcoin light client
+
+Anyone can call `prove_deposit(token_id, tx_hex, vout, block_hash, tx_index, merkle_proof, coinbase_txid, coinbase_merkle_proof)`:
+
+1. The contract hashes `tx_hex` (non-witness serialization) to get the txid, parses output `vout` and requires it to pay this Pusaka's P2WPKH address.
+2. It calls `verify_transaction_inclusion_v2` on Near-One's light client with the merkle proofs (borsh, internal byte order) and the required confirmations.
+3. On `true`, the deposit is recorded. `verified_sats` = proven deposits never signed for.
+
+The web app shows this verified amount first, offers *Prove deposit* for confirmed deposits that aren't proven yet, and the medallion's ring fills with verified BTC only.
 
 ## Why the seller can't keep the Bitcoin
 
@@ -111,7 +123,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 
 **Limits, stated plainly**
 
-- NEAR contracts can't read Bitcoin. Whether a signed outpoint has been spent is checked by the client against an indexer (mempool.space); anyone can re-check against their own node. A Bitcoin light client on NEAR would make this trustless.
+- **What is trustless:** the *verified* balance. A deposit counts only after `btc-client-v4.testnet` (a Bitcoin SPV light client on NEAR) has verified its merkle proof and the contract has checked the output pays this Pusaka. Only this contract can get signatures for the address and it records each one, so a proven, never-signed UTXO can't have been spent. A buyer or lender needs nothing but the contract's `verified_sats`.
+- **What isn't:** mempool.space is still used to *find* deposits and build proofs (any Esplora works; a lying API can only make a proof fail). Light-client security assumptions apply: it follows the most-work chain it is fed by relayers, so a deep reorg attack is bounded by the confirmations required (1 on testnet, 6 on mainnet).
 - Security rests on the NEAR MPC network's threshold assumption.
 - The testnet contract is deployed with a full-access key we hold. A production deployment must remove it (or use a DAO) so the code can't be swapped.
 - Testnet only. No mainnet funds were used.
@@ -125,7 +138,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Bitcoin transactions built by the contract and accepted by testnet4 | [bfdcdcf2…](https://mempool.space/testnet4/tx/bfdcdcf22ea5e1816d995dc27166737a11e25d30c7950a881754526d532bb9e7), [1b6a8926…](https://mempool.space/testnet4/tx/1b6a8926a1b46a0f057bbe30c5eaf1de854f749bad098998d741ea1314817349), [79fd2311…](https://mempool.space/testnet4/tx/79fd2311787dddada2079f75721e1648e6c7d8e7bdf1487aa1b75dde45979e77) (Pusaka #1 funding Pusaka #2), [e5272011…](https://mempool.space/testnet4/tx/e527201185af46e04dddb57411a31790ebfaacb42ff06ea273ea04ff112eef90) (demo with fresh accounts), [7232cac5…](https://mempool.space/testnet4/tx/7232cac5c77f2aebd6e07a7f264531550d033a55b80a754d2d2e63face5962ef), [e2553636…](https://mempool.space/testnet4/tx/e2553636a332080c4b0c1d2417971a8ba362c71f41a7b1aecbfeb4ebcb57d5ce) |
 | Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
 | Same key on Ethereum: contract-built EIP-1559 tx for Sepolia, MPC-signed; sighash identical to viem's, signature recovers to the Pusaka's ETH address | passed (`node scripts/withdraw-eth.mjs <owner> 1 --dry`) |
-| Unit tests | 49 / 49 passing |
+| Trustless deposit proof: testnet3 tx [2caf27f4…](https://mempool.space/testnet/tx/2caf27f4151b0399cb8cc3d89a9b4f9e8dff6d5affe3612be41310a968c035a0) proven by `btc-client-v4.testnet` via `prove_deposit` | `true` in 3.4 s; 176,246 sats verified on NEAR |
+| Unit tests | 55 / 55 passing |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

@@ -1,4 +1,4 @@
-// End-to-end Pusaka demo on NEAR testnet + Bitcoin testnet4.
+// End-to-end Pusaka demo on NEAR testnet + Bitcoin testnet3 (the network NEAR's Bitcoin light client tracks).
 //
 //   npm run demo                      fresh seller/buyer accounts (NEAR faucet), new token
 //   npm run demo -- --token 1 --seller a.testnet --buyer b.testnet   reuse accounts in .keys/
@@ -8,7 +8,7 @@ import { parseNearAmount } from "near-api-js";
 import fs from "node:fs";
 import {
   CONTRACT, account, balances, broadcast, btcAddress, call, faucetAccount, finalize,
-  keyFile, scriptHex, sleep, view, WITHDRAW_DEPOSIT, MINT_DEPOSIT,
+  keyFile, scriptHex, sleep, view, WITHDRAW_DEPOSIT, MINT_DEPOSIT, PROVE_DEPOSIT, depositProof, EXPLORER,
 } from "./lib.mjs";
 
 const arg = (k) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -52,23 +52,26 @@ const addr = btcAddress(info.btc_pubkey);
 ok(`Pusaka #${tokenId} owned by ${info.token.owner_id}`);
 ok(`its native Bitcoin address: ${addr}  (key derived on-chain by the NEAR MPC network)`);
 
-// ---------- 2. fund ----------
-step(2, "Put real (testnet4) BTC inside it");
+// ---------- 2. fund + prove ----------
+step(2, "Put real (testnet3) BTC inside it, then prove it on NEAR");
 let bal = await balances(addr, info.signed_outpoints);
-if (bal.safe + bal.pending < 2000) {
-  console.log(`   → open https://coinfaucet.eu/en/btc-testnet4/ and send to ${addr}`);
+if (bal.safe + bal.pending < 2000 && Number(info.verified_sats) < 2000) {
+  console.log(`   → open https://coinfaucet.eu/en/btc-testnet/ and send to ${addr}`);
   console.log("   waiting for the deposit to show up in the mempool…");
   while ((bal = await balances(addr, info.signed_outpoints)).safe + bal.pending < 2000) await sleep(5000);
 }
-if (bal.safe < 2000) {
-  // A buyer only counts confirmed coins: an unconfirmed deposit can still be replaced (RBF).
-  console.log(`   ${bal.pending} sats seen, waiting up to 2 min for a Bitcoin confirmation…`);
-  const until = Date.now() + 120_000;
-  while ((bal = await balances(addr, info.signed_outpoints)).safe < 2000 && Date.now() < until) await sleep(15000);
+const proven = (u) => info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout);
+let toProve = bal.spendable.filter((u) => !proven(u));
+if (toProve.length) {
+  console.log(`   waiting for a Bitcoin confirmation, then proving ${toProve.length} deposit(s) through the light client…`);
+  while ((bal = await balances(addr, info.signed_outpoints)).spendable.some((u) => !proven(u) && !u.status.confirmed)) await sleep(20000);
+  for (const u of bal.spendable.filter((u) => !proven(u))) {
+    const res = await call(buyer, "prove_deposit", { token_id: tokenId, ...(await depositProof(u.txid, u.vout)) }, { deposit: PROVE_DEPOSIT, tgas: 100 });
+    ok(`${u.value} sats in ${u.txid.slice(0, 10)}… proven by btc-client-v4.testnet: ${res}`);
+  }
+  info = await view("token_info", { token_id: tokenId });
 }
-if (bal.safe >= 2000) ok(`safe balance: ${bal.safe} sats confirmed  https://mempool.space/testnet4/address/${addr}`);
-else console.log(`   \x1b[33m!\x1b[0m testnet4 hasn't confirmed it yet (its blocks are irregular). Continuing so the demo finishes;
-     the web app shows these ${bal.pending} sats as "waiting for confirmation", not safe, and a real buyer should wait.`);
+ok(`verified on NEAR: ${info.verified_sats} sats  ${EXPLORER}/address/${addr}`);
 
 // ---------- 3. list ----------
 step(3, `${seller.accountId} lists it for 1 NEAR`);
@@ -81,10 +84,10 @@ await expectFail("seller tries to withdraw while listed", () =>
   }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 }), "Listed");
 
 // ---------- 4. buy ----------
-step(4, `${buyer.accountId} checks the safe balance, then buys`);
+step(4, `${buyer.accountId} checks what's inside on NEAR alone, then buys`);
 info = await view("token_info", { token_id: tokenId });
 bal = await balances(addr, info.signed_outpoints);
-ok(`buyer verifies: ${bal.safe} sats safe (confirmed), ${bal.pending} unconfirmed, ${bal.atRisk} at risk, ${info.signed_outpoints.length} signed outpoint(s)`);
+ok(`buyer reads from the contract: ${info.verified_sats} sats verified by the light client, sign epoch ${info.sign_epoch}`);
 const t0 = Date.now();
 await call(buyer, "buy", { token_id: tokenId, expected_sign_epoch: info.sign_epoch }, { deposit: BigInt(PRICE) });
 const saleSecs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -109,7 +112,7 @@ const signed = await call(buyer, "withdraw", {
 }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
 ok(`NEAR MPC network signed ${signed.signatures.filter(Boolean).length}/${ins.length} input(s) in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
 const txid = await broadcast(finalize(signed, ins.map((u) => u.value)).toHex());
-ok(`broadcast to Bitcoin testnet4: https://mempool.space/testnet4/tx/${txid}`);
+ok(`broadcast to Bitcoin testnet3: ${EXPLORER}/tx/${txid}`);
 
 // ---------- 7–8. borrow against it, default, lender takes it ----------
 const LOAN_MS = 20_000;
