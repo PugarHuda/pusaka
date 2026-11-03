@@ -71,7 +71,7 @@ input:focus { border-color: var(--ink); outline: none; }
 .net { color: var(--ink-soft); font-size: 0.85rem; margin-right: auto; }
 .who { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
 
-main { padding: 0 clamp(1rem, 4vw, 3rem) 4rem; max-width: 1180px; margin: 0 auto; min-height: 80vh; }
+main { padding: 0 clamp(1rem, 4vw, 3rem) 4rem; max-width: 1180px; margin: 0 auto; min-height: 100vh; } /* footer starts below the fold, so loading content never pushes it */
 footer { border-top: 1px solid var(--line); padding: 1.5rem clamp(1rem, 4vw, 3rem); color: var(--ink-soft); font-size: 0.85rem; }
 footer p { max-width: var(--measure); margin: 0; }
 
