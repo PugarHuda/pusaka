@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CONTRACT, EXPLORER, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId,
@@ -254,11 +254,16 @@ function ProveDeposits({ t, accountId, onDone }) {
   const proven = (u) => info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout);
   const todo = bal.spendable.filter((u) => u.status?.confirmed && !proven(u));
   const unconfirmed = bal.spendable.filter((u) => !u.status?.confirmed);
+  // Proving costs the visitor nothing (the relayer pays), so start as soon as a deposit is ready.
+  const auto = useRef(false);
+  useEffect(() => {
+    if (todo.length && !auto.current) { auto.current = true; proveFree(true); }
+  }, [todo.length]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!todo.length && !unconfirmed.length && !msg) return null;
   const sum = (xs) => xs.reduce((a, u) => a + u.value, 0);
 
-  async function proveFree() {
-    setBusy("free"); setMsg(null);
+  async function proveFree(automatic = false) {
+    setBusy("free"); setMsg(automatic ? { ok: true, text: "Proving the new deposit on NEAR, gas paid by Pusaka's relayer…" } : null);
     try {
       const r = await fetch("/api/prove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_id: id }) });
       const body = await r.json().catch(() => ({}));
@@ -268,7 +273,7 @@ function ProveDeposits({ t, accountId, onDone }) {
       if (!body.results.length) throw new Error(`Nothing the light client can prove yet (it's at Bitcoin block ${body.light_client_height}).`);
       setMsg({ ok: n === body.results.length, text: `${n} of ${body.results.length} deposit${body.results.length === 1 ? "" : "s"} proven on NEAR, gas paid by the relayer.` });
       await onDone();
-    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    } catch (e) { setMsg({ ok: automatic, text: automatic ? `Not proven yet: ${e.message}` : e.message }); }
     finally { setBusy(false); }
   }
 

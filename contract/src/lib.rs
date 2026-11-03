@@ -49,7 +49,7 @@ const BTC_LIGHT_CLIENT: &str = "btc-client-v4.testnet";
 #[cfg(not(feature = "mainnet"))]
 const BTC_MIN_CONFIRMATIONS: u64 = 1;
 #[cfg(feature = "mainnet")]
-const BTC_LIGHT_CLIENT: &str = env!("PUSAKA_BTC_LIGHT_CLIENT", "set PUSAKA_BTC_LIGHT_CLIENT to the mainnet light client account when building --features mainnet");
+const BTC_LIGHT_CLIENT: &str = "btc-client.bridge.near"; // Near-One, synced to Bitcoin mainnet
 #[cfg(feature = "mainnet")]
 const BTC_MIN_CONFIRMATIONS: u64 = 6;
 /// EVM chains a Pusaka may sign for. Kept to what the UI shows, so a seller can't hide a

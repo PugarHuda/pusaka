@@ -114,7 +114,7 @@ export function finalize(signed, inputValues) {
  * The contract re-derives the txid from `tx_hex` and the light client checks the proofs,
  * so a wrong answer from the API can only make the proof fail, never fake a deposit.
  */
-export const BTC_LIGHT_CLIENT = NETWORK === "mainnet" ? env("PUSAKA_BTC_LIGHT_CLIENT") : "btc-client-v4.testnet";
+export const BTC_LIGHT_CLIENT = NETWORK === "mainnet" ? "btc-client.bridge.near" : "btc-client-v4.testnet";
 
 /** Height of the last Bitcoin block NEAR's light client has accepted. */
 export async function lightClientHeight() {

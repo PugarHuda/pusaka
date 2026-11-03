@@ -20,6 +20,13 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 | Bitcoin light client | [`btc-client-v4.testnet`](https://testnet.nearblocks.io/address/btc-client-v4.testnet) (Near-One / Omni Bridge), verifies every deposit on-chain |
 | Live demo | **https://pusaka-two.vercel.app** (or run locally, below) |
 
+## Try it in two minutes (testnet wallet only)
+
+1. Open **https://pusaka-two.vercel.app**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
+2. **Buy:** Pusaka #4 is for sale at 0.5 NEAR with 10,000 sats verified on NEAR. Click *Buy*. **See:** "You own Pusaka #4", and you can now *Withdraw* its BTC to any `tb1…` address.
+3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.55 within 3 days, backed by 164,446 verified sats (loan-to-value ~1.5%). Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
+4. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
+
 ## Try it
 
 Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the contract.
