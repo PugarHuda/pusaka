@@ -136,6 +136,7 @@ function Home() {
             <Emblem pubkey={t.info.btc_pubkey} sats={t.bal.safe} locked={!!t.info.listing || !!t.info.loan || t.info.pending} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
             <span className="piece-btc">{btc(t.bal.safe)} BTC</span>
+            {t.bal.pending > 0 && <span className="piece-pending">+{btc(t.bal.pending)} confirming</span>}
             {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
