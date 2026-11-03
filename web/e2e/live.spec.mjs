@@ -50,7 +50,7 @@ test("without a wallet, buy/lend actions offer to connect instead of failing", a
   await page.goto("/#/pusaka/3");
   await expect(page.locator(".actions")).toBeVisible({ timeout: 30_000 });
   const text = await page.locator(".actions").innerText();
-  expect(text).toMatch(/Connect NEAR wallet|isn't for sale/);
+  expect(text).toMatch(/Connect NEAR wallet|isn.t for sale|On sale through/);
 });
 
 test("relayer API refuses bad input", async ({ request }) => {
@@ -90,4 +90,18 @@ test("home shows total BTC verified and the social card is served", async ({ pag
   expect(og.status()).toBe(200);
   expect(og.headers()["content-type"]).toContain("image/png");
   expect(await page.locator('meta[property="og:image"]').getAttribute("content")).toMatch(/og\.png$/);
+});
+
+test("a Pusaka on sale through an outside market shows it, and that its BTC is locked", async ({ page, request }) => {
+  const rpc = await request.post("https://test.rpc.fastnear.com", { data: {
+    jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "optimistic", account_id: "pusaka-btc.testnet",
+      method_name: "nft_tokens", args_base64: Buffer.from("{}").toString("base64") },
+  } });
+  const tokens = JSON.parse(Buffer.from((await rpc.json()).result.result).toString());
+  const onMarket = tokens.find((t) => Object.keys(t.approved_account_ids ?? {}).length > 0);
+  test.skip(!onMarket, "no Pusaka is approved on an outside market right now");
+  await page.goto(`/#/pusaka/${onMarket.token_id}`);
+  await expect(page.locator(".actions")).toContainText(/On sale through .*mintspace2\.testnet/, { timeout: 30_000 });
+  await expect(page.locator(".actions")).toContainText(/Bitcoin is locked/);
 });

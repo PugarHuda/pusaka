@@ -43,6 +43,13 @@ const PROOF_TGAS: u64 = 40;
 const MIN_PROVEN_SATS: u64 = 10_000;
 /// Proven, unspent deposits kept per token (withdrawing consolidates them).
 const MAX_PROVEN: usize = 64;
+/// After a signature for a token, outside markets can't be approved for this long. A buyer
+/// there can't pass a sign epoch, so this keeps "revoke, withdraw, re-approve" from emptying
+/// a Pusaka between a buyer's look and their purchase.
+#[cfg(not(feature = "mainnet"))]
+const APPROVE_COOLDOWN_MS: u64 = 3_600_000; // 1 hour
+#[cfg(feature = "mainnet")]
+const APPROVE_COOLDOWN_MS: u64 = 86_400_000; // 1 day
 /// Near-One's Bitcoin light client (Omni Bridge). Testnet build tracks Bitcoin testnet3.
 #[cfg(not(feature = "mainnet"))]
 const BTC_LIGHT_CLIENT: &str = "btc-client-v4.testnet";
@@ -75,6 +82,7 @@ enum Key {
     SignEpoch,
     Proven,
     Approvals,
+    SignedAt,
 }
 
 /// A deposit proven on NEAR: the Bitcoin light client confirmed its transaction is in the
@@ -227,6 +235,25 @@ pub struct Pusaka {
     /// lenders pass the value they checked; any new signature in between fails the call.
     sign_epoch: LookupMap<TokenId, u32>,
     proven: LookupMap<TokenId, Vec<ProvenUtxo>>,
+    /// token -> time (ms) of its latest signature request; gates NEP-178 approvals.
+    signed_at: LookupMap<TokenId, u64>,
+}
+
+/// Layout before `signed_at`; read once by `migrate`.
+#[near(serializers = [borsh])]
+struct PusakaV5 {
+    tokens: NonFungibleToken,
+    mpc: AccountId,
+    next_id: u64,
+    btc_keys: LookupMap<TokenId, Vec<u8>>,
+    listings: LookupMap<TokenId, Listing>,
+    pending: LookupMap<TokenId, u64>,
+    signed: LookupMap<TokenId, Vec<OutPointRef>>,
+    history: LookupMap<TokenId, Vec<Entry>>,
+    loans: LookupMap<TokenId, Loan>,
+    eth_nonces: LookupMap<String, u64>,
+    sign_epoch: LookupMap<TokenId, u32>,
+    proven: LookupMap<TokenId, Vec<ProvenUtxo>>,
 }
 
 
@@ -257,14 +284,31 @@ impl Pusaka {
             eth_nonces: LookupMap::new(Key::EthNonces),
             sign_epoch: LookupMap::new(Key::SignEpoch),
             proven: LookupMap::new(Key::Proven),
+            signed_at: LookupMap::new(Key::SignedAt),
         }
     }
 
-    /// One-time upgrade: turns on NEP-178 approvals for contracts deployed without them.
+    /// One-time upgrade from the layout without `signed_at`; also turns on NEP-178 approvals
+    /// for contracts deployed without them.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let mut this: Self = env::state_read().expect("no state");
+        let old: PusakaV5 = env::state_read().expect("no state");
+        let mut this = Self {
+            tokens: old.tokens,
+            mpc: old.mpc,
+            next_id: old.next_id,
+            btc_keys: old.btc_keys,
+            listings: old.listings,
+            pending: old.pending,
+            signed: old.signed,
+            history: old.history,
+            loans: old.loans,
+            eth_nonces: old.eth_nonces,
+            sign_epoch: old.sign_epoch,
+            proven: old.proven,
+            signed_at: LookupMap::new(Key::SignedAt),
+        };
         if this.tokens.approvals_by_id.is_none() {
             let prefix = near_sdk::IntoStorageKey::into_storage_key(Key::Approvals);
             this.tokens.approvals_by_id = Some(near_sdk::collections::LookupMap::new(prefix.clone()));
@@ -853,6 +897,7 @@ impl Pusaka {
     fn bump_epoch(&mut self, token_id: &TokenId, by: u32) {
         let e = self.epoch(token_id) + by;
         self.sign_epoch.insert(token_id.clone(), e);
+        self.signed_at.insert(token_id.clone(), env::block_timestamp_ms());
     }
 
     fn assert_epoch(&self, token_id: &TokenId, expected: u32) {
@@ -1053,6 +1098,10 @@ impl Pusaka {
     #[payable]
     pub fn nft_approve(&mut self, token_id: TokenId, account_id: AccountId, msg: Option<String>) -> Option<Promise> {
         self.assert_unlocked(&token_id);
+        if let Some(t) = self.signed_at.get(&token_id) {
+            require!(env::block_timestamp_ms() >= t + APPROVE_COOLDOWN_MS,
+                "Cooldown: outside markets can be approved 1 h (mainnet: 24 h) after the last signature");
+        }
         self.log(&token_id, Event::Approved { account: account_id.clone() });
         near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_approve(
             &mut self.tokens, token_id, account_id, msg)

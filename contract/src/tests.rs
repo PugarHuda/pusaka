@@ -841,3 +841,22 @@ fn m5_approve_while_signing_fails() {
     withdraw(&mut c, "alice.testnet", &[0]);
     approve(&mut c, "market.testnet");
 }
+
+#[test]
+#[should_panic(expected = "Cooldown")]
+fn m6_approve_right_after_a_withdrawal_fails() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0]);
+    let _ = sign_ok(&mut c, &[0], &[true]);
+    approve(&mut c, "market.testnet"); // revoke -> withdraw -> re-approve is blocked
+}
+
+#[test]
+fn m6_approve_after_cooldown_works() {
+    let mut c = setup();
+    withdraw(&mut c, "alice.testnet", &[0]);
+    let _ = sign_ok(&mut c, &[0], &[true]);
+    at("alice.testnet", NearToken::from_millinear(10), APPROVE_COOLDOWN_MS);
+    let _ = c.nft_approve("1".into(), acc("market.testnet"), None);
+    assert!(c.nft_is_approved("1".into(), acc("market.testnet"), None));
+}
