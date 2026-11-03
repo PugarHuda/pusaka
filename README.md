@@ -10,6 +10,11 @@ NEAR MPC network and can only be used by the Pusaka contract, and the contract o
 **current NFT owner** requests one. So transferring the NFT transfers control of the BTC, in one NEAR transaction:
 no bridge, no wrapped BTC, no custodian, no private key the seller could keep a copy of.
 
+One NFT is a whole set of wallets: the same MPC key that holds its Bitcoin also controls one address on every EVM
+chain (ETH and USDC on Ethereum, Base and Arbitrum), and a second, Ed25519 MPC key is both a **Solana address** and the
+Pusaka's **own NEAR account**. Sell the NFT and all of it moves at once, with a sealed letter only the current holder
+can read and a 2.5% royalty for the creator on every resale.
+
 It is a standard NEAR NFT, so it trades outside our app too: NEP-178 approvals and NEP-199 payouts let any NEAR
 market sell it (tested live on Mintbase's market), and the contract freezes the BTC for as long as a market may sell it.
 
@@ -107,6 +112,58 @@ npm run dev        # http://localhost:5173
 - **The contract never signs a hash you give it.** It builds the transaction from the UTXOs you name ([`omni-transaction`](https://github.com/near/omni-transaction-rs)) and computes every sighash itself. This is what makes the outpoint registry below trustworthy.
 - **Selling** is `list(price)` then `buy(expected_sign_epoch)`: one NEAR transaction pays the seller and moves the NFT. The sign epoch counts every signature ever requested for the token (BTC inputs and EVM transactions).
 
+## One NFT, many wallets: how control passes on transfer
+
+| Inside a Pusaka | Key (NEAR MPC) | Withdraw method | What a buyer counts as safe |
+|---|---|---|---|
+| Bitcoin (P2WPKH) | secp256k1, domain 0, path `pusaka-N` | `withdraw` | proven by the light client and never signed for (`verified_sats`) |
+| ETH + USDC on Ethereum, Base, Arbitrum (Sepolia testnets here) | same secp256k1 key | `withdraw_eth` (`erc20` for USDC) | balance once the chain's nonce reached `eth_nonce_floor` |
+| SOL (devnet here) | Ed25519, domain 1, same path | `withdraw_sol` | balance 3 minutes after the last SOL signature (a signature dies with its blockhash) |
+| Its own NEAR account (implicit account = hex of the Ed25519 key) | same Ed25519 key | `withdraw_near` | balance once the access-key nonce reached `near_nonce_floor` |
+| A sealed letter for the next holder | AES-256-GCM, server key | `set_letter` + `/api/holder` | travels in `metadata.extra`; opens for the current holder only |
+
+**How control passes.** None of these keys exists anywhere as a private key. The MPC network signs for path `pusaka-N`
+only when *this contract* asks, and the contract asks only when the *current NFT owner* calls a withdraw method. So the
+moment `nft_transfer`, `buy`, `nft_transfer_payout` or `claim_collateral` changes the owner, every asset above answers
+to the new owner and the old one has nothing left to sign with.
+
+**What stops the old owner from keeping access.** Signatures made before the sale are the only thing a seller could
+keep, so each asset tracks them and a buyer's view leaves them out (BTC: outpoint registry; EVM: nonce floor per chain;
+NEAR: nonce floor; SOL: blockhash expiry). Any signature requested after a buyer looked fails the purchase
+(`expected_sign_epoch`). For the NEAR account the contract signs **only `Transfer` actions**: never `AddKey`,
+`DeleteKey` or a function call, so no second key can be planted. The holder room checks ownership on every request,
+so a seller's signed-in session stops working the moment the NFT moves. The full list is in the threat model below.
+
+## Holder room: gated by the NFT
+
+Each Pusaka page has a holder room. Opening it asks the wallet to sign a [NEP-413](https://github.com/near/NEPs/blob/master/neps/nep-0413.md)
+message (no transaction, no gas). `/api/holder` checks that the signature is valid for the message, the nonce and this
+site; that the key is a **full-access key** of the claimed account right now; that the message is at most 5 minutes
+old; and that the account is the token's **current owner** (`nft_token`, on every request). Then it opens the token's
+sealed letter.
+
+The holder can write a letter for the next holder. The server seals it (AES-256-GCM, the token id bound as associated
+data so it can't be pasted onto another Pusaka) and the holder stores it on-chain with `set_letter`; it lives in the
+token's `metadata.extra` and moves with the NFT. Writing is locked while the token is listed, approved or collateral,
+so a buyer gets the letter they saw. Limit, stated plainly: the sealing key is held by the server (derived from its
+secret), so the operator could read letters; NEAR MPC's confidential key derivation (domain 2) is the upgrade path.
+
+Try it: `node scripts/holder-test.mjs` (signs NEP-413 messages with local keys: the holder gets in; a non-holder, a
+stale or non-numeric timestamp, a signature made for another site, and a key presented for the wrong account are refused).
+`node scripts/handover.mjs` sells a Pusaka twice on testnet and checks the royalty and the room changing hands.
+
+## Per-NFT history
+
+The contract keeps the latest 32 events per token (`token_info.history`); the app turns them into a ledger: who held
+it, what it sold for, the creator's royalties, every withdrawal the MPC signed (BTC, ETH, USDC, SOL, NEAR), and loans.
+Every event is also a NEAR transaction, so the full history is on any explorer.
+
+## Proof of reserves, badges, install
+
+- `GET /api/reserves`: every Pusaka with its BTC address, proven deposits and `verified_sats`, read from the contract (CORS open, for agents and auditors).
+- `GET /api/badge?id=N`: an SVG badge with the BTC verified inside Pusaka N, for READMEs and posts; the detail page has a *Copy badge* button.
+- The app has a web manifest and icons, so it installs as an app on phones and desktops.
+
 ## Trustless balance: NEAR's Bitcoin light client
 
 Anyone can call `prove_deposit(token_id, tx_hex, vout, block_hash, tx_index, merkle_proof, coinbase_txid, coinbase_merkle_proof)`:
@@ -160,16 +217,22 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T3b | Hide a signed outpoint from the registry with an upper-case or duplicated txid | Txids canonicalised to 64 lower-case hex, duplicates rejected, before signing | `uppercase_txid_is_recorded_canonically`, `duplicate_outpoints_rejected` |
 | T4 | Sign something (BTC or ETH) between the buyer's or lender's check and their transaction, e.g. unlist → sign → relist | `buy` and `fund_loan` take `expected_sign_epoch`; any signature request in between makes them fail | `t4_buy_with_stale_count_fails`, `r1_eth_signature_between_check_and_buy_fails`, `l2_lender_with_stale_signed_count_fails` |
 | T11 | Swap in worse loan terms just before the lender's transaction lands | `fund_loan` restates principal, repay and duration; any difference fails with `TermsChanged` | `r2_lender_rejects_changed_terms` |
-| T12 | Get an EVM signature on a chain buyers don't look at | `withdraw_eth` only signs for chains in `EVM_CHAINS`, the same list the UI shows (Sepolia on testnet) | `r3_unlisted_chain_rejected` |
+| T12 | Get an EVM signature on a chain buyers don't look at | `withdraw_eth` only signs for chains in `EVM_CHAINS`, the same list the UI shows (Sepolia, Base Sepolia, Arbitrum Sepolia on testnet) | `r3_unlisted_chain_rejected` |
 | T13 | List on another market (NEP-178), then withdraw the BTC before the buyer pays there | While any approval exists, `withdraw`, `withdraw_eth`, `request_loan` and `list` refuse (`Approved: call nft_revoke_all first`); `nft_approve` refuses while a signature, sale or loan is open; a revoked approval's id never works again; and after any signature, `nft_approve` waits 1 h (24 h on mainnet), so *revoke, withdraw, re-approve* can't catch a buyer who looked a moment ago | `m1_withdraw_while_approved_fails`, `m1_loan_request_while_approved_fails`, `m4_stale_approval_id_fails`, `m5_approve_while_signing_fails`, `m6_approve_right_after_a_withdrawal_fails` |
 | T5 | Anyone else requests a signature | Owner check; the MPC path can only be used by the contract account | `t5_non_owner_withdraw_fails`, `seller_cannot_withdraw_after_sale` |
 | T6 | Mint a token whose "address" is really yours | The key comes from the MPC contract via an on-chain call, not from the caller | `key_is_compressed_from_mpc_format` |
 | T7 | Fund the token with an unconfirmed (RBF) transaction, sell, then double-spend the deposit back | The safe balance only counts **confirmed** coins; unconfirmed ones are shown separately and not counted | client logic in `shared/btc.mjs` (`balances`) |
 | T8 | `nft_transfer_call` gives the receiver the token mid-call; it withdraws the BTC, then returns an empty token | `nft_transfer_call` is disabled; Pusaka moves only by `nft_transfer` or the built-in market | `transfer_call_is_disabled` |
 | T10 | Get an EVM transaction signed, keep it, sell, broadcast later | The contract records a per-chain **nonce floor** (highest signed nonce + 1) before signing. A buyer only counts the ETH once the account's on-chain nonce reaches the floor; until then it shows as at risk | `e1_nonce_floor_recorded_before_signing`, `e1_floor_never_goes_down` |
+| T14 | Sign a NEAR transfer from the Pusaka's own account, keep it, sell, broadcast later | The contract records a **nonce floor** before signing; a buyer counts that NEAR only once the account's access-key nonce reached it | `a2_near_floor_recorded_before_signing_and_never_drops` |
+| T15 | Plant a second key on the Pusaka's NEAR account before selling | The contract builds the transaction itself and only ever signs a single `Transfer` action: no `AddKey`, `DeleteKey` or calls | `a1_near_tx_layout` |
+| T16 | Sign a SOL transfer, keep it, sell, broadcast later | The contract builds a plain System transfer with no durable-nonce instruction, so the signature expires with its blockhash (~1 min); the app shows SOL as at risk for 3 minutes after any SOL signature | `s1_solana_message_layout`, `s2_sol_withdrawal_locks_and_bumps_epoch` |
+| T17 | Keep reading the holder room after selling | Ownership is checked on every request; signatures expire after 5 minutes and are bound to this site and a full-access key | `scripts/holder-test.mjs`, `scripts/handover.mjs` |
+| T18 | Swap or wipe the sealed letter just before a sale | `set_letter` is owner-only and refused while listed, approved, collateral or signing | `h2_old_owner_cannot_rewrite_the_letter`, `h3_letter_frozen_while_listed` |
+| T19 | Start a payout, then sell in the middle of it | A signature in flight locks the token (`SignPending`), and a buyer whose view predates the payout fails (`StateChanged`) | `a5_sale_during_payout_is_impossible`, `a5_buyer_with_pre_payout_view_cannot_buy` |
 | T9 | A failed callback leaves the token locked forever | After ~600 blocks the owner can `unlock_stale`; safe because outpoints were recorded before signing | `unlock_stale_waits_for_timeout`, `unlock_stale_releases_after_timeout` |
 
-There are no NEP-178 approvals and no `nft_transfer_call`, so no marketplace or third party can move a Pusaka around these locks.
+`nft_transfer_call` is disabled, and NEP-178 approvals freeze every asset (T13), so no marketplace or third party can move a Pusaka around these locks.
 
 T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found by independent review passes during QA and fixed with the tests above.
 
@@ -194,7 +257,11 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Gas-free listing from the web app (Meteor *Sign Delegate Action*, NEP-366) | [EN69gz4r…](https://testnet.near.rocks/tx/EN69gz4rrqPk8qyTYJFsNtY5kSZaFHNoXxCKTfrSbdsn): signer `pusaka-relayer.testnet`, a `Delegate` action from `pusaka-w-mvzhtaw8.testnet`; the owner's balance changed by 0 NEAR |
 | Deposit proven by the relayer ("Prove for free", no wallet) | [EYLPHJGX…](https://testnet.near.rocks/tx/EYLPHJGX6rQNDyD6eTMVwmSMR4enPwb75ATDfW4TMWiS): `prove_deposit` signed by `pusaka-relayer.testnet`, returned `true` |
 | Sold on an outside market: Pusaka #2 listed on Mintbase's testnet market (`nft_approve` with a price), bought there by `pusaka-buyer.testnet`; Mintbase called `nft_transfer_payout` | approve [HK7ski1J…](https://testnet.near.rocks/tx/HK7ski1JBYfEKdZoEFkQSHtJuwGts6ZCcUPhwcZ1hMGS), buy [CCxgRJ7i…](https://testnet.near.rocks/tx/CCxgRJ7iwKccnTEwpToZNC9hg3BW17tqqD5oj2X9VXcB); seller received 0.196 NEAR; a withdrawal attempted while approved was refused |
-| Unit tests | 71 / 71 passing, on the testnet and the mainnet build |
+| The Pusaka's own NEAR account: Pusaka #5 funded its implicit account `0065858e…b2db`, then the contract built a Transfer, the MPC signed it with Ed25519, and NEAR accepted it | [3npsdnYo…](https://testnet.near.rocks/tx/3npsdnYooNieWN5Lc3g7pUGVF6vLZfypj5njZpYnFcjJ): 0.05 NEAR out, signed in 8.4 s |
+| Solana: contract-built System transfer for Pusaka #5's Solana address, signed by the MPC's Ed25519 key | signature verifies for `12Ync8r3…t8vN` (8.0 s); not broadcast because the devnet RPC faucet is closed and the address holds no SOL yet |
+| Holder room on the deployed API, sealed letter on-chain | letter stored with `set_letter` ([EZdhBpqg…](https://testnet.near.rocks/tx/EZdhBpqgrzjKGEaVDpGXt8JCBTovTQkdgRHRWRofdHh2)); the holder read it, a non-holder got 403 |
+| Two resales of Pusaka #5 (`scripts/handover.mjs`) | creator `pusaka-seller.testnet` received exactly 0.005 NEAR (2.5% of 0.2); each previous holder was locked out of the room and the new one read the letter |
+| Unit tests | 94 / 94 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here
@@ -202,6 +269,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 - **Chain Signatures**: a smart contract owns a native Bitcoin key. On Ethereum or Solana the same product needs a bridge or a custodian.
 - **Cross-contract calls with callbacks**: `derived_public_key` and `sign` are called from the contract; `on_key` and `on_signed` finish the job and release locks.
 - **Account model**: the MPC derives keys from *(account, path)*, so the contract account is the only one that can use `pusaka-N`.
+- **Implicit accounts**: an Ed25519 public key is already a NEAR account, so the MPC's Ed25519 key gives every NFT its own account with no creation step.
+- **NEP-413 signed messages**: wallets prove who holds a Pusaka without a transaction, which is what gates the holder room.
 
 ## Repository
 
@@ -211,7 +280,10 @@ contract/   Rust smart contract (near-sdk 5, NEP-171) + unit tests
   src/btc.rs     P2WPKH scripts, BIP143 sighashes, tx building
   src/tests.rs   threat-model tests
 shared/     Bitcoin helpers used by scripts and web: address, safe balance, witness assembly + signature check
-scripts/    setup.mjs (deploy), demo.mjs (end-to-end), withdraw.mjs (CLI withdraw)
+scripts/    setup.mjs (deploy), demo.mjs (end-to-end), withdraw*.mjs (BTC, ETH/USDC, SOL, NEAR),
+            mintbase.mjs, holder-test.mjs, handover.mjs
+api/        Vercel functions: relay (NEP-366), prove, holder (NEP-413), reserves, badge, prices, mcp
+mcp/        MCP server for AI agents
 web/        Vite + React app, NEAR wallet via @hot-labs/near-connect
 docs/PRD.md product requirements and design notes
 ```

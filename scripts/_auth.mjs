@@ -1,0 +1,10 @@
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import { KeyPair } from "near-api-js";
+import { accessMessage, nep413Hash } from "../api/_holder.mjs";
+import { keyFile } from "./lib.mjs";
+const [id, acct] = process.argv.slice(2);
+const kp = KeyPair.fromString(JSON.parse(fs.readFileSync(keyFile(acct))).private_key);
+const at = Date.now(), nonce = randomBytes(32), message = accessMessage(id, at);
+const sig = kp.sign(nep413Hash({ message, nonce, recipient: "pusaka-two.vercel.app" })).signature;
+console.log(JSON.stringify({ accountId: acct, publicKey: kp.getPublicKey().toString(), signature: Buffer.from(sig).toString("base64"), message, nonce: nonce.toString("base64"), at }));
