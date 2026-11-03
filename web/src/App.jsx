@@ -392,6 +392,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
   const { id, info } = t;
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
+  const [now] = useState(() => Date.now()); // render-stable "now" for due dates
 
   async function run(label, fn) {
     setBusy(label); setMsg(null);
@@ -415,7 +416,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
   if (loan) {
     const funded = !!loan.lender;
     const due = funded && Number(loan.due_ms);
-    const overdue = funded && Date.now() >= due;
+    const overdue = funded && now >= due;
     const terms = <>borrow <strong>{near(loan.principal)} NEAR</strong>, repay <strong>{near(loan.repay)} NEAR</strong> within {days(loan.duration_ms)}</>;
     return (
       <section className="actions">
