@@ -1022,3 +1022,129 @@ fn y3_payout_respects_max_len() {
     let c = resold();
     let _ = c.nft_payout("1".into(), U128(10_000), Some(1));
 }
+
+// ---------- each Pusaka is a NEAR account ----------
+
+fn withdraw_near(c: &mut Pusaka, caller: &str, nonce: u64) {
+    ctx(caller, NearToken::from_millinear(10), vec![]);
+    let _ = c.withdraw_near("1".into(), acc("bob.testnet"), NearToken::from_millinear(100), U64(nonce), SOL_TO.into());
+}
+
+#[test]
+fn a1_near_tx_layout() {
+    let pk = [7u8; 32];
+    let t = near_transfer_tx(&pk, 9, &acc("bob.testnet"), &[3; 32], 5);
+    assert_eq!(u32::from_le_bytes(t[..4].try_into().unwrap()), 64);
+    assert_eq!(&t[4..68], hex::encode(pk).as_bytes());
+    assert_eq!(t[68], 0);
+    assert_eq!(&t[69..101], &pk);
+    assert_eq!(u64::from_le_bytes(t[101..109].try_into().unwrap()), 9);
+    let r = 109 + 4 + "bob.testnet".len();
+    assert_eq!(&t[113..r], b"bob.testnet");
+    assert_eq!(&t[r + 32..r + 37], &[1, 0, 0, 0, 3]);
+    assert_eq!(u128::from_le_bytes(t[r + 37..].try_into().unwrap()), 5);
+}
+
+#[test]
+fn a2_near_floor_recorded_before_signing_and_never_drops() {
+    let mut c = setup();
+    withdraw_near(&mut c, "alice.testnet", 50);
+    assert!(c.token_info("1".into()).unwrap().pending);
+    assert_eq!(c.near_nonce_floor("1".into()), U64(50));
+    as_contract(vec![PromiseResult::Successful(SOL_KEY.as_bytes().to_vec())]);
+    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(100), U64(50), [3; 32]), PromiseOrValue::Promise(_)));
+    as_contract(vec![PromiseResult::Successful(br#"{"scheme":"Ed25519","signature":[1]}"#.to_vec())]);
+    let _ = c.on_near_signed("1".into(), U64(50), NearToken::from_millinear(100), "".into(), "".into());
+    withdraw_near(&mut c, "alice.testnet", 10);
+    assert_eq!(c.near_nonce_floor("1".into()), U64(50));
+}
+
+#[test]
+fn a3_failed_key_releases_the_lock() {
+    let mut c = setup();
+    withdraw_near(&mut c, "alice.testnet", 1);
+    as_contract(vec![PromiseResult::Failed]);
+    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32]), PromiseOrValue::Value(_)));
+    assert!(!c.token_info("1".into()).unwrap().pending);
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn a4_non_owner_cannot_move_the_near_account() {
+    let mut c = setup();
+    withdraw_near(&mut c, "bob.testnet", 1);
+}
+
+/// The sale-in-the-middle-of-a-payout case: the seller starts a payout, a buyer tries to buy
+/// while it is in flight, then again with the epoch they saw before it.
+#[test]
+#[should_panic(expected = "NotListed")]
+fn a5_sale_during_payout_is_impossible() {
+    let mut c = setup();
+    withdraw_near(&mut c, "alice.testnet", 1); // payout in flight: pending, so it can't be listed
+    ctx("bob.testnet", NearToken::from_near(1), vec![]);
+    c.buy("1".into(), 0);
+}
+
+#[test]
+#[should_panic(expected = "StateChanged")]
+fn a5_buyer_with_pre_payout_view_cannot_buy() {
+    let mut c = setup();
+    let seen = c.token_info("1".into()).unwrap().sign_epoch;
+    withdraw_near(&mut c, "alice.testnet", 1);
+    as_contract(vec![PromiseResult::Failed]);
+    let _ = c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32]);
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    ctx("bob.testnet", NearToken::from_near(1), vec![]);
+    c.buy("1".into(), seen); // a signature was requested after bob looked
+}
+
+// ---------- sealed letter ----------
+
+fn extra(c: &Pusaka) -> Value {
+    serde_json::from_str(&c.nft_token("1".into()).unwrap().metadata.unwrap().extra.unwrap()).unwrap()
+}
+
+#[test]
+fn h1_letter_is_stored_kept_on_sale_and_clearable() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into());
+    assert_eq!(extra(&c)["letter"], "v1:QUJD");
+    assert_eq!(extra(&c)["creator"], "alice.testnet");
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    assert_eq!(extra(&c)["letter"], "v1:QUJD"); // travels with the NFT
+    ctx("bob.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "".into());
+    assert!(extra(&c).get("letter").is_none());
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn h2_old_owner_cannot_rewrite_the_letter() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into());
+}
+
+#[test]
+#[should_panic(expected = "Listed")]
+fn h3_letter_frozen_while_listed() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into());
+}
+
+#[test]
+#[should_panic(expected = "sealed letter")]
+fn h4_oversized_letter_rejected() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "A".repeat(2001));
+}

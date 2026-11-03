@@ -39,6 +39,8 @@ const ETH_NONCE_BYTES: u64 = 120;
 /// One proven UTXO (64-char txid + vout + value + Vec overhead), rounded up.
 const PROVEN_BYTES: u64 = 140;
 const PROOF_TGAS: u64 = 40;
+/// Sealed holder letter, base64 ciphertext.
+const MAX_LETTER: usize = 2000;
 /// Proving dust would let anyone bloat a token's registry; below this a deposit isn't provable.
 const MIN_PROVEN_SATS: u64 = 10_000;
 /// Proven, unspent deposits kept per token (withdrawing consolidates them).
@@ -173,6 +175,7 @@ pub enum Event {
     ApprovalsRevoked,
     WithdrawErc20 { chain_id: U64, nonce: U64, token: String, amount: U128, signed: bool },
     WithdrawSol { lamports: U64, signed: bool },
+    WithdrawNear { nonce: U64, amount: NearToken, signed: bool },
     Royalty { creator: AccountId, amount: NearToken },
 }
 
@@ -222,6 +225,16 @@ pub struct SignedSol {
     pub message: String,
     /// The token's Solana address (base58).
     pub from: String,
+    pub signature: Option<Value>,
+}
+
+/// Returned by `withdraw_near`: the client appends the signature to the tx and broadcasts.
+#[near(serializers = [json])]
+pub struct SignedNear {
+    /// Borsh `Transaction` the MPC signed the sha256 of (base64).
+    pub transaction: String,
+    /// The token's NEAR implicit account (hex of its Ed25519 key).
+    pub account: String,
     pub signature: Option<Value>,
 }
 
@@ -694,6 +707,102 @@ impl Pusaka {
         SignedEth { sighash, signature }
     }
 
+    // ---------- NEAR: each Pusaka is also a NEAR account ----------
+
+    /// Owner-only. The token's Ed25519 MPC key is a NEAR implicit account (id = hex of the key),
+    /// so the Pusaka itself can hold NEAR and anything sent to that account. Builds a transaction
+    /// with a single Transfer of `amount` to `receiver_id` and asks the MPC network to sign it.
+    /// Only Transfer is ever signed: no AddKey, DeleteKey or calls, so the MPC key stays the
+    /// account's only key. Every nonce up to the floor may have a signature in the wild; a buyer
+    /// trusts the balance once the account's access-key nonce has reached it.
+    /// Attach ~0.01 NEAR (storage, refunded) and 300 TGas.
+    #[payable]
+    pub fn withdraw_near(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nonce: U64, block_hash: String) -> Promise {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        require!(!amount.is_zero(), "amount must be > 0");
+        let block_hash = parse_b58_32(&block_hash, "block_hash");
+        let key = format!("{token_id}:near");
+        charge_storage(if self.eth_nonces.contains_key(&key) { 0 } else { ETH_NONCE_BYTES }, 1);
+        let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0);
+        self.eth_nonces.insert(key, floor);
+        self.bump_epoch(&token_id, 1);
+        self.pending.insert(token_id.clone(), env::block_height());
+        Promise::new(self.mpc.clone())
+            .function_call(
+                "derived_public_key",
+                json!({"path": btc_path(&token_id), "predecessor": env::current_account_id(), "domain_id": ED25519_DOMAIN})
+                    .to_string()
+                    .into_bytes(),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(KEY_TGAS),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(SIGN_TGAS + 25))
+                    .on_near_key(token_id, receiver_id, amount, nonce, block_hash),
+            )
+    }
+
+    #[private]
+    pub fn on_near_key(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nonce: U64, block_hash: [u8; 32]) -> PromiseOrValue<SignedNear> {
+        let Some(pk) = ed25519_key_result() else {
+            self.pending.remove(&token_id);
+            self.log(&token_id, Event::WithdrawNear { nonce, amount, signed: false });
+            return PromiseOrValue::Value(SignedNear { transaction: String::new(), account: String::new(), signature: None });
+        };
+        let tx = near_transfer_tx(&pk, nonce.0, &receiver_id, &block_hash, amount.as_yoctonear());
+        PromiseOrValue::Promise(
+            Promise::new(self.mpc.clone())
+                .function_call(
+                    "sign",
+                    json!({"request": {"path": btc_path(&token_id), "payload_v2": {"Eddsa": hex::encode(env::sha256_array(&tx))}, "domain_id": ED25519_DOMAIN}})
+                        .to_string()
+                        .into_bytes(),
+                    NearToken::from_yoctonear(1),
+                    Gas::from_tgas(SIGN_TGAS),
+                )
+                .then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(Gas::from_tgas(8))
+                        .on_near_signed(token_id, nonce, amount, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &tx), hex::encode(pk)),
+                ),
+        )
+    }
+
+    #[private]
+    pub fn on_near_signed(&mut self, token_id: TokenId, nonce: U64, amount: NearToken, transaction: String, account: String) -> SignedNear {
+        self.pending.remove(&token_id);
+        let signature: Option<Value> = match env::promise_result_checked(0, 1024) {
+            Ok(b) => serde_json::from_slice(&b).ok(),
+            _ => None,
+        };
+        self.log(&token_id, Event::WithdrawNear { nonce, amount, signed: signature.is_some() });
+        SignedNear { transaction, account, signature }
+    }
+
+    /// Owner-only. Stores a sealed (encrypted) letter in the token's metadata; it travels with
+    /// the NFT and only the current holder can have it opened (see api/holder.mjs). Empty clears it.
+    #[payable]
+    pub fn set_letter(&mut self, token_id: TokenId, sealed: String) {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id); // a buyer must get the letter they saw
+        require!(sealed.len() <= MAX_LETTER && sealed.bytes().all(|b| b.is_ascii_graphic()), "sealed letter: up to 2000 printable ASCII chars");
+        let before = env::storage_usage();
+        let metas = self.tokens.token_metadata_by_id.as_mut().unwrap();
+        let mut m = metas.get(&token_id).expect("NoToken");
+        let mut extra: Value = m.extra.as_deref().and_then(|e| serde_json::from_str(e).ok()).unwrap_or_else(|| json!({}));
+        if sealed.is_empty() { extra.as_object_mut().unwrap().remove("letter"); } else { extra["letter"] = json!(sealed); }
+        m.extra = Some(extra.to_string());
+        metas.insert(&token_id, &m);
+        charge_storage(env::storage_usage().saturating_sub(before), 1);
+    }
+
+    /// Highest nonce of the token's NEAR account that was ever signed for (0 if none).
+    pub fn near_nonce_floor(&self, token_id: TokenId) -> U64 {
+        U64(self.eth_nonces.get(&format!("{token_id}:near")).copied().unwrap_or(0))
+    }
+
     // ---------- Solana ----------
 
     /// Owner-only. The token's Ed25519 MPC key (same path, domain 1) is a Solana address.
@@ -729,12 +838,7 @@ impl Pusaka {
 
     #[private]
     pub fn on_sol_key(&mut self, token_id: TokenId, to: [u8; 32], lamports: U64, blockhash: [u8; 32]) -> PromiseOrValue<SignedSol> {
-        let key = env::promise_result_checked(0, 256).ok()
-            .and_then(|b| serde_json::from_slice::<String>(&b).ok())
-            .and_then(|s| s.strip_prefix("ed25519:").and_then(|k| bs58::decode(k).into_vec().ok()))
-            .filter(|k| k.len() == 32)
-            .map(|k| <[u8; 32]>::try_from(k).unwrap())
-            .filter(|k| *k != to); // sending to itself: give up here, a panic would leave the lock on
+        let key = ed25519_key_result().filter(|k| *k != to); // sending to itself: give up here, a panic would leave the lock on
         let Some(from) = key else {
             self.pending.remove(&token_id);
             self.log(&token_id, Event::WithdrawSol { lamports, signed: false });
@@ -1113,6 +1217,29 @@ fn parse_evm_address(s: &str) -> [u8; 20] {
     let b = hex::decode(h).unwrap_or_default();
     require!(b.len() == 20, "to must be a 0x-prefixed 20-byte address");
     b.try_into().unwrap()
+}
+
+/// The MPC's `derived_public_key` answer for the Ed25519 domain, as raw key bytes.
+fn ed25519_key_result() -> Option<[u8; 32]> {
+    let b = env::promise_result_checked(0, 256).ok()?;
+    let s: String = serde_json::from_slice(&b).ok()?;
+    bs58::decode(s.strip_prefix("ed25519:")?).into_vec().ok()?.try_into().ok()
+}
+
+/// Borsh `Transaction` (v0) from the implicit account of `pk` with one Transfer action.
+pub fn near_transfer_tx(pk: &[u8; 32], nonce: u64, receiver: &AccountId, block_hash: &[u8; 32], yocto: u128) -> Vec<u8> {
+    let str_ = |t: &mut Vec<u8>, s: &str| { t.extend((s.len() as u32).to_le_bytes()); t.extend(s.as_bytes()); };
+    let mut t = vec![];
+    str_(&mut t, &hex::encode(pk)); // signer_id: the implicit account
+    t.push(0); // PublicKey::ED25519
+    t.extend(pk);
+    t.extend(nonce.to_le_bytes());
+    str_(&mut t, receiver.as_str());
+    t.extend(block_hash);
+    t.extend(1u32.to_le_bytes()); // one action
+    t.push(3); // Action::Transfer
+    t.extend(yocto.to_le_bytes());
+    t
 }
 
 /// ABI for `transfer(address,uint256)`.

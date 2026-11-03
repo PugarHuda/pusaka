@@ -8,7 +8,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Account, JsonRpcProvider, teraToGas } from "near-api-js";
 import {
-  CONTRACT, NEAR_RPC, NETWORK, EXPLORER, EVM, MINT_DEPOSIT, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
+  CONTRACT, NEAR_RPC, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
 } from "@pusaka/shared";
@@ -69,10 +69,23 @@ export async function inspect(token_id) {
   }
   if (info.btc_pubkey) {
     const addr = evmAddress(info.btc_pubkey);
-    const floor = await view("eth_nonce_floor", { token_id, chain_id: String(EVM.chain.id) });
-    const e = await evmBalances(addr, floor).catch(() => null);
-    if (e) out.eth = { chain: EVM.chain.name, address: addr, safe_wei: e.safe, at_risk_wei: e.atRisk };
+    out.evm = await Promise.all(EVM_CHAINS.map(async (c) => {
+      const floor = await view("eth_nonce_floor", { token_id, chain_id: String(c.chain.id) });
+      const e = await evmBalances(addr, floor, c.chain.id).catch(() => null);
+      return e ? { chain: c.chain.name, chain_id: c.chain.id, address: addr, safe_wei: e.safe, at_risk_wei: e.atRisk, usdc_safe: e.usdcSafe, usdc_at_risk: e.usdcAtRisk }
+        : { chain: c.chain.name, error: "unreachable" };
+    }));
   }
+  // The Ed25519 MPC key: a Solana address and the Pusaka's own NEAR implicit account.
+  const [sol, nearAcct] = await Promise.all([
+    solAddress(token_id).then((a) => solBalances(a, info.history).then((b) => ({ address: a, safe_lamports: b.safe, at_risk_lamports: b.atRisk }))).catch(() => null),
+    nearAccount(token_id).then(async (a) => {
+      const b = await nearBalances(a, await view("near_nonce_floor", { token_id }));
+      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk };
+    }).catch(() => null),
+  ]);
+  if (sol) out.sol = sol;
+  if (nearAcct) out.near_account = nearAcct;
   return out;
 }
 

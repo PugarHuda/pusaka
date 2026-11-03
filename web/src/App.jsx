@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CONTRACT, EXPLORER, MARKET, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
-  EVM, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
+  EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
+  SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
+  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear,
 } from "@pusaka/shared";
-import { formatEther, parseEther, isAddress } from "viem";
+import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
 import { call, callGasless, callRaw, connector, near, view, yocto } from "./near.js";
 
@@ -36,10 +38,23 @@ async function loadToken(id) {
   let eth = null;
   if (info.btc_pubkey) {
     const ethAddr = evmAddress(info.btc_pubkey);
-    const floor = await view("eth_nonce_floor", { token_id: id, chain_id: String(EVM.chain.id) });
-    eth = await evmBalances(ethAddr, floor).then((b) => ({ ...b, address: ethAddr, floor })).catch(() => ({ address: ethAddr, error: true }));
+    eth = {
+      address: ethAddr,
+      chains: await Promise.all(EVM_CHAINS.map(async (c) => {
+        const floor = await view("eth_nonce_floor", { token_id: id, chain_id: String(c.chain.id) });
+        return evmBalances(ethAddr, floor, c.chain.id).then((b) => ({ ...b, c, floor })).catch(() => ({ c, error: true }));
+      })),
+    };
   }
-  return { id, info, address, bal, eth };
+  // The Ed25519 key (MPC domain 1) is both a Solana address and a NEAR implicit account.
+  const [sol, nearAcct] = await Promise.all([
+    solAddress(id).then((a) => solBalances(a, info.history).then((b) => ({ ...b, address: a })).catch(() => ({ address: a, error: true }))).catch(() => null),
+    nearAccount(id).then(async (a) => {
+      const floor = await view("near_nonce_floor", { token_id: id });
+      return nearBalances(a, floor).then((b) => ({ ...b, address: a, floor })).catch(() => ({ address: a, error: true }));
+    }).catch(() => null),
+  ]);
+  return { id, info, address, bal, eth, sol, nearAcct };
 }
 
 function useAccount() {
@@ -264,9 +279,15 @@ function Detail({ id, accountId }) {
           ) : (
             <p className="muted">The Bitcoin key is still being derived by the NEAR MPC network.</p>
           )}
+          <p className="badge-line">
+            <img src={`/api/badge?id=${id}`} alt={`Pusaka #${id}: ${btc(Number(info.verified_sats))} BTC verified`} height="22" />
+            <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id})](${location.origin}/#/pusaka/${id})`} />
+          </p>
         </section>
 
-        {t.eth && <EthSection t={t} canWithdraw={isOwner && !info.listing && !info.loan && !info.pending} onDone={refresh} />}
+        {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+        {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+        {t.nearAcct && <NearAccountSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
 
         <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
 
@@ -283,8 +304,11 @@ function Detail({ id, accountId }) {
           </ul>
         </details>
 
+        <HolderRoom id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} />
+
         <section>
           <h2>History</h2>
+          <Ledger history={info.history} />
           <ol className="history">
             {[...info.history].reverse().map((h, i) => (
               <li key={i}>
@@ -363,6 +387,74 @@ function ProveDeposits({ t, accountId, onDone }) {
 
 function EthSection({ t, canWithdraw, onDone }) {
   const { id, eth } = t;
+  const [chainId, setChainId] = useState(String(EVM_CHAINS[0].chain.id));
+  const [asset, setAsset] = useState("ETH");
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const c = EVM_CHAINS.find((x) => String(x.chain.id) === chainId);
+  const funded = eth.chains.some((b) => b.wei > 0n);
+
+  async function send(e) {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      if (!isAddress(to)) throw new Error("That isn't an Ethereum address (0x followed by 40 hex characters).");
+      const erc20 = asset === "USDC" ? c.usdc : undefined;
+      const value = erc20 ? parseUnits(amount, 6) : parseEther(amount);
+      const tx = evmTx({ ...(await evmTxParams(eth.address, c.chain.id, erc20)), to, value, erc20 });
+      const signed = await call("withdraw_eth", {
+        token_id: id, chain_id: String(c.chain.id), nonce: String(tx.nonce), to,
+        value_wei: String(value), gas_limit: String(tx.gas),
+        max_fee_per_gas: String(tx.maxFeePerGas), max_priority_fee_per_gas: String(tx.maxPriorityFeePerGas),
+        ...(erc20 && { erc20 }),
+      }, { deposit: WITHDRAW_DEPOSIT, tgas: 150 });
+      const hash = await broadcastEth(await finalizeEth(tx, signed, eth.address), c.chain.id);
+      setMsg({ ok: true, text: <>Sent. <a href={`${c.explorer}/tx/${hash}`} target="_blank" rel="noreferrer">View on {c.chain.name}</a></> });
+      await onDone();
+    } catch (err) { setMsg({ ok: false, text: err.shortMessage ?? err.message }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <section>
+      <h2>Ether and USDC inside</h2>
+      <p className="muted">The same key controls one address on every EVM chain. Pusaka signs for these:</p>
+      <table className="chains">
+        <thead><tr><th>Chain</th><th>ETH</th><th>USDC</th></tr></thead>
+        <tbody>{eth.chains.map((b) => (
+          <tr key={b.c.chain.id}>
+            <td><a href={`${b.c.explorer}/address/${eth.address}`} target="_blank" rel="noreferrer">{b.c.chain.name}</a></td>
+            {b.error ? <td colSpan="2" className="error">unreachable</td> : <>
+              <td>{eth6(b.safe)}{b.atRisk > 0n && <span className="warn-inline"> +{eth6(b.atRisk)} at risk</span>}</td>
+              <td>{formatUnits(b.usdcSafe, 6)}{b.usdcAtRisk > 0n && <span className="warn-inline"> +{formatUnits(b.usdcAtRisk, 6)} at risk</span>}</td>
+            </>}
+          </tr>))}
+        </tbody>
+      </table>
+      {eth.chains.some((b) => b.atRisk > 0n || b.usdcAtRisk > 0n) && <p className="warn">Amounts marked at risk have a signed transaction that hasn't been used on that chain yet, so it could still move them.</p>}
+      <p className="addr"><span>{eth.address}</span> <CopyButton text={eth.address} /></p>
+      {canWithdraw && funded && (
+        <form onSubmit={send} className="stack">
+          <label>From <span className="row">
+            <select value={chainId} onChange={(e) => setChainId(e.target.value)}>{EVM_CHAINS.map((x) => <option key={x.chain.id} value={x.chain.id}>{x.chain.name}</option>)}</select>
+            <select value={asset} onChange={(e) => setAsset(e.target.value)}><option>ETH</option><option>USDC</option></select>
+          </span></label>
+          <label>Send to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" required spellCheck="false" /></label>
+          <label>Amount <span className="row"><input type="number" min="0" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> {asset}</span></label>
+          <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : `Withdraw ${asset}`}</button>
+        </form>
+      )}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
+const sol9 = (l) => (Number(l) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 9 });
+
+function SolSection({ t, canWithdraw, onDone }) {
+  const { id, sol } = t;
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -372,34 +464,32 @@ function EthSection({ t, canWithdraw, onDone }) {
     e.preventDefault();
     setBusy(true); setMsg(null);
     try {
-      if (!isAddress(to)) throw new Error("That isn't an Ethereum address (0x followed by 40 hex characters).");
-      const tx = evmTx({ ...(await evmTxParams(eth.address)), to, value: parseEther(amount) });
-      const signed = await call("withdraw_eth", {
-        token_id: id, chain_id: String(tx.chainId), nonce: String(tx.nonce), to: tx.to,
-        value_wei: String(tx.value), gas_limit: String(tx.gas),
-        max_fee_per_gas: String(tx.maxFeePerGas), max_priority_fee_per_gas: String(tx.maxPriorityFeePerGas),
-      }, { deposit: WITHDRAW_DEPOSIT, tgas: 150 });
-      const hash = await broadcastEth(await finalizeEth(tx, signed, eth.address));
-      setMsg({ ok: true, text: <>Sent. <a href={`${EVM.explorer}/tx/${hash}`} target="_blank" rel="noreferrer">View on Etherscan</a></> });
+      if (!isSolAddress(to)) throw new Error("That isn't a Solana address.");
+      const signed = await call("withdraw_sol", {
+        token_id: id, to: to.trim(), lamports: String(BigInt(Math.round(Number(amount) * 1e9))), recent_blockhash: await solBlockhash(),
+      }, { deposit: 1n, tgas: 300 });
+      if (signed.from !== sol.address) throw new Error("The contract signed for a different address.");
+      const sig = await broadcastSol(finalizeSol(signed));
+      setMsg({ ok: true, text: <>Sent. <a href={SOL.explorer(`tx/${sig}`)} target="_blank" rel="noreferrer">View on Solana Explorer</a></> });
       await onDone();
-    } catch (err) { setMsg({ ok: false, text: err.shortMessage ?? err.message }); }
+    } catch (err) { setMsg({ ok: false, text: err.message }); }
     finally { setBusy(false); }
   }
 
   return (
     <section>
-      <h2>Ether inside ({EVM.chain.name})</h2>
-      <p className="muted">The same key also controls an address on every EVM chain.</p>
-      {eth.error ? <p className="error">Couldn't reach {EVM.chain.name}, so the ETH balance is unknown.</p> : <>
-        <p className="amount small"><span>{eth6(eth.safe)}</span> ETH</p>
-        {eth.atRisk > 0n && <p className="warn">{eth6(eth.atRisk)} ETH is at risk: a signed transaction for nonce {eth.nonce} hasn't been used on {EVM.chain.name} yet, so it could still spend it.</p>}
+      <h2>SOL inside ({SOL.name})</h2>
+      <p className="muted">A second MPC key, Ed25519, belongs to this Pusaka too. It is a Solana address.</p>
+      {sol.error ? <p className="error">Couldn't reach {SOL.name}, so the SOL balance is unknown.</p> : <>
+        <p className="amount small"><span>{sol9(sol.safe)}</span> SOL</p>
+        {sol.atRisk > 0n && <p className="warn">{sol9(sol.atRisk)} SOL is at risk until {new Date(sol.clearAt).toLocaleTimeString()}: a SOL transfer was signed in the last few minutes, and it stays valid until its blockhash expires.</p>}
       </>}
-      <p className="addr"><a href={`${EVM.explorer}/address/${eth.address}`} target="_blank" rel="noreferrer">{eth.address}</a> <CopyButton text={eth.address} /></p>
-      {canWithdraw && eth.wei > 0n && (
+      <p className="addr"><a href={SOL.explorer(`address/${sol.address}`)} target="_blank" rel="noreferrer">{sol.address}</a> <CopyButton text={sol.address} /></p>
+      {canWithdraw && sol.lamports > 0n && (
         <form onSubmit={send} className="stack">
-          <label>Send ETH to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x…" required spellCheck="false" /></label>
-          <label>Amount <span className="row"><input type="number" min="0" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> ETH</span></label>
-          <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Withdraw ETH"}</button>
+          <label>Send SOL to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Solana address" required spellCheck="false" /></label>
+          <label>Amount <span className="row"><input type="number" min="0.000000001" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> SOL</span></label>
+          <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Withdraw SOL"}</button>
         </form>
       )}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
@@ -407,11 +497,158 @@ function EthSection({ t, canWithdraw, onDone }) {
   );
 }
 
-function CopyButton({ text }) {
+function NearAccountSection({ t, canWithdraw, onDone }) {
+  const { id, nearAcct: a } = t;
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  async function send(e) {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      const { nonce, blockHash } = await nearTxParams(a.address);
+      const signed = await call("withdraw_near", {
+        token_id: id, receiver_id: to.trim(), amount: yocto(amount).toString(), nonce: String(nonce), block_hash: blockHash,
+      }, { deposit: 10_000_000_000_000_000_000_000n, tgas: 300 });
+      if (signed.account !== a.address) throw new Error("The contract signed for a different account.");
+      const hash = await broadcastNear(await finalizeNear(signed));
+      setMsg({ ok: true, text: <>Sent. <a href={`${NEAR_EXPLORER}/tx/${hash}`} target="_blank" rel="noreferrer">View on NEAR</a></> });
+      await onDone();
+    } catch (err) { setMsg({ ok: false, text: err.message }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <section>
+      <h2>Its own NEAR account</h2>
+      <p className="muted">The Ed25519 key is also a NEAR account. Anyone can send it NEAR; only the holder of this NFT
+        can move it, and only as plain transfers, so no one can add a key and keep it after a sale.</p>
+      {a.error ? <p className="error">Couldn't read the account.</p> : <>
+        <p className="amount small"><span>{near(a.safe)}</span> NEAR</p>
+        {a.atRisk > 0n && <p className="warn">{near(a.atRisk)} NEAR is at risk: a signed transfer for nonce {a.floor} hasn't been used yet.</p>}
+        {!a.exists && <p className="muted">Empty so far. Send NEAR to the account below to create it.</p>}
+      </>}
+      <p className="addr"><a href={`${NEAR_EXPLORER}/account/${a.address}`} target="_blank" rel="noreferrer">{a.address}</a> <CopyButton text={a.address} /></p>
+      {canWithdraw && a.yocto > 0n && (
+        <form onSubmit={send} className="stack">
+          <label>Send NEAR to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name.testnet" required spellCheck="false" /></label>
+          <label>Amount <span className="row"><input type="number" min="0.0001" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> NEAR</span></label>
+          <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Withdraw NEAR"}</button>
+        </form>
+      )}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
+const accessMessage = (id, at) => `Open the holder room of Pusaka #${id}\nat ${at}`; // same text as api/_holder.mjs
+
+/** Gated: only the current holder, proven by a NEP-413 signed message, gets the room's content. */
+function HolderRoom({ id, owner, accountId, canSeal, onDone }) {
+  const [room, setRoom] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+  useEffect(() => { setRoom(null); setAuth(null); }, [id, accountId]);
+
+  const ask = async (body) => {
+    const r = await fetch("/api/holder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error ?? `holder room answered ${r.status}`);
+    return j;
+  };
+
+  async function enter() {
+    setBusy("open"); setMsg(null);
+    try {
+      const wallet = await connector.wallet();
+      const at = Date.now();
+      const nonce = crypto.getRandomValues(new Uint8Array(32));
+      const message = accessMessage(id, at);
+      const s = await wallet.signMessage({ message, recipient: location.host, nonce });
+      const a = { accountId: s.accountId, publicKey: s.publicKey, signature: s.signature, message, at,
+        nonce: btoa(String.fromCharCode(...nonce)) };
+      setRoom(await ask({ token_id: id, auth: a }));
+      setAuth(a);
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    finally { setBusy(""); }
+  }
+
+  async function sealLetter(e) {
+    e.preventDefault();
+    setBusy("seal"); setMsg(null);
+    try {
+      const { sealed } = await ask({ token_id: id, auth, action: "seal", text });
+      await call("set_letter", { token_id: id, sealed }, { deposit: 10_000_000_000_000_000_000_000n });
+      setRoom(await ask({ token_id: id, auth }));
+      setText("");
+      setMsg({ ok: true, text: "Sealed into the Pusaka. It goes to whoever holds it next." });
+      await onDone();
+    } catch (err) { setMsg({ ok: false, text: err.message }); }
+    finally { setBusy(""); }
+  }
+
+  return (
+    <section className="holder-room">
+      <h2>Holder room</h2>
+      <p className="muted">Each Pusaka carries a sealed letter that only its current holder can read. Sell it and the
+        letter goes with it; the old holder is locked out the moment the NFT moves.</p>
+      {!room && (accountId === owner
+        ? <button onClick={enter} disabled={!!busy}>{busy ? "Waiting for your wallet…" : "Sign in to open"}</button>
+        : <p className="muted">{accountId ? `Only ${owner} can open it.` : "Connect the wallet that holds this Pusaka to open it."}</p>)}
+      {room && <>
+        {room.letter ? <blockquote className="letter">{room.letter}</blockquote> : <p className="muted">No letter sealed in this Pusaka yet.</p>}
+        {room.creator && <p className="muted">Created by {room.creator}. They receive a 2.5% royalty on every resale.</p>}
+        {canSeal && (
+          <form onSubmit={sealLetter} className="stack">
+            <label>{room.letter ? "Replace the letter" : "Write a letter for the next holder"}
+              <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} rows={4} required /></label>
+            <button disabled={!!busy}>{busy === "seal" ? "Sealing…" : "Seal into this Pusaka"}</button>
+          </form>
+        )}
+      </>}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
+/** Per-NFT ledger from its on-chain history: who held it, what it earned its holders, what went out. */
+function Ledger({ history }) {
+  const holders = [];
+  let earned = 0n, royalties = 0n, borrowed = 0n;
+  const out = [];
+  for (const { event: e } of history) {
+    const hold = (a) => { if (a && holders.at(-1) !== a) holders.push(a); };
+    if (e.kind === "Mint") hold(e.owner);
+    if (e.kind === "Sale") { hold(e.from); hold(e.to); earned += BigInt(e.price); }
+    if (e.kind === "Transfer") { hold(e.from); hold(e.to); }
+    if (e.kind === "LoanDefaulted") hold(e.lender);
+    if (e.kind === "Royalty") royalties += BigInt(e.amount);
+    if (e.kind === "LoanFunded") borrowed += 1n;
+    if (e.kind === "Withdraw") out.push(`${Number(e.amount_sat).toLocaleString()} sats`);
+    if (e.kind === "WithdrawEth") out.push(`${formatEther(BigInt(e.value_wei))} ETH`);
+    if (e.kind === "WithdrawErc20") out.push(`${formatUnits(BigInt(e.amount), 6)} USDC`);
+    if (e.kind === "WithdrawSol") out.push(`${sol9(e.lamports)} SOL`);
+    if (e.kind === "WithdrawNear") out.push(`${near(e.amount)} NEAR`);
+  }
+  return (
+    <dl className="ledger">
+      <dt>Held by</dt><dd>{holders.join(" → ") || "—"}</dd>
+      <dt>Sold for</dt><dd>{near(earned)} NEAR in total{royalties > 0n && `, of which ${near(royalties)} NEAR went to its creator`}</dd>
+      <dt>Paid out</dt><dd>{out.join(", ") || "nothing yet"}</dd>
+      {borrowed > 0n && <><dt>Loans</dt><dd>{String(borrowed)} funded against it</dd></>}
+    </dl>
+  );
+}
+
+function CopyButton({ text, label = "Copy" }) {
   const [done, setDone] = useState(false);
   return (
     <button className="link" onClick={() => navigator.clipboard.writeText(text).then(() => setDone(true))}>
-      {done ? "Copied" : "Copy"}
+      {done ? "Copied" : label}
     </button>
   );
 }
@@ -430,6 +667,12 @@ function describe(e) {
     case "LoanRepaid": return `Loan repaid: ${near(e.amount)} NEAR to ${e.lender}`;
     case "WithdrawEth": return `Withdrew ${formatEther(BigInt(e.value_wei))} ETH on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
     case "LoanDefaulted": return `Loan not repaid. ${e.lender} took the Pusaka and its BTC`;
+    case "WithdrawErc20": return `Withdrew ${formatUnits(BigInt(e.amount), 6)} USDC on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
+    case "WithdrawSol": return `Withdrew ${sol9(e.lamports)} SOL${e.signed ? "" : " (signature failed)"}`;
+    case "WithdrawNear": return `Sent ${near(e.amount)} NEAR from its own account${e.signed ? "" : " (signature failed)"}`;
+    case "Royalty": return `Royalty of ${near(e.amount)} NEAR paid to its creator ${e.creator}`;
+    case "Approved": return `Approved ${e.account} to sell it`;
+    case "ApprovalsRevoked": return "Stopped selling on outside markets";
     default: return e.kind;
   }
 }

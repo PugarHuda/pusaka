@@ -217,3 +217,18 @@ button.secondary:hover:not(:disabled) { background: rgba(20, 33, 61, 0.06); }
 .activity { margin: 2rem 0 0; max-width: var(--measure); }
 .activity h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
 .activity ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.3rem; font-size: 0.95rem; }
+
+/* multi-chain balances, holder room, per-NFT ledger */
+textarea, select { font: inherit; color: inherit; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.6rem; }
+textarea { width: 100%; resize: vertical; }
+textarea:focus, select:focus { border-color: var(--ink); outline: none; }
+.chains { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin: 0.4rem 0 0.8rem; }
+.chains th, .chains td { text-align: left; padding: 0.35rem 0.5rem 0.35rem 0; border-top: 1px solid var(--line); }
+.chains th { font-weight: 600; color: var(--ink-soft); border-top: 0; }
+.warn-inline { color: var(--seal); font-size: 0.9em; }
+.letter { margin: 0.6rem 0 1rem; padding: 1rem 1.2rem; background: var(--paper); border-left: 3px solid var(--brass); white-space: pre-wrap; font-size: 1.05rem; }
+.ledger { display: grid; grid-template-columns: 7rem 1fr; gap: 0.3rem 1rem; margin: 0 0 1rem; }
+.ledger dt { color: var(--ink-soft); }
+.ledger dd { margin: 0; overflow-wrap: anywhere; }
+.addr span { overflow-wrap: anywhere; }
+.badge-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }

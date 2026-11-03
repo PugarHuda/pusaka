@@ -403,3 +403,54 @@ export async function preflightProof(p) {
   }).then((x) => x.json());
   return !!r.result?.result && new TextDecoder().decode(new Uint8Array(r.result.result)) === "true";
 }
+
+// ---------- NEAR: the same Ed25519 key is the Pusaka's own NEAR implicit account ----------
+const nearRpc = (method, params) => fetch(NEAR_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
+  .then((r) => r.json()).then((j) => { if (j.error) throw Object.assign(new Error(j.error.cause?.name ?? j.error.message), { rpc: j.error }); return j.result; });
+
+/** The Pusaka's NEAR account: hex of its Ed25519 MPC key. */
+export async function nearAccount(tokenId) {
+  return toHex(base58.decode(await solAddress(tokenId)));
+}
+
+/**
+ * NEAR a buyer can rely on. Every nonce up to `floor` may have a signed transaction in the wild,
+ * so the balance only counts once the account's access-key nonce has reached the floor.
+ * An account that doesn't exist yet holds nothing and has no key.
+ */
+export async function nearBalances(account, floor) {
+  const pk = `ed25519:${base58.encode(fromHex(account))}`;
+  const [acc, key] = await Promise.all([
+    nearRpc("query", { request_type: "view_account", finality: "final", account_id: account }).catch((e) => { if (e.rpc?.cause?.name === "UNKNOWN_ACCOUNT" || /UNKNOWN_ACCOUNT|does not exist/.test(e.message)) return null; throw e; }),
+    nearRpc("query", { request_type: "view_access_key", finality: "final", account_id: account, public_key: pk }).catch(() => null),
+  ]);
+  const yocto = BigInt(acc?.amount ?? 0);
+  const nonce = BigInt(key?.nonce ?? 0);
+  const clear = nonce >= BigInt(floor);
+  return { exists: !!acc, yocto, nonce, publicKey: pk, safe: clear ? yocto : 0n, atRisk: clear ? 0n : yocto };
+}
+
+/** Next nonce and a recent block hash for a withdrawal from the Pusaka's NEAR account. */
+export async function nearTxParams(account) {
+  const b = await nearBalances(account, 0);
+  if (!b.exists) throw new Error("this Pusaka's NEAR account is empty; send it some NEAR first");
+  const block = await nearRpc("block", { finality: "final" });
+  return { nonce: b.nonce + 1n, blockHash: block.header.hash };
+}
+
+/** Checks the MPC signature over sha256(tx) for the account's key, then returns the signed tx (base64). */
+export async function finalizeNear(signed) {
+  if (!signed.signature) throw new Error("the MPC network returned no signature");
+  const raw = signed.signature.signature ?? signed.signature;
+  const sig = typeof raw === "string" ? fromHex(raw) : Uint8Array.from(raw);
+  const tx = base64.decode(signed.transaction);
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", tx));
+  if (!ed25519.verify(sig, hash, fromHex(signed.account))) throw new Error("signature doesn't verify for this Pusaka's NEAR key");
+  return base64.encode(Uint8Array.from([...tx, 0, ...sig]));
+}
+
+export async function broadcastNear(b64) {
+  const r = await nearRpc("send_tx", { signed_tx_base64: b64, wait_until: "EXECUTED_OPTIMISTIC" });
+  if (r.status?.Failure) throw new Error(`NEAR rejected it: ${JSON.stringify(r.status.Failure).slice(0, 200)}`);
+  return r.transaction.hash;
+}
