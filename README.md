@@ -266,7 +266,7 @@ existed. Try: `node scripts/prove-usdc.mjs <payer.testnet> <token_id>`; the rela
 
 ## Prices: what a lender or buyer is actually getting
 
-The web app values collateral and listings with live market data: BTC/USD from mempool.space, NEAR (and ETH) from Rhea/Ref, i.e. NEAR DEX prices. A loan shows its loan-to-value and annualised interest; a listing shows how far above or below the BTC's value it is priced. NEAR's on-chain oracles (`pyth-oracle.near`, `pyth-oracle.testnet`, `priceoracle.near`) were all stale when we checked, so the contract doesn't depend on a price; the numbers are labelled as mainnet prices.
+The web app values collateral and listings with live market data: BTC/USD from mempool.space, NEAR (and ETH) from Rhea/Ref, i.e. NEAR DEX prices. A loan shows its loan-to-value and annualised interest; a listing shows how far above or below the BTC's value it is priced. NEAR's on-chain oracles (`pyth-oracle.near`, `pyth-oracle.testnet`, `priceoracle.near`) were all stale when we checked, so the contract doesn't depend on a price; the numbers are labelled as mainnet prices. (Re-checked 4 Nov 2026: `pyth-oracle.testnet` last published in June, `priceoracle.near` returns no prices, and Pyth's Hermes now needs a paid API key.) Each price is cross-checked against CoinGecko: if BTC, NEAR or ETH differ by more than 5% the API answers an error, and the MCP agent's `pusaka_fund_loan` refuses to fund on a single source.
 
 ## Why the seller can't keep the Bitcoin
 
@@ -303,7 +303,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 **Limits, stated plainly**
 
 - **What is trustless:** the *verified* balance. A deposit counts only after `btc-client-v4.testnet` (a Bitcoin SPV light client on NEAR) has verified its merkle proof and the contract has checked the output pays this Pusaka. Only this contract can get signatures for the address and it records each one, so a proven, never-signed UTXO can't have been spent. A buyer or lender needs nothing but the contract's `verified_sats`.
-- **What isn't:** mempool.space is still used to *find* deposits and build proofs (any Esplora works; a lying API can only make a proof fail). Light-client security assumptions apply: it follows the most-work chain it is fed by relayers, so a deep reorg attack is bounded by the confirmations required (1 on testnet, 6 on mainnet).
+- **What isn't:** mempool.space is still used to *find* deposits and build proofs, failing over to Blockstream's Esplora on timeouts and 5xx (any Esplora works; a lying API can only make a proof fail). Light-client security assumptions apply: it follows the most-work chain it is fed by relayers, so a deep reorg attack is bounded by the confirmations required (1 on testnet, 6 on mainnet).
 - Security rests on the NEAR MPC network's threshold assumption.
 - The testnet contract is deployed with a full-access key we hold. A production deployment must remove it (or use a DAO) so the code can't be swapped.
 - Testnet only. No mainnet funds were used.
