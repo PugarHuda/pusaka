@@ -6,19 +6,21 @@
 // Without an account it runs read-only (overview, inspect).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { Account, JsonRpcProvider, teraToGas } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, teraToGas } from "near-api-js";
 import {
-  CONTRACT, NEAR_RPC, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
+  CONTRACT, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
+  evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
+  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, nearProvider,
 } from "@pusaka/shared";
+import { isAddress, parseEther, parseUnits } from "viem";
 
-const provider = new JsonRpcProvider({ url: NEAR_RPC });
+const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const ACCOUNT_ID = process.env.PUSAKA_ACCOUNT_ID;
 const account = ACCOUNT_ID && process.env.PUSAKA_PRIVATE_KEY
   ? new Account(ACCOUNT_ID, provider, process.env.PUSAKA_PRIVATE_KEY)
   : null;
-const YOCTO = 10n ** 24n;
 const toYocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 18n;
 const toNear = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6;
 
@@ -220,6 +222,76 @@ reg("pusaka_withdraw_btc", {
   }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
   const txid = await broadcast(finalize(signed, ins.map((u) => u.value)).toHex());
   return { txid, explorer: `${EXPLORER}/tx/${txid}` };
+}));
+
+const accountExists = (accountId) => provider.viewAccount({ accountId, blockQuery: { finality: "final" } }).then(() => true, () => false);
+
+reg("pusaka_give", {
+  description: "Give your Pusaka to another NEAR account: the NFT and everything it controls (BTC, ETH, SOL, its NEAR account, the letter) move in one transaction. Refuses accounts that don't exist, since a Pusaka sent to an account nobody controls is lost.",
+  inputSchema: { token_id: z.string(), to: z.string() },
+}, tool(async ({ token_id, to }) => {
+  const receiver = to.trim().toLowerCase();
+  if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
+  await call("nft_transfer", { receiver_id: receiver, token_id, memo: "given by an agent through Pusaka MCP" }, { deposit: 1n, tgas: 50 });
+  return { given: token_id, owner: (await view("token_info", { token_id })).token.owner_id };
+}));
+
+reg("pusaka_withdraw_eth", {
+  description: `Send ETH or USDC out of your Pusaka on an EVM chain (${EVM_CHAINS.map((c) => `${c.chain.id} ${c.chain.name}`).join(", ")}). The contract builds the EIP-1559 transaction, NEAR MPC signs it with the same key that holds the BTC, this server checks the signature recovers to the Pusaka's address and broadcasts.`,
+  inputSchema: { token_id: z.string(), to: z.string(), amount: z.number().positive(), chain_id: z.number().int().optional(), usdc: z.boolean().optional() },
+}, tool(async ({ token_id, to, amount, chain_id = EVM_CHAINS[0].chain.id, usdc = false }) => {
+  const c = EVM_CHAINS.find((x) => x.chain.id === chain_id);
+  if (!c) throw new Error(`chain_id must be one of ${EVM_CHAINS.map((x) => x.chain.id).join(", ")}`);
+  if (!isAddress(to)) throw new Error(`${to} isn't an EVM address`);
+  const info = await view("token_info", { token_id });
+  const from = evmAddress(info.btc_pubkey);
+  const erc20 = usdc ? c.usdc : undefined;
+  const value = usdc ? parseUnits(String(amount), 6) : parseEther(String(amount));
+  const bal = await evmBalances(from, await view("eth_nonce_floor", { token_id, chain_id: String(chain_id) }), chain_id);
+  if (usdc ? BigInt(bal.usdc) < value : BigInt(bal.wei) < value) throw new Error(`Pusaka #${token_id} holds ${usdc ? `${bal.usdc} USDC units` : `${bal.wei} wei`} on ${c.chain.name}`);
+  const tx = evmTx({ ...(await evmTxParams(from, chain_id, erc20)), erc20, to, value });
+  const deposit = 20_000_000_000_000_000_000_000n;
+  spend(deposit, "withdraw_eth");
+  const signed = await call("withdraw_eth", {
+    token_id, chain_id: String(chain_id), nonce: String(tx.nonce), to, value_wei: String(value), gas_limit: String(tx.gas),
+    max_fee_per_gas: String(tx.maxFeePerGas), max_priority_fee_per_gas: String(tx.maxPriorityFeePerGas), ...(erc20 && { erc20 }),
+  }, { deposit, tgas: 150 });
+  const hash = await broadcastEth(await finalizeEth(tx, signed, from), chain_id);
+  return { tx: hash, explorer: `${c.explorer}/tx/${hash}`, from };
+}));
+
+reg("pusaka_withdraw_sol", {
+  description: "Send SOL out of your Pusaka (its Ed25519 MPC key is a Solana address). The contract builds a plain System transfer, NEAR MPC signs it, this server broadcasts.",
+  inputSchema: { token_id: z.string(), to: z.string(), sol: z.number().positive() },
+}, tool(async ({ token_id, to, sol }) => {
+  if (!isSolAddress(to)) throw new Error(`${to} isn't a Solana address`);
+  const from = await solAddress(token_id);
+  const info = await view("token_info", { token_id });
+  const lamports = BigInt(Math.round(sol * 1e9));
+  const bal = await solBalances(from, info.history);
+  if (BigInt(bal.lamports) < lamports) throw new Error(`Pusaka #${token_id} holds ${bal.lamports} lamports`);
+  spend(1n, "withdraw_sol");
+  const signed = await call("withdraw_sol", { token_id, to, lamports: String(lamports), recent_blockhash: await solBlockhash() }, { deposit: 1n, tgas: 300 });
+  if (signed.from !== from) throw new Error(`contract signed for ${signed.from}, expected ${from}`);
+  const sig = await broadcastSol(finalizeSol(signed));
+  return { tx: sig, explorer: SOL.explorer(`tx/${sig}`), from };
+}));
+
+reg("pusaka_withdraw_near", {
+  description: "Send NEAR out of your Pusaka's own NEAR account (an implicit account of its Ed25519 MPC key). The contract only ever signs a single Transfer from it.",
+  inputSchema: { token_id: z.string(), to: z.string(), near: z.number().positive() },
+}, tool(async ({ token_id, to, near }) => {
+  const receiver = to.trim().toLowerCase();
+  if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
+  const acct = await nearAccount(token_id);
+  const { nonce, blockHash } = await nearTxParams(acct);
+  const deposit = 10_000_000_000_000_000_000_000n;
+  spend(deposit, "withdraw_near");
+  const signed = await call("withdraw_near", { token_id, receiver_id: receiver, amount: toYocto(near).toString(), nonce: String(nonce), block_hash: blockHash },
+    { deposit, tgas: 300 });
+  if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
+  const hash = await broadcastNear(await finalizeNear(signed));
+  return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, from: acct };
 }));
 
 reg("pusaka_mint", {

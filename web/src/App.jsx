@@ -8,7 +8,7 @@ import {
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
-import { call, callGasless, callRaw, connector, near, view, yocto } from "./near.js";
+import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
 const eth6 = (wei) => Number(formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 6 });
@@ -700,9 +700,22 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
     finally { setBusy(""); }
   }
 
-  if (info.pending) return <section className="actions"><p className="warn">The NEAR MPC network is signing a withdrawal. The Pusaka is locked until it finishes.</p></section>;
-
   const status = msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>;
+
+  if (info.pending) return (
+    <section className="actions">
+      <p className="warn">The NEAR MPC network is signing a withdrawal. The Pusaka is locked until it finishes.</p>
+      {isOwner && <>
+        {/* The contract enforces the timeout (~600 blocks); outpoints and nonce floors were recorded before signing. */}
+        <p className="muted">Stuck for more than about 10 minutes? The callback may have run out of gas. You can release the lock; anything that was signed stays recorded.</p>
+        <button className="ghost" disabled={!!busy} onClick={() => run("unlock", async () => {
+          await call("unlock_stale", { token_id: id });
+          return "Lock released.";
+        })}>{busy === "unlock" ? "Releasing…" : "Release the lock"}</button>
+        {status}
+      </>}
+    </section>
+  );
   const loan = info.loan;
   const act = (label, idle, busyText, fn, ghost) => !accountId ? (
     <button onClick={() => connector.connect()}>Connect NEAR wallet to {idle.charAt(0).toLowerCase() + idle.slice(1)}</button>
@@ -814,6 +827,7 @@ function OwnerForms({ t, busy, run, status }) {
   const [loanDays, setLoanDays] = useState("7");
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
+  const [heir, setHeir] = useState("");
   const FEE = 300;
   const spendableSats = bal.safe + bal.pending;
 
@@ -882,6 +896,19 @@ function OwnerForms({ t, busy, run, status }) {
     });
   }
 
+  function give(e) {
+    e.preventDefault();
+    run("give", async () => {
+      const receiver = heir.trim().toLowerCase();
+      if (receiver === t.info.token.owner_id) throw new Error("That's you already.");
+      // NEP-171 accepts any valid account id, even one nobody controls: a typo would lose the heirloom.
+      const exists = await provider.viewAccount({ accountId: receiver, blockQuery: { finality: "final" } }).then(() => true, () => false);
+      if (!exists) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}. Check the name; a Pusaka given to an account nobody controls is lost.`);
+      await call("nft_transfer", { receiver_id: receiver, token_id: id, memo: "given through Pusaka" }, { deposit: 1n, tgas: 50 });
+      return `Pusaka #${id} now belongs to ${receiver}, with everything inside it.`;
+    });
+  }
+
   return (
     <section className="actions">
       <form onSubmit={sell} className="stack">
@@ -931,6 +958,14 @@ function OwnerForms({ t, busy, run, status }) {
         </label>
         <button disabled={!!busy || spendableSats === 0}>{busy === "withdraw" ? "Signing with NEAR MPC… (about 15 s)" : "Withdraw"}</button>
         <p className="muted">Network fee {FEE} sats. Change goes back into this Pusaka.</p>
+      </form>
+      <form onSubmit={give} className="stack">
+        <h2>Give it to someone</h2>
+        <label>Their NEAR account
+          <input value={heir} onChange={(e) => setHeir(e.target.value)} placeholder={NETWORK === "mainnet" ? "name.near" : "name.testnet"} required spellCheck="false" autoCapitalize="none" />
+        </label>
+        <button disabled={!!busy}>{busy === "give" ? "Giving…" : "Give this Pusaka"}</button>
+        <p className="muted">Everything inside moves with it, BTC, ETH, SOL, its NEAR account and the letter, in one NEAR transaction. No sale, no royalty.</p>
       </form>
       {status}
     </section>

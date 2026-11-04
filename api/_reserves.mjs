@@ -1,9 +1,9 @@
 // Proof of reserves straight from the contract: every Pusaka, its BTC address and the deposits
 // NEAR's Bitcoin light client proved. Shared by api/reserves.mjs and api/badge.mjs.
-import { JsonRpcProvider } from "near-api-js";
-import { CONTRACT, NEAR_RPC, NETWORK, BTC_LIGHT_CLIENT, btcAddress } from "@pusaka/shared";
+import { FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
+import { CONTRACT, NETWORK, BTC_LIGHT_CLIENT, btcAddress, nearProvider } from "@pusaka/shared";
 
-const provider = new JsonRpcProvider({ url: NEAR_RPC });
+const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const view = (method, args) => provider.callFunction({ contractId: CONTRACT, method, args, blockQuery: { finality: "final" } });
 
 export async function tokenReserve(id) {

@@ -1,4 +1,4 @@
-import { account, call, view, btcAddress, scriptHex, balances, finalize, broadcast, WITHDRAW_DEPOSIT, MINT_DEPOSIT } from "./lib.mjs";
+import { account, call, view, btcAddress, scriptHex, balances, finalize, broadcast, WITHDRAW_DEPOSIT } from "./lib.mjs";
 const owner = account(process.argv[2] ?? "pusaka-seller.testnet");
 const id = process.argv[3] ?? "1";
 const to = process.argv[4] ?? "tb1qerzrlxcfu24davlur5sqmgzzgsal6wusda40er";

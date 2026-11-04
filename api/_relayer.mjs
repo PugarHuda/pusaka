@@ -1,16 +1,16 @@
 // Relayer logic shared by the Vercel functions (api/relay.mjs, api/prove.mjs) and local tests.
 // The relayer account pays gas; users sign. Nothing here can move a user's NEAR.
-import { Account, JsonRpcProvider, SCHEMA, actions, teraToGas } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, SCHEMA, actions, teraToGas } from "near-api-js";
 import { deserialize } from "borsh";
 import {
-  CONTRACT, NEAR_RPC, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof,
+  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof, nearProvider,
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
 export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral"];
 const MAX_TGAS = 100n;
 
-const provider = new JsonRpcProvider({ url: NEAR_RPC });
+const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 
 export function relayerAccount() {
   const id = process.env.RELAYER_ACCOUNT_ID;

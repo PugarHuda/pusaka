@@ -14,6 +14,7 @@ const CONFIG = {
     contract: "pusaka-btc.testnet",
     mpc: "v1.signer-prod.testnet",
     nearRpc: "https://test.rpc.fastnear.com",
+    nearRpcFallbacks: ["https://near-testnet.drpc.org", "https://rpc.testnet.near.org"],
     nearExplorer: "https://testnet.near.rocks",
     txApi: "https://tx.test.fastnear.com", // FastNear transactions API (CORS-enabled)
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
@@ -31,6 +32,7 @@ const CONFIG = {
     contract: "pusaka.near", // placeholder until the mainnet account exists; override with PUSAKA_CONTRACT
     mpc: "v1.signer",
     nearRpc: "https://free.rpc.fastnear.com",
+    nearRpcFallbacks: ["https://near.drpc.org", "https://rpc.mainnet.near.org"],
     nearExplorer: "https://near.rocks",
     txApi: "https://tx.main.fastnear.com",
     btc: bitcoin.networks.bitcoin,
@@ -49,6 +51,38 @@ if (!CONFIG) throw new Error(`unknown network ${NETWORK}`);
 export const CONTRACT = env("PUSAKA_CONTRACT") ?? CONFIG.contract;
 export const MPC = CONFIG.mpc;
 export const NEAR_RPC = env("PUSAKA_NEAR_RPC") ?? CONFIG.nearRpc;
+/** FastNear first (fast), then dRPC and NEAR's own RPC when one rate-limits (429) or is down. All send CORS headers. */
+export const NEAR_RPCS = [NEAR_RPC, ...CONFIG.nearRpcFallbacks].filter((u, i, a) => a.indexOf(u) === i);
+
+/** nearFetch(init), but on the first NEAR RPC that answers without a 429, a 5xx or a network error. */
+export async function nearFetch(init) {
+  let last;
+  for (const url of NEAR_RPCS) {
+    try {
+      const r = await fetch(url, init);
+      if (r.status === 429 || r.status >= 500) { last = new Error(`${url}: HTTP ${r.status}`); continue; }
+      // FastNear also reports rate limits inside a 200 body
+      if ((await r.clone().json().catch(() => null))?.error?.code === -429) { last = new Error(`${url}: rate limited`); continue; }
+      return r;
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
+
+/** near-api-js provider over NEAR_RPCS: two short retries per endpoint instead of 12 against one. Pass near-api-js in. */
+export function nearProvider({ FailoverRpcProvider, JsonRpcProvider }) {
+  // Same as FailoverRpcProvider, minus its console.error on every switch (a fallback isn't an error).
+  class Failover extends FailoverRpcProvider {
+    async withBackoff(getResult) {
+      const errors = [];
+      for (let i = 0; i < this.providers.length; i++) {
+        try { return await getResult(this.currentProvider); } catch (e) { errors.push(e); this.switchToNextProvider(); }
+      }
+      throw errors.at(-1);
+    }
+  }
+  return new Failover(NEAR_RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 2, wait: 400, backoff: 2 })));
+}
 export const NEAR_EXPLORER = CONFIG.nearExplorer;
 export const MEMPOOL = `${CONFIG.mempool}/api`;
 export const EXPLORER = CONFIG.mempool;
@@ -135,7 +169,7 @@ export const BTC_LIGHT_CLIENT = NETWORK === "mainnet" ? "btc-client.bridge.near"
 
 /** Height of the last Bitcoin block NEAR's light client has accepted. */
 export async function lightClientHeight() {
-  const r = await fetch(NEAR_RPC, {
+  const r = await nearFetch({
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
@@ -258,7 +292,7 @@ const solRpc = (method, params = []) => fetch(SOL.rpc, { method: "POST", headers
 /** Asks the MPC contract which Solana address belongs to this token. */
 export async function solAddress(tokenId) {
   const args = { path: `pusaka-${tokenId}`, predecessor: CONTRACT, domain_id: 1 };
-  const r = await fetch(NEAR_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
+  const r = await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
     request_type: "call_function", finality: "optimistic", account_id: MPC, method_name: "derived_public_key",
     args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) } }) }).then((x) => x.json());
   if (!r.result?.result) throw new Error("MPC key lookup failed");
@@ -395,7 +429,7 @@ export async function preflightProof(p) {
     ...vec(p.coinbase_merkle_proof), u64(BTC_MIN_CONFIRMATIONS)];
   const args = new Uint8Array(parts.reduce((a, x) => a + x.length, 0));
   parts.reduce((o, x) => (args.set(x, o), o + x.length), 0);
-  const r = await fetch(NEAR_RPC, {
+  const r = await nearFetch({
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
       request_type: "call_function", finality: "optimistic", account_id: BTC_LIGHT_CLIENT,
@@ -405,7 +439,7 @@ export async function preflightProof(p) {
 }
 
 // ---------- NEAR: the same Ed25519 key is the Pusaka's own NEAR implicit account ----------
-const nearRpc = (method, params) => fetch(NEAR_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
+const nearRpc = (method, params) => nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
   .then((r) => r.json()).then((j) => { if (j.error) throw Object.assign(new Error(j.error.cause?.name ?? j.error.message), { rpc: j.error }); return j.result; });
 
 /** The Pusaka's NEAR account: hex of its Ed25519 MPC key. */

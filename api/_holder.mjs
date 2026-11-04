@@ -1,12 +1,12 @@
 // Holder-only access: NEP-413 signed messages + the sealed letter that travels with each Pusaka.
 // Shared by api/holder.mjs and the local tests (scripts/holder-test.mjs).
 import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
-import { JsonRpcProvider } from "near-api-js";
+import { FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
-import { CONTRACT, NEAR_RPC } from "@pusaka/shared";
+import { CONTRACT, nearProvider } from "@pusaka/shared";
 
-const provider = new JsonRpcProvider({ url: NEAR_RPC });
+const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const MAX_AGE_MS = 5 * 60_000;
 const fail = (status, m) => Object.assign(new Error(m), { status });
 

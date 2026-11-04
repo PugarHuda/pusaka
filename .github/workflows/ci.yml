@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: npm run lint -w web
+      - run: npm run lint   # node code (api, shared, mcp, scripts, shade) and web, no-undef on
       - run: npm run build -w web
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e -w web

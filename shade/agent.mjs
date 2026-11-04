@@ -5,9 +5,9 @@
 // GET / shows what it has done. Nothing here can move anyone's assets: prove_deposit only records
 // light-client-verified facts.
 import { createServer } from "node:http";
-import { Account, JsonRpcProvider } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
 import { ShadeClient, sanitize } from "@neardefi/shade-agent-js";
-import { CONTRACT, NEAR_RPC } from "@pusaka/shared";
+import { CONTRACT, nearProvider } from "@pusaka/shared";
 import { proveToken } from "../api/_relayer.mjs";
 
 const need = (k) => process.env[k] || (() => { throw new Error(`missing ${k}`); })();
@@ -45,7 +45,7 @@ setInterval(() => agent.register().catch((e) => fail("re-register", e)), 6 * 24 
 
 // ponytail: the key is ephemeral (lost on reboot) and never leaves this process; it only pays for proofs.
 const [key] = agent.getPrivateKeys({ acknowledgeRisk: true });
-const prover = new Account(status.agent, new JsonRpcProvider({ url: NEAR_RPC }), key);
+const prover = new Account(status.agent, nearProvider({ FailoverRpcProvider, JsonRpcProvider }), key);
 
 async function round() {
   status.runs++; status.last_run = new Date().toISOString();

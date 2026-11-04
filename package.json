@@ -13,6 +13,7 @@
     "setup": "npm run setup -w scripts",
     "test": "cd contract && cargo test",
     "dev": "npm run dev -w web",
-    "build": "npm run build -w web"
+    "build": "npm run build -w web",
+    "lint": "oxlint -c .oxlintrc.json api shared mcp scripts shade/agent.mjs shade/deploy-tee.mjs && npm run lint -w web"
   }
 }

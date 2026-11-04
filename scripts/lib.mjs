@@ -1,13 +1,13 @@
 // Node helpers for Pusaka scripts: NEAR accounts and contract calls. Bitcoin helpers live in shared/.
-import { Account, JsonRpcProvider, KeyPair, teraToGas } from "near-api-js";
-import { CONTRACT, NETWORK, NEAR_RPC, MINT_DEPOSIT, mintedTokenId } from "@pusaka/shared";
+import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, teraToGas } from "near-api-js";
+import { CONTRACT, NETWORK, NEAR_RPC, MINT_DEPOSIT, mintedTokenId, nearProvider } from "@pusaka/shared";
 import fs from "node:fs";
 import path from "node:path";
 
 export const RPC = NEAR_RPC;
 
 const KEYS = path.join(import.meta.dirname, "..", ".keys");
-export const provider = new JsonRpcProvider({ url: RPC });
+export const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 
 // ---------- NEAR ----------
 
