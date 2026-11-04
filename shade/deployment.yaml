@@ -3,6 +3,7 @@
 # Cost: tdx.small ~$0.06/h. Delete the CVM after the demo (stopped CVMs still bill storage).
 environment: TEE
 network: testnet
+os: linux # the CLI only knows mac/linux; fine on Windows because the image is prebuilt in CI
 docker_compose_path: ./docker-compose.yaml
 
 agent_contract:
@@ -55,17 +56,14 @@ build_docker_image:
   cache: true
   dockerfile_path: ./Dockerfile
 
-tee_config:
+deploy_to_phala:
+  enabled: true
+  app_name: pusaka-agent
+  env_file_path: ./.env
   dstack_version: 0.5.8
   instance_type: tdx.small
   public_logs: true
   public_sysinfo: true
-  deploy:
-    enabled: true
-    app_name: pusaka-agent
-    env_file_path: ./.env
-  phala:
-    enabled: true
 
 whitelist_agent_for_local:
   method_name: whitelist_agent_for_local
