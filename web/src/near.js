@@ -1,8 +1,12 @@
 import { NearConnector } from "@hot-labs/near-connect";
-import { JsonRpcProvider, getTransactionLastResult } from "near-api-js";
+import { FailoverRpcProvider, JsonRpcProvider, getTransactionLastResult } from "near-api-js";
 import { CONTRACT, NETWORK, NEAR_RPC } from "@pusaka/shared";
 
-export const provider = new JsonRpcProvider({ url: NEAR_RPC });
+// near-api-js retries one endpoint 12 times with backoff (~2 min of "Loading…" when FastNear hiccups).
+// Instead: a short budget per endpoint, then NEAR's own RPC.
+const FALLBACK_RPC = NETWORK === "mainnet" ? "https://rpc.mainnet.near.org" : "https://rpc.testnet.near.org";
+export const provider = new FailoverRpcProvider([NEAR_RPC, FALLBACK_RPC].map((url) =>
+  new JsonRpcProvider({ url }, { retries: 2, wait: 400, backoff: 2 })));
 export const connector = new NearConnector({ network: NETWORK, providers: { [NETWORK]: [NEAR_RPC] } });
 
 // optimistic: right after a wallet transaction the UI must see its result, not a block or two behind

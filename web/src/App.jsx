@@ -231,11 +231,15 @@ function Activity() {
 function Detail({ id, accountId }) {
   const [t, setT] = useState(null);
   const [missing, setMissing] = useState(false);
-  const refresh = useCallback(() => loadToken(id).then((x) => (x ? setT(x) : setMissing(true))), [id]);
+  const [failed, setFailed] = useState(false);
+  const refresh = useCallback(() => loadToken(id)
+    .then((x) => { setFailed(false); if (x) setT(x); else setMissing(true); })
+    .catch(() => setFailed(true)), [id]);
   useEffect(() => { refresh(); }, [refresh]);
   const px = usePrices(); // hooks before any early return
 
   if (missing) return <p className="error">There is no Pusaka #{id}. <a href="#/">See all Pusaka</a></p>;
+  if (!t && failed) return <p className="error">Couldn't reach NEAR to load Pusaka #{id}. <button onClick={refresh}>Try again</button></p>;
   if (!t) return <p className="muted">Loading Pusaka #{id}…</p>;
 
   const { info, address, bal } = t;
