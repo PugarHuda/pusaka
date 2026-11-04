@@ -19,6 +19,7 @@ const CONFIG = {
     txApi: "https://tx.test.fastnear.com", // FastNear transactions API (CORS-enabled)
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
     mempool: "https://mempool.space/testnet",
+    esploraFallback: "https://blockstream.info/testnet/api", // same Esplora API, CORS open
     // Same order as EVM_CHAINS in the contract. USDC: Circle's official testnet deployments.
     evm: [
       { chain: sepolia, rpc: "https://ethereum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.etherscan.io", usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
@@ -40,6 +41,7 @@ const CONFIG = {
     txApi: "https://tx.main.fastnear.com",
     btc: bitcoin.networks.bitcoin,
     mempool: "https://mempool.space",
+    esploraFallback: "https://blockstream.info/api",
     evm: [
       { chain: mainnet, rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io", usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },
       { chain: base, rpc: "https://base-rpc.publicnode.com", explorer: "https://basescan.org", usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
@@ -91,6 +93,23 @@ export function nearProvider({ FailoverRpcProvider, JsonRpcProvider }) {
 }
 export const NEAR_EXPLORER = CONFIG.nearExplorer;
 export const MEMPOOL = `${CONFIG.mempool}/api`;
+export const ESPLORA = [MEMPOOL, CONFIG.esploraFallback];
+
+/**
+ * Esplora request with failover (mempool.space, then Blockstream) on timeouts, 429 and 5xx.
+ * A 4xx answer (bad tx, unknown address) is the answer: returned, not retried elsewhere.
+ */
+export async function btcFetch(path, init = {}, timeoutMs = 10_000) {
+  let last;
+  for (const base of ESPLORA) {
+    try {
+      const r = await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+      if (r.status === 429 || r.status >= 500) { last = new Error(`${new URL(base).host} answered ${r.status} for ${path}`); continue; }
+      return r;
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
 export const EXPLORER = CONFIG.mempool;
 export const NET = CONFIG.btc;
 
@@ -112,8 +131,8 @@ export function scriptHex(address) {
 }
 
 export async function utxos(address) {
-  const r = await fetch(`${MEMPOOL}/address/${address}/utxo`);
-  if (!r.ok) throw new Error(`mempool.space answered ${r.status} for ${address}`);
+  const r = await btcFetch(`/address/${address}/utxo`);
+  if (!r.ok) throw new Error(`Esplora answered ${r.status} for ${address}`);
   return r.json(); // [{txid, vout, value, status:{confirmed}}]
 }
 
@@ -187,8 +206,8 @@ export async function lightClientHeight() {
 }
 
 export async function depositProof(txid, vout) {
-  const get = (path, as = "json") => fetch(`${MEMPOOL}${path}`).then((r) => {
-    if (!r.ok) throw new Error(`mempool.space answered ${r.status} for ${path}`);
+  const get = (path, as = "json") => btcFetch(path).then((r) => {
+    if (!r.ok) throw new Error(`Esplora answered ${r.status} for ${path}`);
     return as === "json" ? r.json() : r.text();
   });
   const status = await get(`/tx/${txid}/status`);
@@ -212,7 +231,7 @@ export async function depositProof(txid, vout) {
 export const PROVE_DEPOSIT = 10_000_000_000_000_000_000_000n; // 0.01 NEAR
 
 export async function broadcast(txHex) {
-  const r = await fetch(`${MEMPOOL}/tx`, { method: "POST", body: txHex });
+  const r = await btcFetch("/tx", { method: "POST", body: txHex }, 20_000);
   const body = await r.text();
   if (!r.ok) throw new Error(`Bitcoin network rejected the transaction: ${body}`);
   return body; // txid
@@ -358,14 +377,30 @@ export async function prices() {
     if (!r.ok) throw new Error("price sources unavailable");
     return r.json();
   }
-  const [btc, ref] = await Promise.all([
+  const [btc, ref, cg] = await Promise.all([
     fetch("https://mempool.space/api/v1/prices").then((r) => r.json()),
     fetch("https://api.ref.finance/list-token-price").then((r) => r.json()),
+    // independent second source; a lender's LTV guard shouldn't rest on one HTTP API
+    fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,near,ethereum&vs_currencies=usd")
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
   const near = Number(ref["wrap.near"]?.price);
   const eth = Number(ref[WETH_ON_NEAR]?.price);
   if (!btc?.USD || !near) throw new Error("price sources unavailable");
-  return { btcUsd: btc.USD, nearUsd: near, ethUsd: eth || null, at: btc.time * 1000 };
+  return crossCheck({ btcUsd: btc.USD, nearUsd: near, ethUsd: eth || null, at: btc.time * 1000 }, cg);
+}
+
+export const MAX_PRICE_SPREAD = 0.05;
+/** Compare primary prices with CoinGecko's; throws if BTC or NEAR differ by more than 5%. */
+export function crossCheck(px, cg) {
+  const second = { btcUsd: cg?.bitcoin?.usd, nearUsd: cg?.near?.usd, ethUsd: cg?.ethereum?.usd };
+  if (!second.btcUsd || !second.nearUsd) return { ...px, crossChecked: false };
+  for (const k of ["btcUsd", "nearUsd", "ethUsd"]) {
+    if (!px[k] || !second[k]) continue;
+    const spread = Math.abs(px[k] - second[k]) / second[k];
+    if (spread > MAX_PRICE_SPREAD) throw new Error(`price sources disagree on ${k}: ${px[k]} vs ${second[k]} (CoinGecko)`);
+  }
+  return { ...px, crossChecked: true, secondSource: "CoinGecko" };
 }
 
 /** Loan economics from contract terms and live prices. */

@@ -68,7 +68,7 @@ export async function inspect(token_id) {
       note: "verified = proven by NEAR's Bitcoin light client and never signed for; safe to rely on without an indexer" },
     sign_epoch: info.sign_epoch, locked: { listed: !!info.listing, loan: !!info.loan, signing: info.pending },
   };
-  if (px) out.usd = { btc_inside: (verified / 1e8) * px.btcUsd, btc_usd: px.btcUsd, near_usd: px.nearUsd, source: "mempool.space, Rhea (mainnet prices)" };
+  if (px) out.usd = { btc_inside: (verified / 1e8) * px.btcUsd, btc_usd: px.btcUsd, near_usd: px.nearUsd, source: px.crossChecked ? "mempool.space, Rhea; cross-checked with CoinGecko (mainnet prices)" : "mempool.space, Rhea (mainnet prices; second source unavailable)" };
   if (info.listing) {
     const price = toNear(info.price_now);
     out.listing = { seller: info.listing.seller, price_now_near: price, floor_near: toNear(info.listing.floor), ends_ms: info.listing.end_ms };
@@ -156,7 +156,9 @@ reg("pusaka_fund_loan", {
   const info = await view("token_info", { token_id });
   const l = info?.loan;
   if (!l || l.lender) throw new Error("No open loan request.");
-  const st = loanStats(l, Number(info.verified_sats), await prices());
+  const px = await prices();
+  if (!px.crossChecked) throw new Error("Prices could not be cross-checked against a second source; not funding on one source.");
+  const st = loanStats(l, Number(info.verified_sats), px);
   if (!Number.isFinite(st.ltv)) throw new Error("No BTC is verified inside this Pusaka, so the loan has no collateral.");
   if (st.ltv > max_ltv) throw new Error(`Loan-to-value ${(st.ltv * 100).toFixed(1)}% is above ${max_ltv * 100}%.`);
   spend(BigInt(l.principal), "fund_loan");

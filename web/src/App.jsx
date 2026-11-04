@@ -858,7 +858,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
           return (
             <p className="stats">
               Loan {usd(st.principalUsd)}, collateral {usd(st.collateralUsd)}: loan-to-value <strong>{Number.isFinite(st.ltv) ? pct(st.ltv) : "no verified collateral"}</strong>,
-              interest <strong>{pct(st.apr)} a year</strong>. Mainnet prices from mempool.space and Rhea.
+              interest <strong>{pct(st.apr)} a year</strong>. Mainnet prices from mempool.space and Rhea, {px.crossChecked ? "within 5% of CoinGecko" : "not cross-checked (CoinGecko unavailable)"}.
             </p>
           );
         })()}

@@ -2,19 +2,22 @@
 
 > NFTs on NEAR that hold native Bitcoin. Each Pusaka (NEP-171 token) controls its own Bitcoin address through NEAR Chain Signatures; selling the NFT transfers control of the BTC in one NEAR transaction, with no bridge, wrapped BTC or custodian.
 
-Each Pusaka also holds ETH and USDC on Ethereum, Base and Arbitrum (same secp256k1 MPC key), SOL (Ed25519 MPC key), and has its own NEAR account (the implicit account of that Ed25519 key). Selling the NFT moves all of them, plus a sealed letter only the current holder can read; creators earn 2.5% on resales (NEP-199).
+Each Pusaka also holds ETH and USDC on Ethereum, Base and Arbitrum (same secp256k1 MPC key), SOL (Ed25519 MPC key), and has its own NEAR account (the implicit account of that Ed25519 key), which can hold nBTC (Omni Bridge NEP-141, minted from the Pusaka's own BTC). Selling the NFT moves all of them, plus a sealed letter only the current holder can read (encrypted with a NEAR MPC confidential key, CKD); creators earn 2.5% on resales (NEP-199).
+
+USDC deposits on Base and Arbitrum are attested by NEAR MPC foreign-transaction verification: the MPC network reads the finalized chain itself, so `usdc_info` on the contract is trustworthy without any EVM RPC. Every Bitcoin withdrawal carries an `OP_RETURN pusaka:{id}` output. The deployed wasm is a NEP-330 reproducible build (`contract_source_metadata`).
 
 Network: NEAR testnet (contract `pusaka-btc.testnet`, MPC signer `v1.signer-prod.testnet`), Bitcoin testnet3 (tracked by NEAR's Bitcoin light client `btc-client-v4.testnet`), Sepolia, Base Sepolia, Arbitrum Sepolia, Solana devnet.
 
 ## How to use this site
 
 - `/#/` lists every Pusaka with the BTC verified on NEAR, and the total across all of them.
-- `/#/pusaka/{id}` shows one Pusaka: Bitcoin address (with a BIP21 `bitcoin:` link), BTC proven by the light client, ETH/USDC per chain, SOL, its NEAR account, a holder room (NEP-413 sign-in), a ledger of holders, sales, royalties and payouts, and actions (mint, list or Dutch auction, buy, borrow, lend, withdraw) after connecting a NEAR testnet wallet.
+- `/#/pusaka/{id}` shows one Pusaka: Bitcoin address (with a BIP21 `bitcoin:` link), BTC proven by the light client, ETH/USDC per chain (with MPC-verified USDC), SOL, its NEAR account and its nBTC, a holder room (NEP-413 sign-in), a ledger of holders, sales, royalties and payouts, and actions (mint, list or Dutch auction, buy, borrow, lend, withdraw) after connecting a NEAR testnet wallet.
 
 ## For agents
 
 - Remote MCP (Streamable HTTP, read-only): https://pusaka-two.vercel.app/api/mcp — tools `pusaka_overview`, `pusaka_inspect` (verified BTC, USD value, ETH/USDC per chain, SOL and NEAR-account balances with safe/at-risk, listing premium, loan LTV/APR).
-- Trading tools (buy, lend, prove, withdraw) run locally: `mcp/server.mjs` in the repo, with your own NEAR key and a spend cap.
+- Trading tools run locally: `mcp/server.mjs` in the repo, with your own NEAR key and a spend cap: `pusaka_buy`, `pusaka_fund_loan` (refuses above max LTV, and unless BTC/NEAR prices agree within 5% across two sources), `pusaka_repay_loan`, `pusaka_claim_collateral`, `pusaka_list`, `pusaka_cancel_listing`, `pusaka_request_loan`, `pusaka_prove_deposits` (BTC and USDC), `pusaka_give`, `pusaka_mint`, and withdrawals `pusaka_withdraw_btc|eth|sol|near|nbtc` (off unless `PUSAKA_ALLOW_OUTFLOWS=1`; `PUSAKA_ALLOWED_RECIPIENTS` restricts where).
+- Contract views (no key needed): `token_info`, `usdc_info`, `evm_address`, `near_nonce_floor`, `nft_tokens`, `contract_source_metadata`.
 - Proof of reserves (JSON, CORS open): `GET /api/reserves`. Badge: `GET /api/badge?id={id}` (SVG).
 - Holder room: `POST /api/holder {"token_id", "auth": NEP-413 {accountId, publicKey, signature, message: "Open the holder room of Pusaka #{id}
 at {ms}", nonce (base64, 32 bytes), at}}`, recipient = this host. Opens only for the current holder.
