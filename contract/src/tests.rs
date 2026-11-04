@@ -1525,3 +1525,98 @@ fn b3_nbtc_locked_while_listed() {
     ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
     let _ = c.withdraw_nbtc("1".into(), acc("bob.testnet"), U128(3300), U64(7), bs58::encode([1u8; 32]).into_string());
 }
+
+// ---------- Heirloom: an heir inherits a silent holder's Pusaka ----------
+
+const SILENCE: u64 = 30 * DAY_MS;
+const PAY: NearToken = NearToken::from_millinear(10);
+
+fn with_heir() -> Pusaka {
+    let mut c = setup();
+    at("alice.testnet", PAY, 0);
+    c.set_heir("1".into(), Some(acc("carol.testnet")), U64(SILENCE));
+    c
+}
+
+fn owner(c: &Pusaka) -> AccountId {
+    c.token_info("1".into()).unwrap().token.owner_id
+}
+
+#[test]
+fn h1_heir_claims_only_after_the_silence() {
+    let mut c = with_heir();
+    assert_eq!(c.heir_of("1".into()).unwrap()["claimable_from_ms"], SILENCE.to_string());
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE);
+    c.claim_inheritance("1".into());
+    assert_eq!(owner(&c), acc("carol.testnet"));
+    assert!(c.heir_of("1".into()).is_none()); // used up; carol names her own heir
+}
+
+#[test]
+#[should_panic(expected = "seen recently")]
+fn h2_still_here_restarts_the_clock() {
+    let mut c = with_heir();
+    at("alice.testnet", NearToken::from_yoctonear(0), SILENCE - 1);
+    c.still_here("1".into());
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE + 1);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+#[should_panic(expected = "only the named heir")]
+fn h3_nobody_else_claims() {
+    let mut c = with_heir();
+    at("mallory.testnet", NearToken::from_yoctonear(0), SILENCE * 2);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+#[should_panic(expected = "no heir set")]
+fn h4_a_sale_ends_the_old_holders_will_even_if_it_comes_back() {
+    let mut c = with_heir();
+    at("alice.testnet", NearToken::from_yoctonear(1), 1);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    assert!(c.heir_of("1".into()).is_none());
+    at("bob.testnet", NearToken::from_yoctonear(1), 2);
+    c.nft_transfer(acc("alice.testnet"), "1".into(), None, None);
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE * 2);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+#[should_panic(expected = "lender's claim comes first")]
+fn h5_a_funded_loan_comes_first() {
+    let mut c = funded_loan();
+    at("alice.testnet", PAY, 2_000);
+    c.set_heir("1".into(), Some(acc("carol.testnet")), U64(SILENCE));
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE * 2);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+fn h6_a_silent_holders_listing_is_withdrawn_and_markets_lose_approval() {
+    let mut c = with_heir();
+    at("alice.testnet", NearToken::from_yoctonear(0), 1);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE + 1);
+    c.claim_inheritance("1".into());
+    let info = c.token_info("1".into()).unwrap();
+    assert!(info.listing.is_none());
+    assert_eq!(info.token.owner_id, acc("carol.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "after_ms must be at least")]
+fn h7_too_short_a_silence_is_refused() {
+    let mut c = setup();
+    at("alice.testnet", PAY, 0);
+    c.set_heir("1".into(), Some(acc("carol.testnet")), U64(1_000));
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn h8_only_the_holder_names_an_heir() {
+    let mut c = setup();
+    at("carol.testnet", PAY, 0);
+    c.set_heir("1".into(), Some(acc("carol.testnet")), U64(SILENCE));
+}

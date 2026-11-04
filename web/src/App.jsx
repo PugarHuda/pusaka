@@ -206,7 +206,8 @@ const ACTIVITY = {
   nft_mint: "minted a Pusaka", list: "listed one for sale", cancel_listing: "took one off sale", buy: "bought one",
   withdraw: "withdrew BTC", withdraw_eth: "withdrew ETH", prove_deposit: "proved a BTC deposit",
   request_loan: "asked for a loan", cancel_loan_request: "cancelled a loan request", fund_loan: "funded a loan",
-  repay_loan: "repaid a loan", claim_collateral: "claimed collateral", nft_approve: "listed one on Mintbase",
+  repay_loan: "repaid a loan", claim_collateral: "claimed collateral", set_heir: "named an heir", still_here: "checked in as holder",
+  claim_inheritance: "inherited one", nft_approve: "listed one on Mintbase",
   nft_revoke_all: "stopped selling on Mintbase", nft_transfer: "transferred one", migrate: "upgraded the contract",
   DeployContract: "upgraded the contract",
 };
@@ -320,6 +321,8 @@ function Detail({ id, accountId }) {
               you checked.</li>
           </ul>
         </details>
+
+        <HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} />
 
         <HolderRoom id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />
 
@@ -630,6 +633,72 @@ function NbtcSection({ t, canWithdraw, onDone }) {
   );
 }
 
+/**
+ * Heirloom: the holder names an heir who may claim the Pusaka (and everything it controls) after
+ * a stretch of silence. Shown to everyone, since a buyer should know; a sale clears it.
+ */
+function HeirSection({ id, owner, accountId, isOwner, onDone }) {
+  const [h, setH] = useState(undefined);
+  const [heir, setHeir] = useState("");
+  const [after, setAfter] = useState("30");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const load = useCallback(() => view("heir_of", { token_id: id })
+    .then((v) => setH(v && { ...v, due: Date.now() >= Number(v.claimable_from_ms) })).catch(() => setH(null)), [id]);
+  useEffect(() => { load(); }, [load, owner]);
+  if (h === undefined) return null;
+  const due = h?.due;
+  const isHeir = h && accountId === h.heir;
+
+  async function run(what, fn) {
+    setBusy(true); setMsg(null);
+    try { const r = await fn(); setMsg({ ok: true, text: `${what}${r?.gasless ? " (gas paid by Pusaka's relayer)" : ""}.` }); await load(); await onDone(); }
+    catch (err) { setMsg({ ok: false, text: err.message }); }
+    finally { setBusy(false); }
+  }
+  function name(e) {
+    e.preventDefault();
+    const to = heir.trim().toLowerCase();
+    const ms = Math.round(Number(after) * DAY_MS);
+    if (!to || to === owner) return setMsg({ ok: false, text: "Name another NEAR account as heir." });
+    if (!(ms > 0)) return setMsg({ ok: false, text: "Enter how many days of silence, e.g. 30 (0.007 is 10 minutes, the testnet minimum)." });
+    run(`${to} is now the heir`, async () => {
+      const exists = await provider.viewAccount({ accountId: to, blockQuery: { finality: "final" } }).then(() => true, () => false);
+      if (!exists) throw new Error(`${to} doesn't exist on NEAR ${NETWORK}.`);
+      return call("set_heir", { token_id: id, heir: to, after_ms: String(ms) }, { deposit: 10_000_000_000_000_000_000_000n });
+    });
+  }
+
+  return (
+    <section>
+      <h2>Heir</h2>
+      {h ? (
+        <p>
+          If {owner} stays silent until <strong>{when(h.claimable_from_ms)}</strong> ({days(h.after_ms)} after they last checked in),
+          {" "}<strong>{h.heir}</strong> can claim this Pusaka with everything it holds. Each check-in restarts the clock; selling or giving it away cancels this.
+        </p>
+      ) : <p className="muted">No heir named. A holder can name one: if they go silent for long enough, the heir claims the Pusaka, its BTC, ETH, USDC, SOL and NEAR account. No lawyer, no custodian: the contract enforces it, and a funded loan's lender still comes first.</p>}
+      {isOwner && h && (
+        <p className="row">
+          <button disabled={busy} onClick={() => run("Checked in; the clock restarted", () => callGasless("still_here", { token_id: id }))}>I'm still here</button>
+          <button className="secondary" disabled={busy} onClick={() => run("Heir removed", () => call("set_heir", { token_id: id, heir: null, after_ms: "0" }))}>Remove heir</button>
+        </p>
+      )}
+      {isOwner && (
+        <form onSubmit={name} className="stack">
+          <label>{h ? "Change heir" : "Heir"} <input value={heir} onChange={(e) => setHeir(e.target.value)} placeholder="family.testnet" required spellCheck="false" autoCapitalize="none" /></label>
+          <label>After <span className="row"><input value={after} onChange={(e) => setAfter(e.target.value.trim())} inputMode="decimal" required /> days of silence</span></label>
+          <button disabled={busy}>{busy ? "Waiting for the wallet…" : "Name heir"}</button>
+        </form>
+      )}
+      {isHeir && (due
+        ? <button disabled={busy} onClick={() => run("It's yours now", () => callGasless("claim_inheritance", { token_id: id }))}>Claim inheritance</button>
+        : <p className="muted">You are the heir. You can claim from {when(h.claimable_from_ms)} if {owner} doesn't check in before then.</p>)}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
 const accessMessage = (id, at) => `Open the holder room of Pusaka #${id}\nat ${at}`; // same text as api/_holder.mjs
 
 /** Gated: only the current holder, proven by a NEP-413 signed message, gets the room's content. */
@@ -743,6 +812,7 @@ function Ledger({ history }) {
     if (e.kind === "Sale") { hold(e.from); hold(e.to); earned += BigInt(e.price); }
     if (e.kind === "Transfer") { hold(e.from); hold(e.to); }
     if (e.kind === "LoanDefaulted") hold(e.lender);
+    if (e.kind === "Inherited") { hold(e.from); hold(e.to); }
     if (e.kind === "Royalty") royalties += BigInt(e.amount);
     if (e.kind === "LoanFunded") borrowed += 1n;
     if (e.kind === "Withdraw") out.push(`${Number(e.amount_sat).toLocaleString()} sats`);
@@ -794,6 +864,9 @@ function describe(e) {
     case "WithdrawNear": return `Signed a transfer of ${near(e.amount)} NEAR from its own account${e.signed ? "" : " (signature failed)"}`;
     case "WithdrawNbtc": return `Signed a transfer of ${Number(e.sats).toLocaleString()} nBTC sats from its own account${e.signed ? "" : " (signature failed)"}`;
     case "Royalty": return `Royalty of ${near(e.amount)} NEAR paid to its creator ${e.creator}`;
+    case "HeirSet": return e.heir ? `Named an heir, ${e.heir}, who may claim it after ${days(e.after_ms)} of silence` : "Removed its heir";
+    case "StillHere": return "Holder checked in: still here";
+    case "Inherited": return `Inherited by ${e.to} after ${e.from} stayed silent`;
     case "Approved": return `Approved ${e.account} to sell it`;
     case "ApprovalsRevoked": return "Stopped selling on outside markets";
     default: return e.kind;

@@ -44,6 +44,13 @@ const PROOF_TGAS: u64 = 40;
 const MAX_LETTER: usize = 2000;
 /// Proving dust would let anyone bloat a token's registry; below this a deposit isn't provable.
 const MIN_PROVEN_SATS: u64 = 10_000;
+/// Shortest silence after which an heir may claim. Testnet: 10 minutes, so it can be shown.
+#[cfg(not(feature = "mainnet"))]
+const HEIR_MIN_MS: u64 = 10 * 60 * 1000;
+#[cfg(feature = "mainnet")]
+const HEIR_MIN_MS: u64 = 30 * 24 * 3600 * 1000;
+/// key + owner + heir (64-byte account ids at most) + two u64
+const HEIR_BYTES: u64 = 200;
 /// Proven, unspent deposits kept per token (withdrawing consolidates them).
 const MAX_PROVEN: usize = 64;
 /// After a signature for a token, outside markets can't be approved for this long. A buyer
@@ -196,6 +203,12 @@ pub enum Event {
     Royalty { creator: AccountId, amount: NearToken },
     /// nBTC (Omni Bridge NEP-141) sent from the Pusaka's own NEAR account.
     WithdrawNbtc { nonce: U64, sats: U128, signed: bool },
+    /// The holder named an heir (or removed one with `heir: None`).
+    HeirSet { heir: Option<AccountId>, after_ms: U64 },
+    /// The holder showed they are still here; the heir's clock restarts.
+    StillHere,
+    /// The heir claimed the Pusaka after the holder stayed silent for `after_ms`.
+    Inherited { from: AccountId, to: AccountId },
 }
 
 #[near(serializers = [json, borsh])]
@@ -796,6 +809,74 @@ impl Pusaka {
         ok
     }
 
+    // ---------- Heirloom: an heir inherits a silent holder's Pusaka ----------
+
+    /// Name an heir who may claim this Pusaka (and everything it holds) once you have been
+    /// silent for `after_ms`; `heir: None` removes it. Calling this again, or `still_here`,
+    /// restarts the clock. Selling or giving the Pusaka clears it.
+    #[payable]
+    pub fn set_heir(&mut self, token_id: TokenId, heir: Option<AccountId>, after_ms: U64) {
+        self.assert_owner(&token_id);
+        let owner = env::predecessor_account_id();
+        let key = heir_key(&token_id);
+        match heir.clone() {
+            None => clear_heir(&token_id),
+            Some(h) => {
+                require!(h != owner, "you can't be your own heir");
+                require!(after_ms.0 >= HEIR_MIN_MS, format!("after_ms must be at least {HEIR_MIN_MS}"));
+                if !env::storage_has_key(key.as_bytes()) { charge_storage(HEIR_BYTES, 0); }
+                raw_put(&key, &Heir { owner, heir: h, after_ms: after_ms.0, last_seen_ms: env::block_timestamp_ms() });
+            }
+        }
+        self.log(&token_id, Event::HeirSet { heir, after_ms });
+    }
+
+    /// Proof of life: the holder is still here, so the heir has to wait a full `after_ms` again.
+    pub fn still_here(&mut self, token_id: TokenId) {
+        self.assert_owner(&token_id);
+        let key = heir_key(&token_id);
+        let mut h: Heir = raw_get(&key).expect("no heir set");
+        h.last_seen_ms = env::block_timestamp_ms();
+        raw_put(&key, &h);
+        self.log(&token_id, Event::StillHere);
+    }
+
+    /// The heir takes the Pusaka after the holder's silence. Waits for a funded loan (the
+    /// lender's claim comes first) and anything in flight; an open listing or loan request of
+    /// the silent holder is withdrawn.
+    pub fn claim_inheritance(&mut self, token_id: TokenId) {
+        let key = heir_key(&token_id);
+        let h: Heir = raw_get(&key).expect("no heir set");
+        let owner = self.owner_of(&token_id);
+        require!(h.owner == owner, "the heir was named by an earlier holder");
+        require!(env::predecessor_account_id() == h.heir, "only the named heir can claim");
+        let due = h.last_seen_ms.saturating_add(h.after_ms);
+        require!(env::block_timestamp_ms() >= due, format!("the holder was seen recently; claimable from {due} ms"));
+        require!(self.btc_keys.contains_key(&token_id), "KeyNotReady");
+        require!(!self.pending.contains_key(&token_id), "SignPending");
+        if let Some(l) = self.loans.get(&token_id) {
+            require!(l.lender.is_none(), "Collateralised: the lender's claim comes first");
+            self.loans.remove(&token_id);
+            self.log(&token_id, Event::LoanCancelled);
+        }
+        if self.listings.remove(&token_id).is_some() {
+            self.log(&token_id, Event::Unlisted);
+        }
+        // internal_transfer also clears NEP-178 approvals, so no market can sell it afterwards
+        self.tokens.internal_transfer(&owner, &h.heir, &token_id, None, None);
+        clear_heir(&token_id);
+        self.log(&token_id, Event::Inherited { from: owner, to: h.heir });
+    }
+
+    /// The current holder's heir, if any: { heir, after_ms, last_seen_ms, claimable_from_ms }.
+    pub fn heir_of(&self, token_id: TokenId) -> Option<Value> {
+        let h: Heir = raw_get(&heir_key(&token_id))?;
+        (self.tokens.owner_by_id.get(&token_id).as_ref() == Some(&h.owner)).then(|| json!({
+            "heir": h.heir, "after_ms": U64(h.after_ms), "last_seen_ms": U64(h.last_seen_ms),
+            "claimable_from_ms": U64(h.last_seen_ms.saturating_add(h.after_ms)),
+        }))
+    }
+
     // ---------- EVM ----------
 
     /// Owner-only. The same MPC key that holds the token's BTC also controls one address
@@ -1191,6 +1272,7 @@ impl Pusaka {
         self.assert_epoch(&token_id, expected_sign_epoch);
 
         self.tokens.internal_transfer(&listing.seller, &buyer, &token_id, None, None);
+        clear_heir(&token_id);
         self.log(
             &token_id,
             Event::Sale { from: listing.seller.clone(), to: buyer.clone(), price },
@@ -1296,6 +1378,7 @@ impl Pusaka {
         require!(env::block_timestamp_ms() >= loan.due_ms.unwrap().0, "NotDueYet");
         self.loans.remove(&token_id);
         self.tokens.internal_transfer(&loan.borrower, &lender, &token_id, None, None);
+        clear_heir(&token_id);
         self.log(&token_id, Event::LoanDefaulted { lender });
     }
 
@@ -1459,6 +1542,24 @@ fn raw_put<T: near_sdk::borsh::BorshSerialize>(key: &str, value: &T) {
     env::storage_write(key.as_bytes(), &near_sdk::borsh::to_vec(value).unwrap());
 }
 
+/// An heir named by `owner`: may claim once `owner` has been silent for `after_ms`.
+#[near(serializers = [borsh])]
+pub struct Heir {
+    pub owner: AccountId,
+    pub heir: AccountId,
+    pub after_ms: u64,
+    pub last_seen_ms: u64,
+}
+
+fn heir_key(token_id: &str) -> String {
+    format!("hr:{token_id}")
+}
+
+/// Any change of holder ends the old holder's will: a buyer never inherits someone else's heir.
+fn clear_heir(token_id: &str) {
+    env::storage_remove(heir_key(token_id).as_bytes());
+}
+
 fn refund(to: AccountId, amount: NearToken) {
     if !amount.is_zero() {
         Promise::new(to).transfer(amount).detach();
@@ -1608,6 +1709,7 @@ impl NonFungibleTokenCore for Pusaka {
         self.assert_unlocked(&token_id);
         let from = self.owner_of(&token_id);
         self.tokens.nft_transfer(receiver_id.clone(), token_id.clone(), approval_id, memo);
+        clear_heir(&token_id);
         self.log(&token_id, Event::Transfer { from, to: receiver_id });
     }
 

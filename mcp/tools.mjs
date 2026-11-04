@@ -68,6 +68,8 @@ export async function inspect(token_id) {
       note: "verified = proven by NEAR's Bitcoin light client and never signed for; safe to rely on without an indexer" },
     sign_epoch: info.sign_epoch, locked: { listed: !!info.listing, loan: !!info.loan, signing: info.pending },
   };
+  const heir = await view("heir_of", { token_id }).catch(() => null);
+  if (heir) out.heir = { ...heir, note: "if the holder doesn't check in by claimable_from_ms, this account can claim the Pusaka; a sale clears it" };
   if (px) out.usd = { btc_inside: (verified / 1e8) * px.btcUsd, btc_usd: px.btcUsd, near_usd: px.nearUsd, source: px.crossChecked ? "mempool.space, Rhea; cross-checked with CoinGecko (mainnet prices)" : "mempool.space, Rhea (mainnet prices; second source unavailable)" };
   if (info.listing) {
     const price = toNear(info.price_now);
@@ -256,6 +258,38 @@ reg("pusaka_give", {
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
   await call("nft_transfer", { receiver_id: receiver, token_id, memo: "given by an agent through Pusaka MCP" }, { deposit: 1n, tgas: 50 });
   return { given: token_id, owner: (await view("token_info", { token_id })).token.owner_id };
+}));
+
+reg("pusaka_set_heir", {
+  description: "Name an heir for your Pusaka: if you stay silent (no check-in) for `days`, the heir can claim the NFT and everything it controls. heir: null removes it. Selling or giving the Pusaka cancels it. Testnet minimum is 10 minutes (0.007 days), mainnet 30 days.",
+  inputSchema: { token_id: z.string(), heir: z.string().nullable(), days: z.number().positive() },
+}, tool(async ({ token_id, heir, days }) => {
+  const to = heir?.trim().toLowerCase() ?? null;
+  if (to) {
+    outflow(to); // naming who may take the Pusaka is as strong as giving it
+    if (!(await accountExists(to))) throw new Error(`${to} doesn't exist on NEAR ${NETWORK}.`);
+  }
+  await call("set_heir", { token_id, heir: to, after_ms: String(Math.round(days * 86_400_000)) }, { deposit: 10_000_000_000_000_000_000_000n });
+  return { token_id, heir: await view("heir_of", { token_id }) };
+}));
+
+reg("pusaka_still_here", {
+  description: "Check in as the holder of a Pusaka with an heir: restarts the heir's waiting period. Run it on a schedule to keep a Pusaka from passing on while you are around.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  await call("still_here", { token_id });
+  return { token_id, heir: await view("heir_of", { token_id }) };
+}));
+
+reg("pusaka_claim_inheritance", {
+  description: "Claim a Pusaka you were named heir of, once its holder has been silent past claimable_from_ms. Its open listing or loan request is withdrawn; a funded loan's lender comes first.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const h = await view("heir_of", { token_id });
+  if (!h) throw new Error(`Pusaka #${token_id} has no heir.`);
+  if (Date.now() < Number(h.claimable_from_ms)) throw new Error(`Not yet: claimable from ${new Date(Number(h.claimable_from_ms)).toISOString()}.`);
+  await call("claim_inheritance", { token_id });
+  return { inherited: token_id, owner: (await view("token_info", { token_id })).token.owner_id };
 }));
 
 reg("pusaka_withdraw_eth", {

@@ -10,7 +10,7 @@ import {
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
-export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral"];
+export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance"];
 const MAX_TGAS = 100n;
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
@@ -75,13 +75,19 @@ export async function relay(b64) {
   const sd = checkDelegate(b64);
   await verifyDelegate(sd);
   // Only relay what would succeed for this sender: they must own the token they're acting on
-  // (claim_collateral: they must be its lender). Saves the relayer from paying for doomed calls.
+  // (claim_collateral: its lender; claim_inheritance: its heir, once due). Saves the relayer from paying for doomed calls.
   const fc = sd.delegateAction.actions[0].functionCall;
   let args;
   try { args = JSON.parse(Buffer.from(fc.args).toString()); } catch { throw Object.assign(new Error("function call args must be JSON"), { status: 400 }); }
   const info = await provider.callFunction({ contractId: CONTRACT, method: "token_info", args: { token_id: String(args.token_id) } });
   const who = sd.delegateAction.senderId;
-  const allowed = fc.methodName === "claim_collateral" ? info?.loan?.lender === who : info?.token?.owner_id === who;
+  let allowed = info?.token?.owner_id === who;
+  if (fc.methodName === "claim_collateral") allowed = info?.loan?.lender === who;
+  if (fc.methodName === "claim_inheritance") {
+    // only the named heir, and only once the holder's silence has run out
+    const h = await provider.callFunction({ contractId: CONTRACT, method: "heir_of", args: { token_id: String(args.token_id) } });
+    allowed = h?.heir === who && Number(h.claimable_from_ms) <= Date.now();
+  }
   if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
   const res = await relayerAccount().signAndSendTransaction({
     receiverId: sd.delegateAction.senderId,
