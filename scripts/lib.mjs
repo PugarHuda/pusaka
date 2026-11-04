@@ -76,9 +76,9 @@ export async function callRaw(acct, method, args = {}, { deposit = 0n, tgas = 10
 }
 
 /** Calls the contract and returns the decoded return value of the whole receipt chain. */
-export async function call(acct, method, args = {}, { deposit = 0n, tgas = 100 } = {}) {
+export async function call(acct, method, args = {}, { deposit = 0n, tgas = 100, receiver = CONTRACT } = {}) {
   return acct.callFunction({
-    contractId: CONTRACT,
+    contractId: receiver,
     methodName: method,
     args,
     deposit,

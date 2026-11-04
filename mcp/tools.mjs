@@ -13,7 +13,7 @@ import {
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
-  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, nearProvider,
+  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nearProvider,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 
@@ -99,7 +99,8 @@ export async function inspect(token_id) {
     solAddress(token_id).then((a) => solBalances(a, info.history).then((b) => ({ address: a, safe_lamports: b.safe, at_risk_lamports: b.atRisk }))).catch(() => null),
     nearAccount(token_id).then(async (a) => {
       const b = await nearBalances(a, await view("near_nonce_floor", { token_id }));
-      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk };
+      const nbtc = await provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: a } }).catch(() => null);
+      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk, nbtc_sats: nbtc && Number(nbtc) };
     }).catch(() => null),
   ]);
   if (sol) out.sol = sol;
@@ -312,6 +313,25 @@ reg("pusaka_withdraw_near", {
   spend(deposit, "withdraw_near");
   const signed = await call("withdraw_near", { token_id, receiver_id: receiver, amount: toYocto(near).toString(), nonce: String(nonce), block_hash: blockHash },
     { deposit, tgas: 300 });
+  if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
+  const hash = await broadcastNear(await finalizeNear(signed));
+  return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, from: acct };
+}));
+
+reg("pusaka_withdraw_nbtc", {
+  description: `Send nBTC (Omni Bridge NEP-141) from your Pusaka's own NEAR account. The contract signs one ft_transfer on ${NBTC}; the receiver must be registered with it.`,
+  inputSchema: { token_id: z.string(), to: z.string(), sats: z.number().int().positive() },
+}, tool(async ({ token_id, to, sats }) => {
+  outflow(to);
+  const receiver = to.trim().toLowerCase();
+  if (!(await provider.callFunction({ contractId: NBTC, method: "storage_balance_of", args: { account_id: receiver } }))) throw new Error(`${receiver} isn't registered with ${NBTC}`);
+  const acct = await nearAccount(token_id);
+  const have = BigInt(await provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: acct } }));
+  if (have < BigInt(sats)) throw new Error(`Pusaka #${token_id} holds ${have} nBTC sats`);
+  const { nonce, blockHash } = await nearTxParams(acct);
+  const deposit = 10_000_000_000_000_000_000_000n;
+  spend(deposit, "withdraw_nbtc");
+  const signed = await call("withdraw_nbtc", { token_id, receiver_id: receiver, sats: String(sats), nonce: String(nonce), block_hash: blockHash }, { deposit, tgas: 300 });
   if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
   const hash = await broadcastNear(await finalizeNear(signed));
   return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, from: acct };

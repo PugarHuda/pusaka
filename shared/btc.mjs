@@ -27,6 +27,9 @@ const CONFIG = {
     ],
     sol: { rpc: "https://api.devnet.solana.com", explorer: (a) => `https://explorer.solana.com/${a}?cluster=devnet`, name: "Solana devnet" },
     market: "market-v2-beta.mintspace2.testnet", // Mintbase
+    nbtc: "nbtc.n-bridge.testnet", // Omni Bridge nBTC (NEP-141)
+    btcConnector: "btc-connector.n-bridge.testnet",
+    bridgeApi: "https://testnet.api.bridge.nearone.org",
   },
   mainnet: {
     contract: "pusaka.near", // placeholder until the mainnet account exists; override with PUSAKA_CONTRACT
@@ -44,6 +47,9 @@ const CONFIG = {
     ],
     sol: { rpc: "https://api.mainnet-beta.solana.com", explorer: (a) => `https://explorer.solana.com/${a}`, name: "Solana" },
     market: "simple.market.mintbase1.near", // Mintbase
+    nbtc: "nbtc.bridge.near",
+    btcConnector: "btc-connector.bridge.near",
+    bridgeApi: "https://mainnet.api.bridge.nearone.org",
   },
 }[NETWORK];
 if (!CONFIG) throw new Error(`unknown network ${NETWORK}`);
@@ -220,6 +226,15 @@ export const EVM = EVM_CHAINS[0];
 const chainOf = (id) => EVM_CHAINS.find((c) => c.chain.id === Number(id ?? EVM.chain.id)) ?? (() => { throw new Error(`chain ${id} not supported`); })();
 /** An outside NEP-178/199 market Pusaka can be sold on (Mintbase). */
 export const MARKET = CONFIG.market;
+export const NBTC = CONFIG.nbtc;
+export const BTC_CONNECTOR = CONFIG.btcConnector;
+
+/** The Omni BTC connector address that mints nBTC to `recipient` (registered with Near-One's relayer, which verifies the deposit). */
+export async function nbtcDepositAddress(recipient) {
+  const r = await fetch(`${CONFIG.bridgeApi}/api/v3/utxo/get_user_deposit_address`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chain: "btc", recipient }) });
+  if (!r.ok) throw new Error(`bridge API ${r.status}`);
+  return (await r.json()).address;
+}
 
 export function evmAddress(pubkeyHex) {
   const uncompressed = secp256k1.Point.fromHex(pubkeyHex).toBytes(false); // 65 bytes, 0x04 prefix

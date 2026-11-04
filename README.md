@@ -47,7 +47,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `120 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
+See: `124 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -217,6 +217,24 @@ Guard rails the agent can't talk its way around: tools that move a Pusaka or its
 The deployment needs `RELAYER_ACCOUNT_ID` / `RELAYER_PRIVATE_KEY` set in Vercel; without them the functions answer 503 and the app falls back to proving from the user's wallet.
 In the web app, *List*, *Cancel listing*, *Ask for a loan*, *Cancel loan request* and *Take the Pusaka* go through this relayer when the connected wallet supports NEP-366 (`signDelegateActions` in near-connect); otherwise they are normal transactions. **Verified on testnet with Meteor Wallet:** listing Pusaka #2 from the web app opened Meteor's *Sign Delegate Action* screen, the relayer submitted it, and the owner's balance changed by 0.000000 NEAR. A Vercel Firewall rate-limit rule on `/api/prove` and `/api/relay` (20 POSTs per minute per IP) is staged in log mode.
 
+## nBTC: the Pusaka's Bitcoin, also as a NEAR token
+
+A Pusaka can turn some of its native BTC into **nBTC**, Omni Bridge's NEP-141 Bitcoin on NEAR, without it ever leaving
+the NFT's control:
+
+1. Its BTC is withdrawn (contract-built, MPC-signed, `OP_RETURN pusaka:<id>`) to the Omni BTC connector's deposit address
+   for the **Pusaka's own NEAR account** (`nbtcDepositAddress`, registered with Near-One's relayer API).
+2. Near-One's relayer verifies the deposit against the same Bitcoin light client Pusaka uses (`btc-client-v4.testnet`)
+   and `btc-connector.n-bridge.testnet` mints nBTC to that account. It now moves with the NFT.
+3. Only the holder can spend it: `withdraw_nbtc` is the one other transaction shape the contract will sign from that
+   account, a single `ft_transfer` on `nbtc.n-bridge.testnet` with 1 yoctoNEAR (test `b1` pins the bytes).
+
+**Verified live (4 Nov 2026):** Pusaka #5 sent 3,500 sats to the connector ([236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998));
+3,300 nBTC sats (after the 200-sat bridge fee) arrived in its NEAR account `0065858e…b2db`; then the holder sent 1,000 of them
+out with an MPC-signed `ft_transfer` ([FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi)).
+Try: `node scripts/withdraw-nbtc.mjs <owner> <token_id> <receiver> <sats>`. Verifying a deposit on the connector
+yourself needs a staked trusted relayer (1,000 NEAR); Near-One's relayer does it for you.
+
 ## Verified USDC: NEAR MPC reads Base and Arbitrum
 
 BTC deposits are trusted through NEAR's Bitcoin light client. USDC deposits get the same treatment through NEAR MPC's
@@ -273,6 +291,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T17 | Keep reading the holder room after selling | Ownership is checked on every request; signatures expire after 5 minutes and are bound to this site and a full-access key | `scripts/holder-test.mjs`, `scripts/handover.mjs` |
 | T18 | Swap or wipe the sealed letter just before a sale | `set_letter` is owner-only and refused while listed, approved, collateral or signing | `h2_old_owner_cannot_rewrite_the_letter`, `h3_letter_frozen_while_listed` |
 | T19 | Start a payout, then sell in the middle of it | A signature in flight locks the token (`SignPending`), and a buyer whose view predates the payout fails (`StateChanged`) | `a5_sale_during_payout_is_impossible`, `a5_buyer_with_pre_payout_view_cannot_buy` |
+| T20 | Use the Pusaka's NEAR account to call some other contract (or approve one) before selling | From that account the contract signs only a `Transfer` or one `ft_transfer` on the nBTC contract with 1 yocto; it never signs `AddKey`, other calls or approvals | `a1_near_tx_layout`, `b1_nbtc_tx_is_one_ft_transfer_on_the_nbtc_contract_with_one_yocto` |
 | T9 | A failed callback leaves the token locked forever | After ~600 blocks the owner can `unlock_stale`; safe because outpoints were recorded before signing | `unlock_stale_waits_for_timeout`, `unlock_stale_releases_after_timeout` |
 
 `nft_transfer_call` is disabled, and NEP-178 approvals freeze every asset (T13), so no marketplace or third party can move a Pusaka around these locks.
@@ -307,7 +326,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Deposits proven from inside a TDX enclave (Shade Agent on Phala, attestation checked on-chain) | [register_agent](https://testnet.near.rocks/tx/4Pxmp4gyPBe4tnmMqJA1GkrdiCr1ZHVjfh8UvtEjhNtA), then `prove_deposit` [GrSm25nC…](https://testnet.near.rocks/tx/GrSm25nCftxzjPREtaMKzgqryU3QNMpzuq4P51nt1Mys) and [92rQg2ce…](https://testnet.near.rocks/tx/92rQg2ceP4iwg62CPBkERhUaWPacTNSiAPzaVHLCQAhM) from the enclave's own key, 6 s after registering |
 | Verifiable build (NEP-330): `contract_source_metadata` names the repo, NEP-171/177/178/199/297/330 and `build_info` (image `sourcescan/cargo-near:0.21.1-rust-1.96.1@sha256:86bd…`, commit `3ccd56f`); the deployed wasm is the one CI's `reproducible-wasm` job built | sha256 `eafe4e0aff779c5fd2620d5718bf945aef14e2dd3f0d979f7a3a6de4d2a578b5`, deployed in [zF77Fo2a…](https://testnet.near.rocks/tx/zF77Fo2abJjLrxM8JeJAC8taUtzhNTnq7n9XCggmSF3) |
 | Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
-| Unit tests | 120 / 120 passing, on the testnet and the mainnet build |
+| Unit tests | 124 / 124 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

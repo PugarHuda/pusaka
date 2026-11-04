@@ -1067,9 +1067,9 @@ fn a2_near_floor_recorded_before_signing_and_never_drops() {
     assert!(c.token_info("1".into()).unwrap().pending);
     assert_eq!(c.near_nonce_floor("1".into()), U64(50));
     as_contract(vec![PromiseResult::Successful(SOL_KEY.as_bytes().to_vec())]);
-    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(100), U64(50), [3; 32]), PromiseOrValue::Promise(_)));
+    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(100), U64(50), [3; 32], None), PromiseOrValue::Promise(_)));
     as_contract(vec![PromiseResult::Successful(br#"{"scheme":"Ed25519","signature":[1]}"#.to_vec())]);
-    let _ = c.on_near_signed("1".into(), U64(50), NearToken::from_millinear(100), "".into(), "".into());
+    let _ = c.on_near_signed("1".into(), U64(50), NearToken::from_millinear(100), "".into(), "".into(), None);
     withdraw_near(&mut c, "alice.testnet", 10);
     assert_eq!(c.near_nonce_floor("1".into()), U64(50));
 }
@@ -1079,7 +1079,7 @@ fn a3_failed_key_releases_the_lock() {
     let mut c = setup();
     withdraw_near(&mut c, "alice.testnet", 1);
     as_contract(vec![PromiseResult::Failed]);
-    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32]), PromiseOrValue::Value(_)));
+    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32], None), PromiseOrValue::Value(_)));
     assert!(!c.token_info("1".into()).unwrap().pending);
 }
 
@@ -1108,7 +1108,7 @@ fn a5_buyer_with_pre_payout_view_cannot_buy() {
     let seen = c.token_info("1".into()).unwrap().sign_epoch;
     withdraw_near(&mut c, "alice.testnet", 1);
     as_contract(vec![PromiseResult::Failed]);
-    let _ = c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32]);
+    let _ = c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32], None);
     ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
     c.list("1".into(), NearToken::from_near(1), None, None);
     ctx("bob.testnet", NearToken::from_near(1), vec![]);
@@ -1480,4 +1480,48 @@ fn u9_any_signature_now_starts_the_counter() {
     c.pending.remove("1");
     prove_usdc(&mut c, &evm_of_token(), usdc::CHAINS[0].0); // doesn't panic
     assert_eq!(c.usdc_info("1".into())[0]["signed_out"], "0");
+}
+
+// ---------- nBTC (Omni Bridge) held by the Pusaka's own NEAR account ----------
+
+#[test]
+fn b1_nbtc_tx_is_one_ft_transfer_on_the_nbtc_contract_with_one_yocto() {
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    let tx = near_ft_transfer_tx(&[5; 32], 9, &NBTC.parse().unwrap(), &acc("bob.testnet"), 3300, &[7; 32]);
+    let s = |b: &[u8]| { let mut v = (b.len() as u32).to_le_bytes().to_vec(); v.extend(b); v };
+    let mut want = s(hex::encode([5u8; 32]).as_bytes());
+    want.push(0); want.extend([5u8; 32]); want.extend(9u64.to_le_bytes());
+    want.extend(s(NBTC.as_bytes())); want.extend([7u8; 32]);
+    want.extend(1u32.to_le_bytes()); want.push(2); // one FunctionCall
+    want.extend(s(b"ft_transfer"));
+    want.extend(s(br#"{"receiver_id":"bob.testnet","amount":"3300"}"#));
+    want.extend(30_000_000_000_000u64.to_le_bytes()); want.extend(1u128.to_le_bytes());
+    assert_eq!(tx, want);
+}
+
+#[test]
+fn b2_nbtc_withdrawal_locks_and_records_the_floor_like_near() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    let _ = c.withdraw_nbtc("1".into(), acc("bob.testnet"), U128(3300), U64(7), bs58::encode([1u8; 32]).into_string());
+    assert!(c.token_info("1".into()).unwrap().pending);
+    assert_eq!(c.near_nonce_floor("1".into()), U64(7));
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn b3_only_the_owner_moves_its_nbtc() {
+    let mut c = setup();
+    ctx("bob.testnet", NearToken::from_millinear(10), vec![]);
+    let _ = c.withdraw_nbtc("1".into(), acc("bob.testnet"), U128(3300), U64(7), bs58::encode([1u8; 32]).into_string());
+}
+
+#[test]
+#[should_panic(expected = "Listed")]
+fn b3_nbtc_locked_while_listed() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    let _ = c.withdraw_nbtc("1".into(), acc("bob.testnet"), U128(3300), U64(7), bs58::encode([1u8; 32]).into_string());
 }

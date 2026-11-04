@@ -205,3 +205,11 @@ test("the remote MCP endpoint works from a browser (CORS) and returns JSON-RPC p
   expect(bad.status()).toBe(400);
   expect((await bad.json()).error.code).toBe(-32700);
 });
+
+test("a Pusaka shows the nBTC in its own NEAR account and its Omni Bridge deposit address", async ({ page }) => {
+  await page.goto("/#/pusaka/5");
+  const sec = page.locator("section").filter({ has: page.getByRole("heading", { name: "nBTC on NEAR" }) });
+  await expect(sec).toBeVisible({ timeout: 40_000 });
+  await expect(sec).toContainText(/[1-9][\d,]* nBTC sats/); // #5's account holds nBTC minted by the Omni connector
+  await expect(sec.locator(".addr")).toContainText(/^tb1q[0-9a-z]{38,}/);
+});

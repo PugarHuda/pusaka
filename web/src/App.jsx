@@ -4,7 +4,7 @@ import {
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
-  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear,
+  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress,
   ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
@@ -304,6 +304,7 @@ function Detail({ id, accountId }) {
         {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.nearAcct && <NearAccountSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+        {t.nearAcct && <NbtcSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
 
         <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
 
@@ -561,6 +562,63 @@ function NearAccountSection({ t, canWithdraw, onDone }) {
           <label>Send NEAR to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name.testnet" required spellCheck="false" /></label>
           <label>Amount <span className="row"><input type="number" min="0.0001" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> NEAR</span></label>
           <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Withdraw NEAR"}</button>
+        </form>
+      )}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
+/** nBTC (Omni Bridge) in the Pusaka's NEAR account: native BTC sent to the Omni connector becomes NEP-141 nBTC there. */
+function NbtcSection({ t, canWithdraw, onDone }) {
+  const { id, nearAcct: a } = t;
+  const [state, setState] = useState(null);
+  const [to, setTo] = useState("");
+  const [sats, setSats] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  useEffect(() => {
+    if (!a?.address) return;
+    Promise.all([
+      provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: a.address } }).catch(() => "0"),
+      nbtcDepositAddress(a.address).catch(() => null),
+    ]).then(([balance, deposit]) => setState({ balance: BigInt(balance), deposit }));
+  }, [a?.address]);
+  if (!a?.address || !state) return null;
+
+  async function send(e) {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      const receiver = to.trim().toLowerCase();
+      if (!/^\d+$/.test(sats) || BigInt(sats) <= 0n || BigInt(sats) > state.balance) throw new Error(`Enter whole sats, up to ${state.balance}.`);
+      if (!(await provider.callFunction({ contractId: NBTC, method: "storage_balance_of", args: { account_id: receiver } }))) {
+        throw new Error(`${receiver} isn't registered with ${NBTC} yet (NEP-145 storage_deposit), so nBTC can't be sent there.`);
+      }
+      const { nonce, blockHash } = await nearTxParams(a.address);
+      const signed = await call("withdraw_nbtc", { token_id: id, receiver_id: receiver, sats, nonce: String(nonce), block_hash: blockHash },
+        { deposit: 10_000_000_000_000_000_000_000n, tgas: 300 });
+      if (signed.account !== a.address) throw new Error("The contract signed for a different account.");
+      const hash = await broadcastNear(await finalizeNear(signed));
+      setMsg({ ok: true, text: <>Sent. <a href={`${NEAR_EXPLORER}/tx/${hash}`} target="_blank" rel="noreferrer">View on NEAR</a></> });
+      await onDone();
+    } catch (err) { setMsg({ ok: false, text: err.message }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <section>
+      <h2>nBTC on NEAR</h2>
+      <p className="amount small"><span>{state.balance.toLocaleString()}</span> nBTC sats in its NEAR account</p>
+      <p className="muted">Withdraw this Pusaka's BTC to the Omni Bridge address below and Near-One's relayer, checking it against
+        the same Bitcoin light client, mints nBTC (NEP-141) into the Pusaka's own NEAR account. It moves with the NFT, and
+        only its holder can send it: the contract signs one `ft_transfer` on {NBTC}, nothing else.</p>
+      {state.deposit && <p className="addr"><span>{state.deposit}</span> <CopyButton text={state.deposit} label="Copy deposit address" /></p>}
+      {canWithdraw && state.balance > 0n && (
+        <form onSubmit={send} className="stack">
+          <label>Send nBTC to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name.testnet" required spellCheck="false" autoCapitalize="none" /></label>
+          <label>Amount <span className="row"><input value={sats} onChange={(e) => setSats(e.target.value.trim())} inputMode="numeric" placeholder={String(state.balance)} required /> sats</span></label>
+          <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Send nBTC"}</button>
         </form>
       )}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
