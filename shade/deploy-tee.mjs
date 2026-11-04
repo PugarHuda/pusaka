@@ -47,7 +47,12 @@ if (!tcb?.mrtd) { console.log("no tcb_info yet:", JSON.stringify(att).slice(0, 4
 const ev = (name) => tcb.event_log?.find((e) => e.event === name);
 const composeHash = calculateAppComposeHash(cfg.compose, { publicLogs: cfg.publicLogs, publicSysinfo: cfg.publicSysinfo });
 const reported = ev("compose-hash")?.event_payload;
-if (reported && reported !== composeHash) throw new Error(`compose hash mismatch: TEE ${reported}, local ${composeHash}`);
+if (reported !== composeHash) throw new Error(`compose hash mismatch: TEE ${reported}, local ${composeHash}`);
+// Phala's KMS digest is the same on every dstack version; the CLI pins it.
+const KMS = "83368b43a0fc6f824f5a9220592df85fd30e2d405ecbd253a5c6354af63e6c9b41aec557c38a38e348ab87f9ac8fc68c";
+if (ev("key-provider")?.digest !== KMS) throw new Error(`unexpected key provider ${ev("key-provider")?.digest}`);
+// ponytail: RTMRs are trusted on first use (no published 0.5.12 table yet). Upgrade: recompute with
+// dstack-mr from the reproducible 0.5.12 image and compare. The quote itself is verified on-chain at register_agent.
 const measurements = {
   rtmrs: { mrtd: tcb.mrtd, rtmr0: tcb.rtmr0, rtmr1: tcb.rtmr1, rtmr2: tcb.rtmr2 },
   key_provider_event_digest: ev("key-provider")?.digest,

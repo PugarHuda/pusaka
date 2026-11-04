@@ -201,6 +201,13 @@ Guard rails the agent can't talk its way around: a per-session NEAR spend cap, `
 The deployment needs `RELAYER_ACCOUNT_ID` / `RELAYER_PRIVATE_KEY` set in Vercel; without them the functions answer 503 and the app falls back to proving from the user's wallet.
 In the web app, *List*, *Cancel listing*, *Ask for a loan*, *Cancel loan request* and *Take the Pusaka* go through this relayer when the connected wallet supports NEP-366 (`signDelegateActions` in near-connect); otherwise they are normal transactions. **Verified on testnet with Meteor Wallet:** listing Pusaka #2 from the web app opened Meteor's *Sign Delegate Action* screen, the relayer submitted it, and the owner's balance changed by 0.000000 NEAR. A Vercel Firewall rate-limit rule on `/api/prove` and `/api/relay` (20 POSTs per minute per IP) is staged in log mode.
 
+## Deposit prover in a TEE: Shade Agent
+
+`shade/agent.mjs` is the relayer's prover run as a [Shade Agent](https://github.com/NearDeFi/shade-agent-framework) in a Phala Cloud TDX enclave. On boot it registers on the agent contract `pusaka-agent.testnet` (the framework's reference contract, `requires_tee: true`). The contract verifies the TDX quote and accepts the agent only if its measurements (OS image, firmware, KMS, and the hash of `shade/docker-compose.yaml`, which pins the image by digest) and its hardware PPID are on the approved list. After that, a key generated inside the enclave proves every Pusaka's confirmed BTC deposits through the same `proveToken()` as `api/prove.mjs`. Nobody, including us, ever holds that key.
+**Verified on testnet (4 Nov 2026):** [register_agent](https://testnet.near.rocks/tx/4Pxmp4gyPBe4tnmMqJA1GkrdiCr1ZHVjfh8UvtEjhNtA) from `eaf0205d…2fbc` (`get_agent` on `pusaka-agent.testnet` returns `"validity": "Valid"`, PPID `62d54040…`). The same account then proved [#1's 153,946 sats](https://testnet.near.rocks/tx/GrSm25nCftxzjPREtaMKzgqryU3QNMpzuq4P51nt1Mys) and [#5's 10,000 sats](https://testnet.near.rocks/tx/92rQg2ceP4iwg62CPBkERhUaWPacTNSiAPzaVHLCQAhM), both from BTC tx [c6c1dd60…](https://mempool.space/testnet/tx/c6c1dd60deb538f3a5007f4239643534b8ba7428d472d70e2002ac15330ca9b0). The CVM (tdx.small) ran for about 3 minutes and was deleted afterwards. The Vercel relayer still proves deposits day to day.
+**How it was deployed:** CI builds the image (`.github/workflows/shade-image.yml`, actions pinned by SHA) and the agent-contract wasm. `shade deploy` (CLI 2.4.0) deployed the contract and approved the PPIDs. The CLI only knows how to measure dstack 0.5.7/0.5.8, and Phala has disabled both images, so `node shade/deploy-tee.mjs` deploys on dstack 0.5.12 instead. It computes the app-compose hash locally, as the CLI does, and checks it against the enclave's event log; it reads only the OS/firmware RTMRs from the running enclave's quote, then approves the result.
+**Limits:** taking the RTMRs from the quote trusts Phala's 0.5.12 image on first use rather than recomputing it from a reproducible build. The image is built non-reproducibly. The agent contract's owner key (`pusaka-shade.testnet`) is not deleted.
+
 ## Prices: what a lender or buyer is actually getting
 
 The web app values collateral and listings with live market data: BTC/USD from mempool.space, NEAR (and ETH) from Rhea/Ref, i.e. NEAR DEX prices. A loan shows its loan-to-value and annualised interest; a listing shows how far above or below the BTC's value it is priced. NEAR's on-chain oracles (`pyth-oracle.near`, `pyth-oracle.testnet`, `priceoracle.near`) were all stale when we checked, so the contract doesn't depend on a price; the numbers are labelled as mainnet prices.
@@ -261,6 +268,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Solana: contract-built System transfer for Pusaka #5's Solana address, signed by the MPC's Ed25519 key | signature verified for `12Ync8r3…t8vN` (8.9 s), then broadcast: 0.1 SOL sent to Pusaka #1's Solana address, [finalized](https://explorer.solana.com/tx/Pz1o8vTdtViK5Vd9YdbsWPRjwHuwLk6aUmaWvj3ik7UVycmyJEhepWBX5E5UFmLNFm6UmwUjXv31dMe8VT3Qmwb?cluster=devnet) (#5 went 1 → 0.899995 SOL; #1 went 0 → 0.1) |
 | Holder room on the deployed API, sealed letter on-chain | letter stored with `set_letter` ([EZdhBpqg…](https://testnet.near.rocks/tx/EZdhBpqgrzjKGEaVDpGXt8JCBTovTQkdgRHRWRofdHh2)); the holder read it, a non-holder got 403 |
 | Two resales of Pusaka #5 (`scripts/handover.mjs`) | creator `pusaka-seller.testnet` received exactly 0.005 NEAR (2.5% of 0.2); each previous holder was locked out of the room and the new one read the letter |
+| Deposits proven from inside a TDX enclave (Shade Agent on Phala, attestation checked on-chain) | [register_agent](https://testnet.near.rocks/tx/4Pxmp4gyPBe4tnmMqJA1GkrdiCr1ZHVjfh8UvtEjhNtA), then `prove_deposit` [GrSm25nC…](https://testnet.near.rocks/tx/GrSm25nCftxzjPREtaMKzgqryU3QNMpzuq4P51nt1Mys) and [92rQg2ce…](https://testnet.near.rocks/tx/92rQg2ceP4iwg62CPBkERhUaWPacTNSiAPzaVHLCQAhM) from the enclave's own key, 6 s after registering |
 | Unit tests | 95 / 95 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
@@ -284,6 +292,7 @@ scripts/    setup.mjs (deploy), demo.mjs (end-to-end), withdraw*.mjs (BTC, ETH/U
             mintbase.mjs, holder-test.mjs, handover.mjs
 api/        Vercel functions: relay (NEP-366), prove, holder (NEP-413), reserves, badge, prices, mcp
 mcp/        MCP server for AI agents
+shade/      Shade Agent: TEE deposit prover, agent contract, compose/deploy config
 web/        Vite + React app, NEAR wallet via @hot-labs/near-connect
 docs/PRD.md product requirements and design notes
 ```
