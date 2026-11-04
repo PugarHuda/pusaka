@@ -101,7 +101,7 @@ export async function relay(b64) {
   const res = await relayerAccount().signAndSendTransaction({
     receiverId: sd.delegateAction.senderId,
     actions: [actions.signedDelegate({ delegateAction: sd.delegateAction, signature: sd.signature })],
-    waitUntil: "EXECUTED_OPTIMISTIC",
+    waitUntil: "FINAL", // the app re-reads views at final; answering earlier shows the user stale state
   });
   const failure = res.receipts_outcome?.find((r) => r.outcome.status.Failure)?.outcome.status.Failure;
   if (failure) throw Object.assign(new Error(JSON.stringify(failure).match(/Smart contract panicked: ([^"\\]+)/)?.[1] ?? "relayed call failed"), { status: 422 });
