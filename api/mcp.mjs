@@ -12,7 +12,8 @@ export default async function handler(req, res) {
   res.setHeader("access-control-expose-headers", "mcp-session-id");
   if (req.method === "OPTIONS") return res.status(204).end();
   let payload;
-  try { payload = req.body; } catch {
+  // Vercel throws on a malformed JSON body, or hands it over as the raw string
+  try { payload = req.body; if (typeof payload === "string") payload = JSON.parse(payload); } catch {
     return res.status(400).json({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error: the body must be JSON" }, id: null });
   }
   if (req.method !== "POST") {

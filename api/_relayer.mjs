@@ -120,7 +120,13 @@ export async function proveToken(tokenId, relayer) {
 
 /** req.body, but a malformed JSON body is the client’s mistake (400), not ours. */
 export function body(req) {
-  try { return req.body ?? {}; } catch { throw Object.assign(new Error("the body must be JSON"), { status: 400 }); }
+  const bad = () => Object.assign(new Error("the body must be JSON"), { status: 400 });
+  let b;
+  try { b = req.body ?? {}; } catch { throw bad(); }
+  // Vercel hands over an unparseable JSON body as the raw string instead of throwing
+  if (typeof b === "string") { try { b = JSON.parse(b); } catch { throw bad(); } }
+  if (typeof b !== "object" || b === null || Array.isArray(b)) throw bad();
+  return b;
 }
 
 export async function handle(res, fn) {
