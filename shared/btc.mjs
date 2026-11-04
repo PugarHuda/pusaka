@@ -518,7 +518,8 @@ export async function usdcToProve(tokenId, { blocks = 45_000 } = {}) {
       const logs = await rpc("eth_getLogs", [{ address: v.usdc, topics: [TRANSFER_TOPIC, null, "0x" + to.slice(2).padStart(64, "0")],
         fromBlock: "0x" + b.toString(16), toBlock: "0x" + Math.min(b + 8_999, head).toString(16) }]);
       for (const l of logs) {
-        if (v.deposits.some((d) => d.tx === l.transactionHash && Number(d.log_index) === parseInt(l.logIndex))) continue;
+        if (BigInt(l.data) < MIN_PROVEN_USDC) continue; // the contract refuses dust; don't pay to try
+        if (await contractView("usdc_is_proven", { token_id: String(tokenId), chain_id: String(c.chain.id), tx: l.transactionHash, log_index: String(parseInt(l.logIndex)) })) continue;
         out.push({ chain: c.chain.name, chain_id: c.chain.id, usdc: Number(BigInt(l.data)) / 1e6, finalized: parseInt(l.blockNumber) <= fin, args: {
           token_id: String(tokenId), chain_id: String(c.chain.id), tx_hash: l.transactionHash, log_index: String(parseInt(l.logIndex)),
           transaction_index: String(parseInt(l.transactionIndex)), block_hash: l.blockHash, block_number: String(parseInt(l.blockNumber)), data: l.data, topics: l.topics } });
@@ -529,3 +530,5 @@ export async function usdcToProve(tokenId, { blocks = 45_000 } = {}) {
 }
 /** Storage deposit for one proven USDC deposit (refunded if the MPC doesn't attest it). */
 export const PROVE_USDC_DEPOSIT = 2_000_000_000_000_000_000_000n;
+/** Same floor as the contract (0.01 USDC). */
+export const MIN_PROVEN_USDC = 10_000n;

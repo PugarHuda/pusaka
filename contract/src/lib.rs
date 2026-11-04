@@ -77,7 +77,11 @@ const CKD_DOMAIN: u32 = 2;
 /// NEAR MPC foreign-transaction verification (secp256k1 attestations of other chains' txs).
 const FOREIGN_TX_DOMAIN: u32 = 3;
 /// Storage for one proven USDC deposit record, and for a token's signed-out USDC counter.
-const USDC_DEPOSIT_BYTES: u64 = 120;
+const USDC_DEPOSIT_BYTES: u64 = 200;
+/// Smallest USDC deposit that can be proven (0.01 USDC): makes dust spam cost the spammer.
+const MIN_PROVEN_USDC: u128 = 10_000;
+/// How many proven USDC deposits usdc_info lists per chain (the total counts all of them).
+const RECENT_USDC: usize = 16;
 const USDC_OUT_BYTES: u64 = 80;
 
 #[derive(BorshStorageKey)]
@@ -480,10 +484,14 @@ impl Pusaka {
         let amount = usdc::amount(&data);
         require!(amount > 0, "zero transfer");
         let tx = usdc::hex32(&tx_hash, "tx_hash");
-        let key = format!("ud:{token_id}:{cid}");
-        let deposits: Vec<UsdcDeposit> = raw_get(&key).unwrap_or_default();
-        require!(!deposits.iter().any(|d| d.tx == tx && d.log_index == log_index.0), "already proven");
-        require!(deposits.len() < MAX_PROVEN, "too many proven USDC deposits");
+        require!(amount >= MIN_PROVEN_USDC, "deposit below the minimum that can be proven (0.01 USDC)");
+        // A signature from before signed-out USDC was counted could still spend a proven deposit.
+        require!(
+            !self.eth_nonces.contains_key(&format!("{token_id}:{cid}")) || env::storage_has_key(format!("uo:{token_id}:{cid}").as_bytes()),
+            "this Pusaka signed on this chain before USDC accounting existed"
+        );
+        // One marker per deposit, no list cap: dust transfers can't crowd out real ones (each prover pays).
+        require!(!env::storage_has_key(usdc_marker(&token_id, cid, &tx, log_index.0).as_bytes()), "already proven");
         let log = usdc::Log {
             tx,
             log_index: log_index.0,
@@ -526,17 +534,27 @@ impl Pusaka {
             .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
             .and_then(|v| v["payload_hash"].as_str().map(|h| h.eq_ignore_ascii_case(&expected)))
             .unwrap_or(false);
-        let key = format!("ud:{token_id}:{}", chain_id.0);
-        let mut deposits: Vec<UsdcDeposit> = raw_get(&key).unwrap_or_default();
         let tx = usdc::hex32(&tx, "tx");
-        let stored = attested && !deposits.iter().any(|d| d.tx == tx && d.log_index == log_index.0) && deposits.len() < MAX_PROVEN;
+        let marker = usdc_marker(&token_id, chain_id.0, &tx, log_index.0);
+        let stored = attested && !env::storage_has_key(marker.as_bytes()); // a parallel proof may have landed first
         if stored {
+            env::storage_write(marker.as_bytes(), &[1]);
+            let total = format!("up:{token_id}:{}", chain_id.0);
+            raw_put(&total, &raw_get::<u128>(&total).unwrap_or(0).saturating_add(amount.0));
+            // the latest few, for display; the total above is what counts
+            let recent = format!("ud:{token_id}:{}", chain_id.0);
+            let mut deposits: Vec<UsdcDeposit> = raw_get(&recent).unwrap_or_default();
             deposits.push(UsdcDeposit { tx, log_index: log_index.0, amount: amount.0 });
-            raw_put(&key, &deposits);
+            if deposits.len() > RECENT_USDC { deposits.remove(0); }
+            raw_put(&recent, &deposits);
         } else {
             refund(payer, env::storage_byte_cost().saturating_mul(USDC_DEPOSIT_BYTES as u128));
         }
         stored
+    }
+
+    pub fn usdc_is_proven(&self, token_id: TokenId, chain_id: U64, tx: String, log_index: U64) -> bool {
+        env::storage_has_key(usdc_marker(&token_id, chain_id.0, &usdc::hex32(&tx, "tx"), log_index.0).as_bytes())
     }
 
     /// Per chain: USDC proven by NEAR MPC, ever signed out by this contract, and what a buyer or
@@ -546,7 +564,7 @@ impl Pusaka {
             .iter()
             .map(|c| {
                 let deposits: Vec<UsdcDeposit> = raw_get(&format!("ud:{token_id}:{}", c.0)).unwrap_or_default();
-                let proven: u128 = deposits.iter().map(|d| d.amount).sum();
+                let proven = raw_get::<u128>(&format!("up:{token_id}:{}", c.0)).unwrap_or(0);
                 let out = raw_get::<u128>(&format!("uo:{token_id}:{}", c.0)).unwrap_or(0);
                 json!({
                     "chain_id": U64(c.0), "chain": c.1, "usdc": format!("0x{}", c.3),
@@ -818,13 +836,16 @@ impl Pusaka {
         let key = format!("{token_id}:{}", chain_id.0);
         let new_entry = !self.eth_nonces.contains_key(&key);
         // Verified USDC = proven deposits - everything ever signed out, recorded before signing.
-        let usdc_out = usdc::chain(chain_id.0)
-            .filter(|c| erc20.as_deref().is_some_and(|t| t.trim_start_matches("0x").eq_ignore_ascii_case(c.3)))
-            .map(|_| format!("uo:{token_id}:{}", chain_id.0));
-        let new_out = usdc_out.as_ref().is_some_and(|k| !env::storage_has_key(k.as_bytes()));
+        // Written for every signature on a chain the MPC verifies (0 added for non-USDC), so "nonce
+        // floor set but no counter" means a signature predates USDC accounting (see prove_usdc_deposit).
+        let usdc_out = usdc::chain(chain_id.0).map(|c| {
+            let is_usdc = erc20.as_deref().is_some_and(|t| t.trim_start_matches("0x").eq_ignore_ascii_case(c.3));
+            (format!("uo:{token_id}:{}", chain_id.0), if is_usdc { value_wei.0 } else { 0 })
+        });
+        let new_out = usdc_out.as_ref().is_some_and(|(k, _)| !env::storage_has_key(k.as_bytes()));
         charge_storage(if new_entry { ETH_NONCE_BYTES } else { 0 } + if new_out { USDC_OUT_BYTES } else { 0 }, 1);
-        if let Some(k) = usdc_out {
-            let out = raw_get::<u128>(&k).unwrap_or(0).saturating_add(value_wei.0);
+        if let Some((k, add)) = usdc_out {
+            let out = raw_get::<u128>(&k).unwrap_or(0).saturating_add(add);
             raw_put(&k, &out);
         }
         let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0 + 1);
@@ -1400,6 +1421,10 @@ pub struct UsdcDeposit {
 
 // ponytail: raw storage under string prefixes (ea:, ud:, uo:) instead of new state fields, so
 // adding verified USDC needed no migration. Upgrade: fold into Pusaka with the next migrate().
+fn usdc_marker(token_id: &str, chain_id: u64, tx: &[u8; 32], log_index: u64) -> String {
+    format!("ux:{token_id}:{chain_id}:{}:{log_index}", hex::encode(tx))
+}
+
 fn raw_get<T: near_sdk::borsh::BorshDeserialize>(key: &str) -> Option<T> {
     env::storage_read(key.as_bytes()).map(|b| near_sdk::borsh::from_slice(&b).expect("raw storage"))
 }

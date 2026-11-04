@@ -1431,3 +1431,53 @@ fn u6_other_tokens_dont_touch_the_usdc_count() {
         U128(400_000), U128(60_000), U128(1), U128(1), Some(format!("0x{}", "12".repeat(20))));
     assert_eq!(c.usdc_info("1".into())[0]["verified"], "1000000");
 }
+
+fn mpc_answers_tx(c: &mut Pusaka, tx_byte: u8, amount: u128) -> bool {
+    as_contract(vec![PromiseResult::Successful(format!(r#"{{"payload_hash":"{}"}}"#, "aa".repeat(32)).into_bytes())]);
+    c.on_usdc_proven("1".into(), U64(usdc::CHAINS[0].0), hex::encode([tx_byte; 32]), U64(0), U128(amount), "aa".repeat(32), acc("bob.testnet"))
+}
+
+#[test]
+fn u7_dust_cannot_crowd_out_real_deposits() {
+    // no list cap: 80 deposits all count; usdc_info lists the latest 16
+    let mut c = setup();
+    for i in 0..80u8 { assert!(mpc_answers_tx(&mut c, i, 10_000)); }
+    let info = &c.usdc_info("1".into())[0];
+    assert_eq!(info["verified"], "800000");
+    assert_eq!(info["deposits"].as_array().unwrap().len(), 16);
+    assert!(c.usdc_is_proven("1".into(), U64(usdc::CHAINS[0].0), hex::encode([79u8; 32]), U64(0)));
+}
+
+#[test]
+#[should_panic(expected = "below the minimum")]
+fn u8_dust_below_minimum_rejected() {
+    let mut c = setup();
+    ctx("bob.testnet", NearToken::from_millinear(5), vec![]);
+    let _ = c.prove_usdc_deposit("1".into(), U64(usdc::CHAINS[0].0), format!("0x{}", "ab".repeat(32)), U64(4), U64(0),
+        format!("0x{}", "cd".repeat(32)), U64(100), format!("0x{:0>64}", "1"),
+        vec![format!("0x{}", usdc::TRANSFER_TOPIC), format!("0x{}", "11".repeat(32)), format!("0x{}", evm_of_token())]);
+}
+
+#[test]
+#[should_panic(expected = "before USDC accounting existed")]
+fn u9_token_that_signed_before_accounting_cannot_prove() {
+    // a nonce floor with no signed-out counter = a signature from before the counter existed,
+    // which could still spend a proven deposit
+    let mut c = setup();
+    ctx("pusaka.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.eth_nonces.insert(format!("1:{}", usdc::CHAINS[0].0), 1);
+    prove_usdc(&mut c, &evm_of_token(), usdc::CHAINS[0].0);
+}
+
+#[test]
+fn u9_any_signature_now_starts_the_counter() {
+    // an ETH (not USDC) withdrawal on a verifiable chain creates the counter at 0, so proofs stay allowed
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth("1".into(), U64(usdc::CHAINS[0].0), U64(0), "0x2af9ED1D3fe79c9a61518c9bFFA71bc3Fa1C3b63".into(),
+        U128(1), U128(21_000), U128(1), U128(1), None);
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.pending.remove("1");
+    prove_usdc(&mut c, &evm_of_token(), usdc::CHAINS[0].0); // doesn't panic
+    assert_eq!(c.usdc_info("1".into())[0]["signed_out"], "0");
+}
