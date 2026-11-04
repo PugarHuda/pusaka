@@ -249,6 +249,8 @@ BTC deposits are trusted through NEAR's Bitcoin light client. USDC deposits get 
    amount it signs before signing, so `usdc_info.verified` = proven deposits − everything ever signed out: a lower bound a
    buyer or lender can rely on without any EVM RPC.
 
+**Verified live (4 Nov 2026):** 0.01 USDC sent to Pusaka #5 on Base Sepolia ([0xbdf0f548…](https://sepolia.basescan.org/tx/0xbdf0f54808b9950544750853392c6b83913c3dad59e240c0c057acc3164b84b7)) was proven with `node scripts/prove-usdc.mjs`, once Base finalized the block (~70 min): [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m) runs `prove_usdc_deposit` → `v1.signer-prod.testnet.verify_foreign_transaction` → `on_usdc_proven` = `true`, and `usdc_info(5)` shows 0.01 USDC verified on Base.
+
 Only chains the MPC verifies count (Base and Arbitrum; Ethereum L1 isn't among them). The encoding is pinned to a live
 answer: the MPC verified a Base Sepolia USDC transfer ([BKeg9y2v…](https://testnet.near.rocks/tx/BKeg9y2vhjfYKggRj7Y5PLiFgPTsxHmE7havcxaKchk4))
 and test `u1` reproduces its `payload_hash` byte for byte. Hardening: one marker per deposit with no list cap (dust can't
@@ -326,6 +328,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Deposits proven from inside a TDX enclave (Shade Agent on Phala, attestation checked on-chain) | [register_agent](https://testnet.near.rocks/tx/4Pxmp4gyPBe4tnmMqJA1GkrdiCr1ZHVjfh8UvtEjhNtA), then `prove_deposit` [GrSm25nC…](https://testnet.near.rocks/tx/GrSm25nCftxzjPREtaMKzgqryU3QNMpzuq4P51nt1Mys) and [92rQg2ce…](https://testnet.near.rocks/tx/92rQg2ceP4iwg62CPBkERhUaWPacTNSiAPzaVHLCQAhM) from the enclave's own key, 6 s after registering |
 | Verifiable build (NEP-330): `contract_source_metadata` names the repo, NEP-171/177/178/199/297/330 and `build_info` (image `sourcescan/cargo-near:0.21.1-rust-1.96.1@sha256:86bd…`, commit `1aab9fd`); the deployed wasm is the one CI's `reproducible-wasm` job built | sha256 `b264b9b66c8ff46d5ec2a7fc4f3d5cd562db4ae924d4eb7ba4edad1f62b22fd3`, deployed in [GDC9xwRe…](https://testnet.near.rocks/tx/GDC9xwReVqfS1fTrhpBZAm8M4KLkCUUihsY6p3p1sLGr) |
 | Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
+| USDC attested by NEAR MPC foreign-transaction verification (Base Sepolia, finalized block) | [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m): `on_usdc_proven` true; `usdc_info(5)` verified 0.01 USDC |
+| Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
 | Unit tests | 124 / 124 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
