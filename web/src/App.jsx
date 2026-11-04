@@ -56,7 +56,7 @@ async function loadToken(id, { light = false } = {}) {
     solAddress(id).then((a) => solBalances(a, info.history).then((b) => ({ ...b, address: a })).catch(() => ({ address: a, error: true }))).catch(() => null),
     nearAccount(id).then(async (a) => {
       const floor = await view("near_nonce_floor", { token_id: id });
-      return nearBalances(a, floor).then((b) => ({ ...b, address: a, floor })).catch(() => ({ address: a, error: true }));
+      return nearBalances(a, floor).then((b) => ({ ...b, address: a, floor })).catch(() => ({ address: a, floor, error: true }));
     }).catch(() => null),
   ]);
   return { id, info, address, bal, eth, sol, nearAcct };
@@ -580,10 +580,11 @@ function NbtcSection({ t, canWithdraw, onDone }) {
   useEffect(() => {
     if (!a?.address) return;
     Promise.all([
-      nbtcBalances(a.address, a.floor ?? 0).catch(() => ({ sats: 0n, safe: 0n, atRisk: 0n })),
+      // the floor straight from the contract: a missing floor must never read as "no signature out"
+      view("near_nonce_floor", { token_id: id }).then((floor) => nbtcBalances(a.address, floor)).catch(() => null),
       nbtcDepositAddress(a.address).catch(() => null),
-    ]).then(([b, deposit]) => setState({ balance: b.sats, safe: b.safe, atRisk: b.atRisk, deposit }));
-  }, [a?.address, a?.floor]);
+    ]).then(([b, deposit]) => setState(b ? { balance: b.sats, safe: b.safe, atRisk: b.atRisk, deposit } : { unknown: true, balance: 0n, deposit }));
+  }, [a?.address, id]);
   if (!a?.address || !state) return null;
 
   async function send(e) {
@@ -609,7 +610,9 @@ function NbtcSection({ t, canWithdraw, onDone }) {
   return (
     <section>
       <h2>nBTC on NEAR</h2>
-      <p className="amount small"><span>{state.safe.toLocaleString()}</span> nBTC sats in its NEAR account</p>
+      {state.unknown
+        ? <p className="error">Couldn't read its nBTC or its signing record right now; nothing here is counted as safe.</p>
+        : <p className="amount small"><span>{state.safe.toLocaleString()}</span> nBTC sats in its NEAR account</p>}
       {state.atRisk > 0n && <p className="warn">{state.atRisk.toLocaleString()} nBTC sats are at risk: a transaction signed from this account (nonce {String(a.floor)}) hasn't been used yet, so it could still move them.</p>}
       <p className="muted">Withdraw this Pusaka's BTC to the Omni Bridge address below and Near-One's relayer, checking it against
         the same Bitcoin light client, mints nBTC (NEP-141) into the Pusaka's own NEAR account. It moves with the NFT, and
