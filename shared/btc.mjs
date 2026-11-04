@@ -488,3 +488,4 @@ export async function broadcastNear(b64) {
   if (r.status?.Failure) throw new Error(`NEAR rejected it: ${JSON.stringify(r.status.Failure).slice(0, 200)}`);
   return r.transaction.hash;
 }
+export * from "./ckd.mjs";

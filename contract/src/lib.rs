@@ -71,6 +71,8 @@ pub const EVM_CHAINS: [u64; 3] = [1, 8453, 42161]; // Ethereum, Base, Arbitrum O
 pub const ROYALTY_BPS: u128 = 250;
 /// Ed25519 domain of the MPC network (Solana keys).
 const ED25519_DOMAIN: u32 = 1;
+/// NEAR MPC confidential key derivation (BLS12-381).
+const CKD_DOMAIN: u32 = 2;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -640,6 +642,7 @@ impl Pusaka {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
         require!(EVM_CHAINS.contains(&chain_id.0), "chain not supported; see EVM_CHAINS");
+        require!(value_wei.0 > 0, "value_wei must be > 0"); // a 0-value tx would only burn a nonce and the fee
         let to = parse_evm_address(&to);
         // ERC-20: the tx calls token.transfer(to, value_wei) and moves no ETH.
         let (tx_to, value, input) = match &erc20 {
@@ -787,18 +790,67 @@ impl Pusaka {
     /// Owner-only. Stores a sealed (encrypted) letter in the token's metadata; it travels with
     /// the NFT and only the current holder can have it opened (see api/holder.mjs). Empty clears it.
     #[payable]
-    pub fn set_letter(&mut self, token_id: TokenId, sealed: String) {
+    /// `sealed` is either `v1:…` (sealed by the holder-room server) or `ckd1:…`, encrypted in the
+    /// owner's browser with a NEAR MPC confidential key; then `path` is the key's derivation path
+    /// from `letter_key(write_nonce)`, which must be this owner's.
+    pub fn set_letter(&mut self, token_id: TokenId, sealed: String, path: Option<String>) {
         self.assert_owner(&token_id);
         self.assert_free(&token_id); // a buyer must get the letter they saw
         require!(sealed.len() <= MAX_LETTER && sealed.bytes().all(|b| b.is_ascii_graphic()), "sealed letter: up to 2000 printable ASCII chars");
+        let ckd = sealed.starts_with("ckd1:");
+        if ckd {
+            let mine = format!("letter:{token_id}:{}:", env::predecessor_account_id());
+            require!(path.as_deref().is_some_and(|p| p.starts_with(&mine) && p.len() <= mine.len() + 32), "ckd1 letters need the path letter_key gave this owner");
+        } else {
+            require!(path.is_none(), "path is only for ckd1 letters");
+        }
         let before = env::storage_usage();
         let metas = self.tokens.token_metadata_by_id.as_mut().unwrap();
         let mut m = metas.get(&token_id).expect("NoToken");
         let mut extra: Value = m.extra.as_deref().and_then(|e| serde_json::from_str(e).ok()).unwrap_or_else(|| json!({}));
-        if sealed.is_empty() { extra.as_object_mut().unwrap().remove("letter"); } else { extra["letter"] = json!(sealed); }
+        let o = extra.as_object_mut().unwrap();
+        o.remove("letter_path");
+        if sealed.is_empty() { o.remove("letter"); } else { o.insert("letter".into(), json!(sealed)); }
+        if let (true, Some(p)) = (ckd, path) { o.insert("letter_path".into(), json!(p)); }
         m.extra = Some(extra.to_string());
         metas.insert(&token_id, &m);
         charge_storage(env::storage_usage().saturating_sub(before), 1);
+    }
+
+    /// Owner-only. Asks NEAR MPC for a confidential key (CKD, domain 2), encrypted to
+    /// `app_public_key`: a one-time BLS12-381 G1 key (`bls12381g1:<base58>`) whose secret only the
+    /// owner's browser holds. The key belongs to this contract's account and a derivation path:
+    /// - `write_nonce` set: a new letter's key, path `letter:<id>:<owner>:<nonce>`;
+    /// - unset: the key of the letter stored now (its `letter_path`).
+    /// Only the current owner gets either, so the server never sees a key, and a seller never
+    /// gets the key of a letter written after the sale. Returns the MPC's `{big_y, big_c}`.
+    /// Attach 1 yoctoNEAR and ~50 TGas.
+    #[payable]
+    pub fn letter_key(&mut self, token_id: TokenId, app_public_key: String, write_nonce: Option<String>) -> Promise {
+        self.assert_owner(&token_id);
+        require!(env::attached_deposit() >= NearToken::from_yoctonear(1), "attach 1 yoctoNEAR");
+        require!(app_public_key.starts_with("bls12381g1:") && app_public_key.len() <= 100, "app_public_key must be bls12381g1:<base58>");
+        let path = match write_nonce {
+            Some(n) => {
+                require!(!n.is_empty() && n.len() <= 32 && n.bytes().all(|b| b.is_ascii_alphanumeric()), "write_nonce: 1 to 32 letters or digits");
+                format!("letter:{token_id}:{}:{n}", env::predecessor_account_id())
+            }
+            None => self.letter_extra(&token_id)["letter_path"].as_str().map(String::from).expect("NoCkdLetter"),
+        };
+        Promise::new(self.mpc.clone()).function_call_weight(
+            "request_app_private_key",
+            json!({"request": {"derivation_path": path, "app_public_key": {"AppPublicKey": app_public_key}, "domain_id": CKD_DOMAIN}})
+                .to_string()
+                .into_bytes(),
+            NearToken::from_yoctonear(1),
+            Gas::from_tgas(SIGN_TGAS),
+            GasWeight(1),
+        )
+    }
+
+    fn letter_extra(&self, token_id: &TokenId) -> Value {
+        let m = self.tokens.token_metadata_by_id.as_ref().unwrap().get(token_id).expect("NoToken");
+        m.extra.as_deref().and_then(|e| serde_json::from_str(e).ok()).unwrap_or_else(|| json!({}))
     }
 
     /// Highest nonce of the token's NEAR account that was ever signed for (0 if none).

@@ -47,7 +47,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `95 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
+See: `106 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -142,11 +142,27 @@ site; that the key is a **full-access key** of the claimed account right now; th
 old; and that the account is the token's **current owner** (`nft_token`, on every request). Then it opens the token's
 sealed letter.
 
-The holder can write a letter for the next holder. The server seals it (AES-256-GCM, the token id bound as associated
-data so it can't be pasted onto another Pusaka) and the holder stores it on-chain with `set_letter`; it lives in the
-token's `metadata.extra` and moves with the NFT. Writing is locked while the token is listed, approved or collateral,
-so a buyer gets the letter they saw. Limit, stated plainly: the sealing key is held by the server (derived from its
-secret), so the operator could read letters; NEAR MPC's confidential key derivation (domain 2) is the upgrade path.
+The holder can write a letter for the next holder, sealed with a key **no server ever sees**: NEAR MPC's confidential key
+derivation (CKD, domain 2 on `v1.signer-prod.testnet`, BLS12-381).
+
+1. The browser makes a one-time BLS12-381 key and calls `letter_key(token_id, app_public_key, write_nonce)`. The contract
+   checks the caller owns the token and forwards `request_app_private_key` to the MPC under the path
+   `letter:<id>:<owner>:<nonce>`, a path only it builds.
+2. The MPC answers with the key encrypted to the one-time key. The browser decrypts it and **verifies it against the
+   MPC's public key** with a pairing check before using it (`shared/ckd.mjs`, checked against near/mpc's own test vectors
+   in `shared/ckd.test.mjs`). It then seals the letter (AES-256-GCM, the token id bound as associated data) and stores it
+   with `set_letter(sealed, path)`. The contract only accepts a path containing the caller's own account.
+3. The next holder calls `letter_key` without a nonce. The contract asks for the key of the letter stored now, so the new
+   holder gets the same key and opens it in the browser. A seller gets no key once the NFT moves (`NotOwner`), and never
+   the key of a letter written after the sale, because new paths contain the new owner.
+
+The letter lives in the token's `metadata.extra` and moves with the NFT. Writing is locked while the token is listed,
+approved or collateral, so a buyer gets the letter they saw. Letters written before CKD (`v1:`) are still opened by the
+server after the NEP-413 check above. **Verified live (4 Nov 2026)** with `node scripts/ckd-letter.mjs`: the writer got
+its key in 6.0 s ([CoYjpGRS…](https://testnet.near.rocks/tx/CoYjpGRSmDcCaKsM35WkZ7Ts2b7oMAjVmksZGX259xW6)), the next
+holder got the same key ([waBYg2Hr…](https://testnet.near.rocks/tx/waBYg2HrY5fSQWDXRig8tga59rNbqCxFYPKnd5E1nGe)) and
+read the letter, and the writer was refused. Limit: CKD trusts the MPC threshold like signing does; Trail of Bits'
+[review](https://new.trailofbits.com/library/near-one-confidential-key-derivation/) of NEAR's CKD applies.
 
 Try it: `node scripts/holder-test.mjs` (creates two faucet accounts and mints a Pusaka, then signs NEP-413 messages: the holder gets in; a non-holder, a
 stale or non-numeric timestamp, a signature made for another site, and a key presented for the wrong account are refused).
@@ -269,7 +285,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Holder room on the deployed API, sealed letter on-chain | letter stored with `set_letter` ([EZdhBpqg…](https://testnet.near.rocks/tx/EZdhBpqgrzjKGEaVDpGXt8JCBTovTQkdgRHRWRofdHh2)); the holder read it, a non-holder got 403 |
 | Two resales of Pusaka #5 (`scripts/handover.mjs`) | creator `pusaka-seller.testnet` received exactly 0.005 NEAR (2.5% of 0.2); each previous holder was locked out of the room and the new one read the letter |
 | Deposits proven from inside a TDX enclave (Shade Agent on Phala, attestation checked on-chain) | [register_agent](https://testnet.near.rocks/tx/4Pxmp4gyPBe4tnmMqJA1GkrdiCr1ZHVjfh8UvtEjhNtA), then `prove_deposit` [GrSm25nC…](https://testnet.near.rocks/tx/GrSm25nCftxzjPREtaMKzgqryU3QNMpzuq4P51nt1Mys) and [92rQg2ce…](https://testnet.near.rocks/tx/92rQg2ceP4iwg62CPBkERhUaWPacTNSiAPzaVHLCQAhM) from the enclave's own key, 6 s after registering |
-| Unit tests | 95 / 95 passing, on the testnet and the mainnet build |
+| Unit tests | 106 / 106 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

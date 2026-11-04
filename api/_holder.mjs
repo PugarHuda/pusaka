@@ -50,8 +50,8 @@ export async function currentOwner(tokenId) {
   return t;
 }
 
-// ponytail: the letter key is derived from the relayer secret, so the server operator could read
-// letters. Upgrade path: NEAR MPC confidential key derivation (domain 2, request_app_private_key).
+// Legacy (v1:) letters only: the key is derived from the relayer secret, so the operator could read
+// them. New letters are ckd1:, sealed in the browser with a NEAR MPC CKD key (shared/ckd.mjs).
 function letterKey() {
   const secret = process.env.LETTER_SECRET ?? process.env.RELAYER_PRIVATE_KEY;
   if (!secret) throw fail(503, "holder room is not configured");

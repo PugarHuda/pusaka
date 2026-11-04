@@ -9,6 +9,7 @@
     "@noble/curves": "^2.0.0",
     "@scure/base": "^2.2.0",
     "bitcoinjs-lib": "^7.0.0",
-    "viem": "^2.57.14"
+    "viem": "^2.57.14",
+    "@noble/hashes": "^2.0.0"
   }
 }

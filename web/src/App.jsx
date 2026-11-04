@@ -5,6 +5,7 @@ import {
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
   nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear,
+  ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
@@ -308,7 +309,7 @@ function Detail({ id, accountId }) {
           </ul>
         </details>
 
-        <HolderRoom id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} />
+        <HolderRoom id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />
 
         <section>
           <h2>History</h2>
@@ -550,13 +551,12 @@ function NearAccountSection({ t, canWithdraw, onDone }) {
 const accessMessage = (id, at) => `Open the holder room of Pusaka #${id}\nat ${at}`; // same text as api/_holder.mjs
 
 /** Gated: only the current holder, proven by a NEP-413 signed message, gets the room's content. */
-function HolderRoom({ id, owner, accountId, canSeal, onDone }) {
+function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson }) {
   const [room, setRoom] = useState(null);
-  const [auth, setAuth] = useState(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
-  useEffect(() => { setRoom(null); setAuth(null); }, [id, accountId]);
+  useEffect(() => { setRoom(null); }, [id, accountId]);
 
   const ask = async (body) => {
     const r = await fetch("/api/holder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -576,7 +576,30 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone }) {
       const a = { accountId: s.accountId, publicKey: s.publicKey, signature: s.signature, message, at,
         nonce: btoa(String.fromCharCode(...nonce)) };
       setRoom(await ask({ token_id: id, auth: a }));
-      setAuth(a);
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    finally { setBusy(""); }
+  }
+
+  const extra = (() => { try { return JSON.parse(extraJson ?? "{}"); } catch { return {}; } })();
+  const ckdLetter = extra.letter?.startsWith("ckd1:");
+
+  /** One wallet call: the contract asks NEAR MPC for the key, encrypted to a one-time key only this tab holds. */
+  async function mpcKey(writeNonce) {
+    const eph = ckdEphemeral();
+    const [answer, mpcPk] = await Promise.all([
+      call("letter_key", { token_id: id, app_public_key: eph.appPublicKey, ...(writeNonce && { write_nonce: writeNonce }) }, { deposit: 1n, tgas: 100 }),
+      provider.callFunction({ contractId: MPC, method: "public_key", args: { domain_id: 2 } }),
+    ]);
+    const path = writeNonce ? `letter:${id}:${accountId}:${writeNonce}` : extra.letter_path;
+    // throws unless the answer verifies against the MPC's public key
+    return { key: ckdKey(ckdSecret(answer, eph.a, ckdAppId(CONTRACT, path), mpcPk), LETTER_PURPOSE), path };
+  }
+
+  async function openWithMpc() {
+    setBusy("open"); setMsg(null);
+    try {
+      const { key } = await mpcKey();
+      setRoom({ letter: await openCkd(key, id, extra.letter), creator: extra.creator ?? null, ckd: true });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     finally { setBusy(""); }
   }
@@ -585,26 +608,34 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone }) {
     e.preventDefault();
     setBusy("seal"); setMsg(null);
     try {
-      const { sealed } = await ask({ token_id: id, auth, action: "seal", text });
-      await call("set_letter", { token_id: id, sealed }, { deposit: 10_000_000_000_000_000_000_000n });
-      setRoom(await ask({ token_id: id, auth }));
+      // Sealed in this tab with a NEAR MPC confidential key: the server never sees the key or the text.
+      const { key, path } = await mpcKey(Date.now().toString(36));
+      const sealed = await sealCkd(key, id, text);
+      await call("set_letter", { token_id: id, sealed, path }, { deposit: 10_000_000_000_000_000_000_000n });
+      setRoom({ letter: text, creator: extra.creator ?? null, ckd: true });
       setText("");
-      setMsg({ ok: true, text: "Sealed into the Pusaka. It goes to whoever holds it next." });
+      setMsg({ ok: true, text: "Sealed with a NEAR MPC key into the Pusaka. Only whoever holds it can get that key." });
       await onDone();
     } catch (err) { setMsg({ ok: false, text: err.message }); }
     finally { setBusy(""); }
   }
 
+  const isHolder = accountId === owner;
   return (
     <section className="holder-room">
       <h2>Holder room</h2>
       <p className="muted">Each Pusaka carries a sealed letter that only its current holder can read. Sell it and the
-        letter goes with it; the old holder is locked out the moment the NFT moves.</p>
-      {!room && (accountId === owner
-        ? <button onClick={enter} disabled={!!busy}>{busy ? "Waiting for your wallet…" : "Sign in to open"}</button>
+        letter goes with it; the old holder is locked out the moment the NFT moves. New letters are sealed with a NEAR MPC
+        confidential key that the contract only hands to the current holder: no server can read them.</p>
+      {!room && (isHolder
+        ? (ckdLetter || !extra.letter)
+          ? <button onClick={ckdLetter ? openWithMpc : () => setRoom({ letter: null, creator: extra.creator ?? null })} disabled={!!busy}>
+            {busy ? "Waiting for your wallet and NEAR MPC…" : ckdLetter ? "Open with the NEAR MPC key" : "Open"}</button>
+          : <button onClick={enter} disabled={!!busy}>{busy ? "Waiting for your wallet…" : "Sign in to open"}</button>
         : <p className="muted">{accountId ? `Only ${owner} can open it.` : "Connect the wallet that holds this Pusaka to open it."}</p>)}
       {room && <>
         {room.letter ? <blockquote className="letter">{room.letter}</blockquote> : <p className="muted">No letter sealed in this Pusaka yet.</p>}
+        {room.ckd && <p className="muted">Decrypted in this tab with a key from NEAR MPC (confidential key derivation), checked against the MPC's public key.</p>}
         {room.creator && <p className="muted">Created by {room.creator}. They receive a 2.5% royalty on every resale.</p>}
         {canSeal && (
           <form onSubmit={sealLetter} className="stack">

@@ -1125,14 +1125,14 @@ fn extra(c: &Pusaka) -> Value {
 fn h1_letter_is_stored_kept_on_sale_and_clearable() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
-    c.set_letter("1".into(), "v1:QUJD".into());
+    c.set_letter("1".into(), "v1:QUJD".into(), None);
     assert_eq!(extra(&c)["letter"], "v1:QUJD");
     assert_eq!(extra(&c)["creator"], "alice.testnet");
     ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
     c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
     assert_eq!(extra(&c)["letter"], "v1:QUJD"); // travels with the NFT
     ctx("bob.testnet", NearToken::from_millinear(10), vec![]);
-    c.set_letter("1".into(), "".into());
+    c.set_letter("1".into(), "".into(), None);
     assert!(extra(&c).get("letter").is_none());
 }
 
@@ -1143,7 +1143,7 @@ fn h2_old_owner_cannot_rewrite_the_letter() {
     ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
     c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
     ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
-    c.set_letter("1".into(), "v1:QUJD".into());
+    c.set_letter("1".into(), "v1:QUJD".into(), None);
 }
 
 #[test]
@@ -1153,7 +1153,7 @@ fn h3_letter_frozen_while_listed() {
     ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
     c.list("1".into(), NearToken::from_near(1), None, None);
     ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
-    c.set_letter("1".into(), "v1:QUJD".into());
+    c.set_letter("1".into(), "v1:QUJD".into(), None);
 }
 
 #[test]
@@ -1161,5 +1161,142 @@ fn h3_letter_frozen_while_listed() {
 fn h4_oversized_letter_rejected() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
-    c.set_letter("1".into(), "A".repeat(2001));
+    c.set_letter("1".into(), "A".repeat(2001), None);
+}
+
+// ---------- confidential letters: NEAR MPC CKD (domain 2) ----------
+
+const APP_PK: &str = "bls12381g1:67UMHEnqJCvuBv44ecVtcoE7ES2vNvAnvh72DhEkvChw1cjQ7L4Ybt8KJdHqSdXoNz";
+
+/// The one request letter_key sent to the MPC: (method, args json).
+fn ckd_request() -> (String, Value) {
+    let receipts = near_sdk::test_utils::get_created_receipts();
+    let r = receipts.iter().find(|r| r.receiver_id.as_str() == "v1.signer-prod.testnet").expect("a receipt to the MPC");
+    match &r.actions[0] {
+        near_sdk::mock::MockAction::FunctionCallWeight { method_name, args, attached_deposit, .. } => {
+            assert_eq!(*attached_deposit, NearToken::from_yoctonear(1));
+            (String::from_utf8(method_name.clone()).unwrap(), serde_json::from_slice(args).unwrap())
+        }
+        a => panic!("unexpected action {a:?}"),
+    }
+}
+
+#[test]
+fn k1_write_key_is_bound_to_token_and_current_owner() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), Some("n1".into()));
+    let (method, args) = ckd_request();
+    assert_eq!(method, "request_app_private_key");
+    assert_eq!(args["request"]["derivation_path"], "letter:1:alice.testnet:n1");
+    assert_eq!(args["request"]["domain_id"], 2);
+    assert_eq!(args["request"]["app_public_key"]["AppPublicKey"], APP_PK);
+}
+
+#[test]
+fn k2_next_owner_reads_with_the_stored_path_and_writes_under_their_own() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "ckd1:QUJD".into(), Some("letter:1:alice.testnet:n1".into()));
+    assert_eq!(extra(&c)["letter_path"], "letter:1:alice.testnet:n1");
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    // bob reads alice's letter: same path, so the same key
+    ctx("bob.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), None);
+    assert_eq!(ckd_request().1["request"]["derivation_path"], "letter:1:alice.testnet:n1");
+    // bob's new letter gets a path alice can never ask for
+    ctx("bob.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), Some("n2".into()));
+    assert_eq!(ckd_request().1["request"]["derivation_path"], "letter:1:bob.testnet:n2");
+    ctx("bob.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "ckd1:REVG".into(), Some("letter:1:bob.testnet:n2".into()));
+    assert_eq!(extra(&c)["letter_path"], "letter:1:bob.testnet:n2");
+    // a server letter replaces it and drops the path
+    ctx("bob.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into(), None);
+    assert!(extra(&c).get("letter_path").is_none());
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn k3_seller_cannot_get_any_key_after_the_sale() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "ckd1:QUJD".into(), Some("letter:1:alice.testnet:n1".into()));
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), None);
+}
+
+#[test]
+#[should_panic(expected = "ckd1 letters need the path letter_key gave this owner")]
+fn k4_owner_cannot_store_a_letter_under_someone_elses_path() {
+    // otherwise bob could make the stored path one alice still holds the key for
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    ctx("bob.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "ckd1:QUJD".into(), Some("letter:1:alice.testnet:n1".into()));
+}
+
+#[test]
+#[should_panic(expected = "ckd1 letters need the path letter_key gave this owner")]
+fn k4_path_of_another_token_rejected() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "ckd1:QUJD".into(), Some("letter:12:alice.testnet:n1".into()));
+}
+
+#[test]
+#[should_panic(expected = "NoCkdLetter")]
+fn k5_read_key_needs_a_ckd_letter() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into(), None);
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), None);
+}
+
+#[test]
+#[should_panic(expected = "write_nonce")]
+fn k6_nonce_cannot_smuggle_path_separators() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), Some("x:bob.testnet".into()));
+}
+
+#[test]
+#[should_panic(expected = "app_public_key")]
+fn k6_app_key_must_be_g1() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.letter_key("1".into(), "ed25519:abc".into(), Some("n1".into()));
+}
+
+#[test]
+#[should_panic(expected = "attach 1 yoctoNEAR")]
+fn k6_needs_a_deposit() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    let _ = c.letter_key("1".into(), APP_PK.into(), Some("n1".into()));
+}
+
+#[test]
+#[should_panic(expected = "path is only for ckd1 letters")]
+fn k7_server_letter_takes_no_path() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into(), Some("letter:1:alice.testnet:n1".into()));
+}
+
+#[test]
+#[should_panic(expected = "value_wei must be > 0")]
+fn e3_zero_value_evm_withdrawal_rejected() {
+    // seen live: the UI rounded 0.0000001 USDC to 0 and the MPC signed a no-op
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth("1".into(), U64(EVM_CHAINS[0]), U64(0), "0x2af9ED1D3fe79c9a61518c9bFFA71bc3Fa1C3b63".into(),
+        U128(0), U128(21_000), U128(1), U128(1), None);
 }

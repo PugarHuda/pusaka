@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - run: node shared/ckd.test.mjs   # CKD client vs near/mpc test vectors
       - run: npm run lint   # node code (api, shared, mcp, scripts, shade) and web, no-undef on
       - run: npm run build -w web
       - run: npx playwright install --with-deps chromium
