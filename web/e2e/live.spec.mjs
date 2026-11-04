@@ -214,3 +214,10 @@ test("a Pusaka shows the nBTC in its own NEAR account and its Omni Bridge deposi
   await expect(sec).toContainText(/[1-9][\d,]* nBTC sats/); // #5's account holds nBTC minted by the Omni connector
   await expect(sec.locator(".addr")).toContainText(/^tb1q[0-9a-z]{38,}/);
 });
+
+test("every Pusaka has an heir section; the will is read from the contract", async ({ page }) => {
+  await page.goto("/#/pusaka/1");
+  const s = page.locator("section", { has: page.getByRole("heading", { name: "Heir" }) });
+  await expect(s).toBeVisible({ timeout: 30_000 });
+  await expect(s.getByText(/No heir named|can claim this Pusaka/)).toBeVisible();
+});
