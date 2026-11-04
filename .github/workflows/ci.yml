@@ -19,6 +19,19 @@ jobs:
       - run: cargo test --features mainnet   # the mainnet build: light client, confirmations, chain allowlist
         working-directory: contract
 
+  # NEP-330: the wasm deployed to pusaka-btc.testnet comes from here; anyone can rebuild it with
+  # `cargo near verify` / the same image and compare the hash.
+  reproducible-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      - run: cargo near build reproducible-wasm
+        working-directory: contract
+      - run: sha256sum contract/target/near/pusaka.wasm | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: { name: pusaka-wasm, path: contract/target/near/pusaka.wasm }
+
   web:
     runs-on: ubuntu-latest
     steps:

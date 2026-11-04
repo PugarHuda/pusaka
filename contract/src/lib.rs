@@ -249,7 +249,15 @@ pub struct SignedSpend {
     pub signatures: Vec<Option<Value>>,
 }
 
-#[near(contract_state)]
+#[near(contract_state, contract_metadata(
+    link = "https://github.com/PugarHuda/pusaka",
+    standard(standard = "nep171", version = "1.2.0"),
+    standard(standard = "nep177", version = "2.0.0"),
+    standard(standard = "nep178", version = "1.0.0"),
+    standard(standard = "nep199", version = "2.0.0"),
+    standard(standard = "nep297", version = "1.0.0"),
+    standard(standard = "nep330", version = "1.3.0"),
+))]
 #[derive(PanicOnDefault)]
 pub struct Pusaka {
     tokens: NonFungibleToken,
