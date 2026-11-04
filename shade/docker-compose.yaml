@@ -1,4 +1,4 @@
-# The image is built by .github/workflows/shade-image.yml; pin it by digest after the first build.
+# Built by .github/workflows/shade-image.yml; pinned by digest because the measurements cover this file.
 services:
   pusaka-agent:
     environment:
@@ -6,7 +6,7 @@ services:
       SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
       SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
     platform: linux/amd64
-    image: ghcr.io/pugarhuda/pusaka-agent:latest
+    image: ghcr.io/pugarhuda/pusaka-agent@sha256:e2dd668f43079236bd3e0f9bec0d77bdcca6ae430524bed76b388f5ce5930b2f
     container_name: pusaka-agent
     ports:
       - 3000:3000

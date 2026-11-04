@@ -9,6 +9,7 @@ permissions:
   packages: write
 jobs:
   image:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +17,7 @@ jobs:
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - uses: docker/build-push-action@v6
         id: push
-        with: { context: ., file: shade/Dockerfile, platforms: linux/amd64, push: true, tags: ghcr.io/pugarhuda/pusaka-agent:latest }
+        with: { context: ., file: shade/Dockerfile, platforms: linux/amd64, push: true, tags: "ghcr.io/pugarhuda/pusaka-agent:${{ github.sha }}" }
       - run: echo "image ghcr.io/pugarhuda/pusaka-agent@${{ steps.push.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
   agent-contract:
     # ring needs clang for wasm; easier on Ubuntu than Windows. rust-toolchain.toml pins 1.86 (near-sdk 5.26).

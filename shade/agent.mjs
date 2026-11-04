@@ -17,7 +17,6 @@ const agent = await ShadeClient.create({
   networkId: "testnet",
   agentContractId: need("AGENT_CONTRACT_ID"),
   sponsor: { accountId: need("SPONSOR_ACCOUNT_ID"), privateKey: need("SPONSOR_PRIVATE_KEY") },
-  derivationPath: need("SPONSOR_PRIVATE_KEY"), // local mode only; in a TEE the key comes from the enclave
 });
 const status = { agent: agent.accountId(), agent_contract: process.env.AGENT_CONTRACT_ID, pusaka_contract: CONTRACT,
   registered_at: null, runs: 0, last_run: null, proofs: [], errors: [] };
