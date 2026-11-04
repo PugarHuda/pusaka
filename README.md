@@ -47,7 +47,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `106 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
+See: `108 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -285,7 +285,9 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Holder room on the deployed API, sealed letter on-chain | letter stored with `set_letter` ([EZdhBpqg…](https://testnet.near.rocks/tx/EZdhBpqgrzjKGEaVDpGXt8JCBTovTQkdgRHRWRofdHh2)); the holder read it, a non-holder got 403 |
 | Two resales of Pusaka #5 (`scripts/handover.mjs`) | creator `pusaka-seller.testnet` received exactly 0.005 NEAR (2.5% of 0.2); each previous holder was locked out of the room and the new one read the letter |
 | Deposits proven from inside a TDX enclave (Shade Agent on Phala, attestation checked on-chain) | [register_agent](https://testnet.near.rocks/tx/4Pxmp4gyPBe4tnmMqJA1GkrdiCr1ZHVjfh8UvtEjhNtA), then `prove_deposit` [GrSm25nC…](https://testnet.near.rocks/tx/GrSm25nCftxzjPREtaMKzgqryU3QNMpzuq4P51nt1Mys) and [92rQg2ce…](https://testnet.near.rocks/tx/92rQg2ceP4iwg62CPBkERhUaWPacTNSiAPzaVHLCQAhM) from the enclave's own key, 6 s after registering |
-| Unit tests | 106 / 106 passing, on the testnet and the mainnet build |
+| Verifiable build (NEP-330): `contract_source_metadata` names the repo, NEP-171/177/178/199/297/330 and `build_info` (image `sourcescan/cargo-near:0.21.1-rust-1.96.1@sha256:86bd…`, commit `6e8b014`); the deployed wasm is the one CI's `reproducible-wasm` job built | sha256 `dfcae322bd391f3534f3c7d2d22c775a0c1fa95203dae9ed73fe8a75db8b09ab`, deployed in [CHR82Vx2…](https://testnet.near.rocks/tx/CHR82Vx25k2YymRt3REUS5FKtYR8PGR1A3A8YNPdsg7z) |
+| Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
+| Unit tests | 108 / 108 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here
