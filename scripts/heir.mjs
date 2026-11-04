@@ -45,6 +45,7 @@ await new Promise((r) => setTimeout(r, wait));
 await refused("claim by someone else", relay(await signed(holderId, "claim_inheritance", { token_id: tokenId })));
 const c = await relay(await signed(heirId, "claim_inheritance", { token_id: tokenId }));
 console.log(`heir claimed gas-free: ${NEAR_EXPLORER}/tx/${c.tx}`);
+await new Promise((r) => setTimeout(r, 4000)); // views read the final block, a couple behind the claim
 const after = await view("token_info", { token_id: tokenId });
 console.log(`#${tokenId} is now held by ${after.token.owner_id}; heir_of = ${JSON.stringify(await view("heir_of", { token_id: tokenId }))}`);
 console.log("history:", after.history.slice(-4).map((e) => e.event.kind).join(" → "));
