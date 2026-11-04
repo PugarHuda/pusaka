@@ -1,12 +1,15 @@
 // Smoke test: start the MCP server over stdio like an agent host would, call its tools
-// against the live testnet contract.   node smoke.mjs <account.testnet>   (key from ../.keys)
+// against the live testnet contract.   node smoke.mjs [account.testnet]   (key from ../.keys)
+// Without a key file (a fresh clone) it uses a throwaway key: every guard below refuses before signing.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import fs from "node:fs";
 import path from "node:path";
+import { KeyPair } from "near-api-js";
 
 const id = process.argv[2] ?? "pusaka-buyer.testnet";
-const { private_key } = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", ".keys", `${id}.json`), "utf8"));
+const keyFile = path.join(import.meta.dirname, "..", ".keys", `${id}.json`);
+const private_key = fs.existsSync(keyFile) ? JSON.parse(fs.readFileSync(keyFile, "utf8")).private_key : KeyPair.fromRandom("ed25519").toString();
 const client = new Client({ name: "pusaka-smoke", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
@@ -25,11 +28,10 @@ const { tools } = await client.listTools();
 console.log("tools:", tools.map((t) => t.name).join(", "));
 await show("pusaka_overview");
 await show("pusaka_inspect", { token_id: "1" });
-// Guard: #3 asks for a loan with no verified BTC behind it, so an agent must refuse.
-const r = await show("pusaka_fund_loan", { token_id: "3", max_ltv: 0.5 });
-if (!r.isError) throw new Error("expected the LTV guard to refuse");
-// Guard: spend cap.
-const cap = await show("pusaka_buy", { token_id: "999", max_price_near: 100 });
-if (!cap.isError) throw new Error("expected an error for a missing listing");
+const refused = (r, why) => { if (!r.isError || !why.test(r.content[0].text)) throw new Error(`expected a refusal matching ${why}`); };
+// Guard: #1 asks for a loan at well under 2% LTV; an agent capped at 0.1% must refuse.
+refused(await show("pusaka_fund_loan", { token_id: "1", max_ltv: 0.001 }), /Loan-to-value .* is above/);
+// Guard: price cap. #4 is listed at 0.5 NEAR; an agent capped at 0.1 must refuse.
+refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above your max/);
 await client.close();
 console.log("\nsmoke ok");

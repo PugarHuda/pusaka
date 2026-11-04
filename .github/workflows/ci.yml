@@ -31,3 +31,4 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e -w web
       - run: node mcp/remote-smoke.mjs
+      - run: npm run smoke -w mcp   # local MCP server; guards refuse before signing (throwaway key)
