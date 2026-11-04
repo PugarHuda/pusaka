@@ -70,6 +70,7 @@ export async function callGasless(method, args = {}) {
     body: JSON.stringify({ signed_delegate: signedDelegateActions[0] }),
   });
   const body = await r.json().catch(() => ({}));
+  if (r.status === 429) return fallback(); // relayer's free quota used up: the user pays their own gas
   if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);
   return { gasless: true, tx: body.tx };
 }

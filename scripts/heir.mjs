@@ -30,6 +30,9 @@ await call(account(holderId), "set_heir", { token_id: tokenId, heir: heirId, aft
 console.log("heir named:", await view("heir_of", { token_id: tokenId }));
 await refused("early claim by the heir", relay(await signed(heirId, "claim_inheritance", { token_id: tokenId })));
 
+// naming the heir was itself proof of life; the relayer gives one free check-in per tenth of the silence
+await refused("gas-free check-in right after naming the heir", relay(await signed(holderId, "still_here", { token_id: tokenId })));
+await new Promise((r) => setTimeout(r, SILENCE_MS / 10 + 5_000));
 const t = await relay(await signed(holderId, "still_here", { token_id: tokenId }));
 console.log(`holder checked in gas-free: ${NEAR_EXPLORER}/tx/${t.tx}`);
 const h = await view("heir_of", { token_id: tokenId });

@@ -30,14 +30,12 @@ const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 
 // ---------- data ----------
 
-/** `light`: what a gallery card shows (contract state + BTC), without the EVM, SOL and NEAR lookups (~9 RPC calls each). */
-async function loadToken(id, { light = false } = {}) {
+async function loadToken(id) {
   const info = await view("token_info", { token_id: id });
   if (!info) return null;
   const address = info.btc_pubkey ? btcAddress(info.btc_pubkey) : null;
   let bal = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
   if (address) bal = await balances(address, info.signed_outpoints).catch(() => ({ ...bal, error: true }));
-  if (light) return { id, info, address, bal };
   let eth = null;
   if (info.btc_pubkey) {
     const ethAddr = evmAddress(info.btc_pubkey);
@@ -146,8 +144,17 @@ function Home() {
   useEffect(() => {
     view("nft_tokens", { from_index: "0", limit: 60 })
       // allSettled: one token that fails to load must not hide the rest of the gallery
-      .then((ts) => Promise.allSettled(ts.map((t) => loadToken(t.token_id, { light: true }))))
-      .then((rs) => setTokens(rs.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value).reverse()))
+      .then((ts) => Promise.allSettled(ts.map((t) => view("token_info", { token_id: t.token_id }))))
+      .then((rs) => {
+        // the contract's numbers first; Bitcoin balances from Esplora fill in after, so a slow
+        // mempool.space never blanks the gallery or the verified total
+        const ts = rs.filter((r) => r.status === "fulfilled" && r.value).map(({ value: info }) => ({
+          id: info.token.token_id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: null,
+        })).reverse();
+        setTokens(ts);
+        ts.forEach((t) => t.address && balances(t.address, t.info.signed_outpoints).then((bal) =>
+          setTokens((cur) => cur.map((x) => (x.id === t.id ? { ...x, bal } : x)))).catch(() => {}));
+      })
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
   }, []);
 
@@ -191,7 +198,7 @@ function Home() {
             <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
             <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
-            {t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
+            {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
             {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
             {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}

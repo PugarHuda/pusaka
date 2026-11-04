@@ -83,6 +83,15 @@ export async function relay(b64) {
   const who = sd.delegateAction.senderId;
   let allowed = info?.token?.owner_id === who;
   if (fc.methodName === "claim_collateral") allowed = info?.loan?.lender === who;
+  if (fc.methodName === "still_here") {
+    // the relayer pays: one free check-in per hour (or per tenth of the silence) is plenty;
+    // more often than that the holder can still check in by paying their own gas
+    const h = await provider.callFunction({ contractId: CONTRACT, method: "heir_of", args: { token_id: String(args.token_id) } });
+    const gap = h && Math.min(3_600_000, Number(h.after_ms) / 10);
+    if (h && Date.now() - Number(h.last_seen_ms) < gap) {
+      throw Object.assign(new Error(`checked in ${Math.round((Date.now() - Number(h.last_seen_ms)) / 60_000)} min ago; the next gas-free check-in opens in ${Math.ceil((gap - (Date.now() - Number(h.last_seen_ms))) / 60_000)} min`), { status: 429 });
+    }
+  }
   if (fc.methodName === "claim_inheritance") {
     // only the named heir, and only once the holder's silence has run out
     const h = await provider.callFunction({ contractId: CONTRACT, method: "heir_of", args: { token_id: String(args.token_id) } });
