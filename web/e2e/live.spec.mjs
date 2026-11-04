@@ -79,6 +79,7 @@ test("live prices reach the browser and show dollar values", async ({ page, requ
   const p = await (await request.get("/api/prices")).json();
   expect(p.btcUsd).toBeGreaterThan(1000);
   expect(p.nearUsd).toBeGreaterThan(0);
+  expect(p.crossChecked).toBe(true); // a second source (CoinGecko) agrees within 5%
   await page.goto("/#/pusaka/4");
   await expect(page.getByText(/at mainnet BTC prices/)).toBeVisible({ timeout: 30_000 });
 });
