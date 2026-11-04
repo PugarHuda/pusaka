@@ -651,7 +651,11 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const load = useCallback(() => view("heir_of", { token_id: id })
-    .then((v) => setH(v && { ...v, due: Date.now() >= Number(v.claimable_from_ms) })).catch(() => setH(null)), [id]);
+    .then((v) => setH(v && {
+      ...v, due: Date.now() >= Number(v.claimable_from_ms),
+      // same rule as api/_relayer.mjs: one free check-in per hour (or tenth of the silence)
+      freeCheckIn: Date.now() - Number(v.last_seen_ms) >= Math.min(3_600_000, Number(v.after_ms) / 10),
+    })).catch(() => setH(null)), [id]);
   useEffect(() => { load(); }, [load, owner]);
   if (h === undefined) return null;
   const due = h?.due;
@@ -687,7 +691,7 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
       ) : <p className="muted">No heir named. A holder can name one: if they go silent for long enough, the heir claims the Pusaka, its BTC, ETH, USDC, SOL and NEAR account. No lawyer, no custodian: the contract enforces it, and a funded loan's lender still comes first.</p>}
       {isOwner && h && (
         <p className="row">
-          <button disabled={busy} onClick={() => run("Checked in; the clock restarted", () => callGasless("still_here", { token_id: id }))}>I'm still here</button>
+          <button disabled={busy} onClick={() => run("Checked in; the clock restarted", () => (h.freeCheckIn ? callGasless : call)("still_here", { token_id: id }))}>I'm still here</button>
           <button className="secondary" disabled={busy} onClick={() => run("Heir removed", () => call("set_heir", { token_id: id, heir: null, after_ms: "0" }))}>Remove heir</button>
         </p>
       )}
