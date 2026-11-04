@@ -813,7 +813,7 @@ impl Pusaka {
 
     /// Name an heir who may claim this Pusaka (and everything it holds) once you have been
     /// silent for `after_ms`; `heir: None` removes it. Calling this again, or `still_here`,
-    /// restarts the clock. Selling or giving the Pusaka clears it.
+    /// restarts the clock, as does anything else you sign for it (withdraw, list, letter…). Selling or giving the Pusaka clears it.
     #[payable]
     pub fn set_heir(&mut self, token_id: TokenId, heir: Option<AccountId>, after_ms: U64) {
         self.assert_owner(&token_id);
@@ -831,13 +831,10 @@ impl Pusaka {
         self.log(&token_id, Event::HeirSet { heir, after_ms });
     }
 
-    /// Proof of life: the holder is still here, so the heir has to wait a full `after_ms` again.
+    /// Proof of life without doing anything else; any other call of the holder's counts too.
     pub fn still_here(&mut self, token_id: TokenId) {
-        self.assert_owner(&token_id);
-        let key = heir_key(&token_id);
-        let mut h: Heir = raw_get(&key).expect("no heir set");
-        h.last_seen_ms = env::block_timestamp_ms();
-        raw_put(&key, &h);
+        require!(env::storage_has_key(heir_key(&token_id).as_bytes()), "no heir set");
+        self.assert_owner(&token_id); // restarts the clock
         self.log(&token_id, Event::StillHere);
     }
 
@@ -1482,9 +1479,17 @@ impl Pusaka {
         );
     }
 
+    /// Also proof of life: anything the holder signs restarts their heir's clock.
     fn assert_owner(&self, token_id: &TokenId) {
         let owner = self.tokens.owner_by_id.get(token_id).expect("NoToken");
         require!(owner == env::predecessor_account_id(), "NotOwner");
+        let key = heir_key(token_id);
+        if let Some(mut h) = raw_get::<Heir>(&key) {
+            if h.owner == owner {
+                h.last_seen_ms = env::block_timestamp_ms();
+                raw_put(&key, &h);
+            }
+        }
     }
 
     /// A token may move or sign only when nothing else is in flight.

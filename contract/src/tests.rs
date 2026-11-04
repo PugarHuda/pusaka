@@ -1620,3 +1620,23 @@ fn h8_only_the_holder_names_an_heir() {
     at("carol.testnet", PAY, 0);
     c.set_heir("1".into(), Some(acc("carol.testnet")), U64(SILENCE));
 }
+
+#[test]
+#[should_panic(expected = "seen recently")]
+fn h9_any_holder_action_is_proof_of_life() {
+    let mut c = with_heir();
+    at("alice.testnet", NearToken::from_yoctonear(0), SILENCE - 1);
+    c.list("1".into(), NearToken::from_near(5), None, None); // not a check-in, but she's clearly here
+    at("alice.testnet", NearToken::from_yoctonear(0), SILENCE);
+    c.cancel_listing("1".into());
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE + 1);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+fn h10_another_tokens_holder_doesnt_touch_this_clock() {
+    let mut c = with_heir();
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE);
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.list("1".into(), NearToken::from_near(5), None, None)));
+    assert_eq!(c.heir_of("1".into()).unwrap()["last_seen_ms"], "0");
+}

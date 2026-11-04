@@ -674,8 +674,8 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
       <h2>Heir</h2>
       {h ? (
         <p>
-          If {owner} stays silent until <strong>{when(h.claimable_from_ms)}</strong> ({days(h.after_ms)} after they last checked in),
-          {" "}<strong>{h.heir}</strong> can claim this Pusaka with everything it holds. Each check-in restarts the clock; selling or giving it away cancels this.
+          If {owner} stays silent until <strong>{when(h.claimable_from_ms)}</strong> ({days(h.after_ms)} after their last action),
+          {" "}<strong>{h.heir}</strong> can claim this Pusaka with everything it holds, and read its sealed letter. Anything the holder does with it (a check-in, a withdrawal, a listing, a letter) restarts the clock; selling or giving it away cancels this.
         </p>
       ) : <p className="muted">No heir named. A holder can name one: if they go silent for long enough, the heir claims the Pusaka, its BTC, ETH, USDC, SOL and NEAR account. No lawyer, no custodian: the contract enforces it, and a funded loan's lender still comes first.</p>}
       {isOwner && h && (
