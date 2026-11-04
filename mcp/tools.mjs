@@ -256,11 +256,13 @@ reg("pusaka_withdraw_eth", {
   outflow(to);
   const c = EVM_CHAINS.find((x) => x.chain.id === chain_id);
   if (!c) throw new Error(`chain_id must be one of ${EVM_CHAINS.map((x) => x.chain.id).join(", ")}`);
-  if (!isAddress(to)) throw new Error(`${to} isn't an EVM address`);
+  to = to.trim();
+  if (!isAddress(to)) throw new Error(`${to} isn't an EVM address (or its mixed-case checksum is wrong)`);
   const info = await view("token_info", { token_id });
   const from = evmAddress(info.btc_pubkey);
   const erc20 = usdc ? c.usdc : undefined;
   const value = usdc ? parseUnits(String(amount), 6) : parseEther(String(amount));
+  if (value <= 0n) throw new Error(`${amount} rounds to 0 ${usdc ? "USDC (6 decimals)" : "ETH"}`);
   const bal = await evmBalances(from, await view("eth_nonce_floor", { token_id, chain_id: String(chain_id) }), chain_id);
   if (usdc ? BigInt(bal.usdc) < value : BigInt(bal.wei) < value) throw new Error(`Pusaka #${token_id} holds ${usdc ? `${bal.usdc} USDC units` : `${bal.wei} wei`} on ${c.chain.name}`);
   const tx = evmTx({ ...(await evmTxParams(from, chain_id, erc20)), erc20, to, value });

@@ -1,9 +1,12 @@
 // Relayer logic shared by the Vercel functions (api/relay.mjs, api/prove.mjs) and local tests.
 // The relayer account pays gas; users sign. Nothing here can move a user's NEAR.
-import { Account, FailoverRpcProvider, JsonRpcProvider, SCHEMA, actions, teraToGas } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, SCHEMA, actions, encodeDelegateAction, teraToGas } from "near-api-js";
 import { deserialize } from "borsh";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { base58 } from "@scure/base";
 import {
-  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof, nearProvider,
+  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch,
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
@@ -38,12 +41,44 @@ export function checkDelegate(b64) {
 }
 
 /** NEP-366: submit the user's signed delegate action, paying the gas. */
+const rpc = async (method, params) => {
+  const j = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json();
+  return j.result ?? null;
+};
+
+/**
+ * NEAR checks all of this too, but only after the relayer has paid for the transaction, so a forged
+ * or stale delegate naming any (public) token owner would drain the relayer. Check first: the ed25519
+ * signature over the NEP-366 hash, that the key is an access key of the sender allowed to make this
+ * call, an unused nonce, and that it hasn’t expired.
+ */
+export async function verifyDelegate(sd) {
+  const fail = (status, m) => Object.assign(new Error(m), { status });
+  const d = sd.delegateAction;
+  const pk = d.publicKey?.ed25519Key?.data, sig = sd.signature?.ed25519Signature?.data;
+  if (!pk || !sig) throw fail(400, "only ed25519 delegates are relayed");
+  if (!ed25519.verify(Uint8Array.from(sig), sha256(encodeDelegateAction(d)), Uint8Array.from(pk))) throw fail(401, "the signature doesn’t match this delegate action");
+  const public_key = "ed25519:" + base58.encode(Uint8Array.from(pk));
+  const [key, block] = await Promise.all([
+    rpc("query", { request_type: "view_access_key", finality: "final", account_id: d.senderId, public_key }),
+    rpc("block", { finality: "final" }),
+  ]);
+  if (!key?.permission) throw fail(401, `${public_key} isn’t an access key of ${d.senderId}`);
+  const fc = key.permission.FunctionCall;
+  const method = d.actions[0].functionCall.methodName;
+  if (fc && (fc.receiver_id !== CONTRACT || (fc.method_names.length && !fc.method_names.includes(method)))) throw fail(401, `that key of ${d.senderId} can’t call ${method} on ${CONTRACT}`);
+  if (BigInt(d.nonce) <= BigInt(key.nonce)) throw fail(409, "this delegate’s nonce was already used");
+  if (!block || BigInt(d.maxBlockHeight) < BigInt(block.header.height)) throw fail(410, "this delegate expired; sign it again");
+}
+
 export async function relay(b64) {
   const sd = checkDelegate(b64);
+  await verifyDelegate(sd);
   // Only relay what would succeed for this sender: they must own the token they're acting on
   // (claim_collateral: they must be its lender). Saves the relayer from paying for doomed calls.
   const fc = sd.delegateAction.actions[0].functionCall;
-  const args = JSON.parse(Buffer.from(fc.args).toString());
+  let args;
+  try { args = JSON.parse(Buffer.from(fc.args).toString()); } catch { throw Object.assign(new Error("function call args must be JSON"), { status: 400 }); }
   const info = await provider.callFunction({ contractId: CONTRACT, method: "token_info", args: { token_id: String(args.token_id) } });
   const who = sd.delegateAction.senderId;
   const allowed = fc.methodName === "claim_collateral" ? info?.loan?.lender === who : info?.token?.owner_id === who;
@@ -60,7 +95,8 @@ export async function relay(b64) {
 
 /** Proves every confirmed, unproven deposit of a token, paid by `relayer` (the TEE agent passes its own account). */
 export async function proveToken(tokenId, relayer) {
-  if (!/^\d{1,9}$/.test(String(tokenId))) throw Object.assign(new Error("bad token id"), { status: 400 });
+  // typeof first: String(["1"]) is "1"
+  if (!["string", "number"].includes(typeof tokenId) || !/^\d{1,9}$/.test(String(tokenId))) throw Object.assign(new Error("token_id must be a number"), { status: 400 });
   const info = await provider.callFunction({ contractId: CONTRACT, method: "token_info", args: { token_id: String(tokenId) } });
   if (!info?.btc_pubkey) throw Object.assign(new Error("no such Pusaka"), { status: 404 });
   const lc = await lightClientHeight();
@@ -82,7 +118,15 @@ export async function proveToken(tokenId, relayer) {
   return { light_client_height: lc, results };
 }
 
+/** req.body, but a malformed JSON body is the client’s mistake (400), not ours. */
+export function body(req) {
+  try { return req.body ?? {}; } catch { throw Object.assign(new Error("the body must be JSON"), { status: 400 }); }
+}
+
 export async function handle(res, fn) {
   try { res.status(200).json(await fn()); }
-  catch (e) { res.status(e.status ?? 500).json({ error: e.message }); }
+  catch (e) {
+    if (!e.status) console.error(e); // ours: log it, don’t echo internals
+    res.status(e.status ?? 500).json({ error: e.status ? e.message : "internal error" });
+  }
 }

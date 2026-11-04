@@ -5,6 +5,16 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "../mcp/tools.mjs";
 
 export default async function handler(req, res) {
+  // Browser MCP clients (e.g. the MCP Inspector) need CORS; nothing here is user-specific.
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type, accept, mcp-session-id, mcp-protocol-version");
+  res.setHeader("access-control-expose-headers", "mcp-session-id");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  let payload;
+  try { payload = req.body; } catch {
+    return res.status(400).json({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error: the body must be JSON" }, id: null });
+  }
   if (req.method !== "POST") {
     return res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "POST JSON-RPC to this endpoint" }, id: null });
   }
@@ -12,5 +22,5 @@ export default async function handler(req, res) {
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => { transport.close(); server.close(); });
   await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+  await transport.handleRequest(req, res, payload);
 }

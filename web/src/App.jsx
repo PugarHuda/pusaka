@@ -30,12 +30,14 @@ const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 
 // ---------- data ----------
 
-async function loadToken(id) {
+/** `light`: what a gallery card shows (contract state + BTC), without the EVM, SOL and NEAR lookups (~9 RPC calls each). */
+async function loadToken(id, { light = false } = {}) {
   const info = await view("token_info", { token_id: id });
   if (!info) return null;
   const address = info.btc_pubkey ? btcAddress(info.btc_pubkey) : null;
   let bal = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
   if (address) bal = await balances(address, info.signed_outpoints).catch(() => ({ ...bal, error: true }));
+  if (light) return { id, info, address, bal };
   let eth = null;
   if (info.btc_pubkey) {
     const ethAddr = evmAddress(info.btc_pubkey);
@@ -78,7 +80,9 @@ function useRoute() {
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
-  return hash.match(/^#\/pusaka\/(\d+)/)?.[1] ?? null;
+  if (/^#?\/?$/.test(hash)) return null; // home
+  const m = hash.match(/^#\/pusaka\/(\d{1,30})\/?$/);
+  return m ? String(BigInt(m[1])) : "bad"; // "007" is #7; "1abc", "-1" and "#/x" aren't pages
 }
 
 // ---------- app ----------
@@ -86,6 +90,9 @@ function useRoute() {
 export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
+  useEffect(() => {
+    document.title = tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+  }, [tokenId]);
   const [minting, setMinting] = useState("");
 
   async function mint() {
@@ -115,7 +122,9 @@ export default function App() {
         )}
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
-      <main>{tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
+      <main>{tokenId === "bad"
+        ? <section><h2>Page not found</h2><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
+        : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
           Contract <a href={`${NEAR_EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
@@ -135,7 +144,7 @@ function Home() {
   useEffect(() => {
     view("nft_tokens", { from_index: "0", limit: 60 })
       // allSettled: one token that fails to load must not hide the rest of the gallery
-      .then((ts) => Promise.allSettled(ts.map((t) => loadToken(t.token_id))))
+      .then((ts) => Promise.allSettled(ts.map((t) => loadToken(t.token_id, { light: true }))))
       .then((rs) => setTokens(rs.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value).reverse()))
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
   }, []);
@@ -405,12 +414,16 @@ function EthSection({ t, canWithdraw, onDone }) {
     e.preventDefault();
     setBusy(true); setMsg(null);
     try {
-      if (!isAddress(to)) throw new Error("That isn't an Ethereum address (0x followed by 40 hex characters).");
+      const dest = to.trim(); // pasted addresses often carry a space or newline
+      if (!isAddress(dest, { strict: false })) throw new Error("That isn't an Ethereum address (0x followed by 40 hex characters).");
+      if (!isAddress(dest)) throw new Error("That address's mixed-case checksum doesn't match: it may have a typo. Check it, or paste it all in lower case.");
       const erc20 = asset === "USDC" ? c.usdc : undefined;
       const value = erc20 ? parseUnits(amount, 6) : parseEther(amount);
-      const tx = evmTx({ ...(await evmTxParams(eth.address, c.chain.id, erc20)), to, value, erc20 });
+      // parseUnits rounds below the token's precision: 0.0000001 USDC is 0, which would only burn a nonce
+      if (value <= 0n) throw new Error(`Enter more than 0 ${asset}${erc20 ? " (USDC has 6 decimals)" : ""}.`);
+      const tx = evmTx({ ...(await evmTxParams(eth.address, c.chain.id, erc20)), to: dest, value, erc20 });
       const signed = await call("withdraw_eth", {
-        token_id: id, chain_id: String(c.chain.id), nonce: String(tx.nonce), to,
+        token_id: id, chain_id: String(c.chain.id), nonce: String(tx.nonce), to: dest,
         value_wei: String(value), gas_limit: String(tx.gas),
         max_fee_per_gas: String(tx.maxFeePerGas), max_priority_fee_per_gas: String(tx.maxPriorityFeePerGas),
         ...(erc20 && { erc20 }),
@@ -664,17 +677,21 @@ function Ledger({ history }) {
     if (e.kind === "Royalty") royalties += BigInt(e.amount);
     if (e.kind === "LoanFunded") borrowed += 1n;
     if (e.kind === "Withdraw") out.push(`${Number(e.amount_sat).toLocaleString()} sats`);
-    if (e.kind === "WithdrawEth" && e.signed) out.push(`${formatEther(BigInt(e.value_wei))} ETH`);
+    if (e.kind === "WithdrawEth" && e.signed && BigInt(e.value_wei) > 0n) out.push(`${formatEther(BigInt(e.value_wei))} ETH`);
     if (e.kind === "WithdrawErc20" && e.signed) out.push(`${formatUnits(BigInt(e.amount), 6)} USDC`);
     if (e.kind === "WithdrawSol" && e.signed) out.push(`${sol9(e.lamports)} SOL`);
     if (e.kind === "WithdrawNear" && e.signed) out.push(`${near(e.amount)} NEAR`);
   }
+  // The contract keeps the latest 32 events; past that, the full record is in NEAR's NEP-297 logs.
+  const partial = history.length > 0 && history[0].event.kind !== "Mint";
+  const span = partial ? `in its last ${history.length} events` : "in total";
   return (
     <dl className="ledger">
-      <dt>Held by</dt><dd>{holders.join(" → ") || "—"}</dd>
-      <dt>Sold for</dt><dd>{earned > 0n ? `${near(earned)} NEAR in total` : "never sold"}{royalties > 0n && `, of which ${near(royalties)} NEAR went to its creator`}</dd>
-      <dt>Paid out</dt><dd>{out.length ? `${out.join(", ")} (signed by NEAR MPC)` : "nothing yet"}</dd>
-      {borrowed > 0n && <><dt>Loans</dt><dd>{String(borrowed)} funded against it</dd></>}
+      <dt>Held by</dt><dd>{partial && "… → "}{holders.join(" → ") || "—"}</dd>
+      <dt>Sold for</dt><dd>{earned > 0n ? `${near(earned)} NEAR ${span}` : partial ? `no sale in its last ${history.length} events` : "never sold"}{royalties > 0n && `, of which ${near(royalties)} NEAR went to its creator`}</dd>
+      <dt>Paid out</dt><dd>{out.length ? `${out.join(", ")} (signed by NEAR MPC${partial ? `, last ${history.length} events` : ""})` : "nothing yet"}</dd>
+      {borrowed > 0n && <><dt>Loans</dt><dd>{String(borrowed)} funded against it{partial && " recently"}</dd></>}
+      {partial && <><dt>Older</dt><dd>Earlier events are in the contract's <a href={`${NEAR_EXPLORER}/account/${CONTRACT}`} target="_blank" rel="noreferrer">NEP-297 logs on NEAR</a>.</dd></>}
     </dl>
   );
 }
@@ -984,10 +1001,10 @@ function OwnerForms({ t, busy, run, status }) {
           <input value={to} onChange={(e) => setTo(e.target.value)} placeholder={`${BTC_PREFIX}q…`} required spellCheck="false" />
         </label>
         <label>Amount
-          <span className="row"><input type="number" min="0.00000546" step="0.00000001" max={(spendableSats - FEE) / 1e8}
+          <span className="row"><input type="number" min="0.00000546" step="0.00000001" max={Math.max(0, spendableSats - FEE) / 1e8}
             value={amount} onChange={(e) => setAmount(e.target.value)} required /> BTC</span>
         </label>
-        <button disabled={!!busy || spendableSats === 0}>{busy === "withdraw" ? "Signing with NEAR MPC… (about 15 s)" : "Withdraw"}</button>
+        <button disabled={!!busy || spendableSats <= FEE}>{busy === "withdraw" ? "Signing with NEAR MPC… (about 15 s)" : "Withdraw"}</button>
         <p className="muted">Network fee {FEE} sats. Change goes back into this Pusaka.</p>
       </form>
       <form onSubmit={give} className="stack">

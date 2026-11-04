@@ -156,3 +156,52 @@ test("the app is installable: manifest and icons are served", async ({ request }
   expect(m.display).toBe("standalone");
   for (const i of m.icons) expect((await request.get(i.src)).status()).toBe(200);
 });
+
+test("routes: leading zeros open the token, junk shows a not-found page, titles follow the page", async ({ page }) => {
+  await page.goto("/#/pusaka/004");
+  await expect(page.locator("h1, h2").filter({ hasText: /Pusaka #4\b/ }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page).toHaveTitle(/Pusaka #4/);
+  for (const bad of ["#/pusaka/abc", "#/pusaka/1abc", "#/pusaka/-1", "#/nonsense"]) {
+    await page.goto(`/${bad}`);
+    await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  }
+});
+
+test("a ledger built from the capped on-chain history says so instead of 'in total'", async ({ page, request }) => {
+  const rpc = await request.post("https://near-testnet.drpc.org", { data: { jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "optimistic", account_id: "pusaka-btc.testnet", method_name: "token_info",
+      args_base64: Buffer.from('{"token_id":"1"}').toString("base64") } } });
+  const info = JSON.parse(Buffer.from((await rpc.json()).result.result).toString());
+  test.skip(info.history[0].event.kind === "Mint", "#1's full history still fits");
+  await page.goto("/#/pusaka/1");
+  await expect(page.locator(".ledger")).toContainText(/in its last \d+ events|no sale in its last/, { timeout: 30_000 });
+  await expect(page.locator(".ledger")).toContainText("NEP-297 logs");
+});
+
+test("security headers: the wallet page can't be framed", async ({ request }) => {
+  const r = await request.get("/");
+  expect(r.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(r.headers()["x-frame-options"]).toBe("DENY");
+  expect(r.headers()["x-content-type-options"]).toBe("nosniff");
+});
+
+test("APIs answer bad input with 4xx, never 500 or internals", async ({ request }) => {
+  for (const path of ["/api/prove", "/api/relay", "/api/holder"]) {
+    const r = await request.post(path, { headers: { "content-type": "application/json" }, data: "{bad json" });
+    expect(r.status(), path).toBe(400);
+    expect((await r.json()).error).toBe("the body must be JSON");
+  }
+  const arr = await request.post("/api/prove", { data: { token_id: ["1"] } });
+  expect(arr.status()).toBe(400);
+  for (const path of ["/api/badge?id=1", "/api/reserves", "/api/prices"]) expect((await request.post(path, { data: {} })).status(), path).toBe(405);
+  expect((await request.get("/api/badge?id=01")).status()).toBe(200);
+});
+
+test("the remote MCP endpoint works from a browser (CORS) and returns JSON-RPC parse errors", async ({ request }) => {
+  const pre = await request.fetch("/api/mcp", { method: "OPTIONS", headers: { origin: "https://example.com", "access-control-request-method": "POST" } });
+  expect(pre.status()).toBe(204);
+  expect(pre.headers()["access-control-allow-origin"]).toBe("*");
+  const bad = await request.post("/api/mcp", { headers: { "content-type": "application/json" }, data: "{bad" });
+  expect(bad.status()).toBe(400);
+  expect((await bad.json()).error.code).toBe(-32700);
+});

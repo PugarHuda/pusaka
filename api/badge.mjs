@@ -14,7 +14,8 @@ export function badge(id, sats) {
 }
 
 export default async function handler(req, res) {
-  const id = String(req.query?.id ?? "");
+  if (req.method !== "GET" && req.method !== "HEAD") return res.status(405).json({ error: "GET only" });
+  const id = String(req.query?.id ?? "").replace(/^0+(?=\d)/, ""); // "01" is token 1
   if (!/^\d{1,10}$/.test(id)) return res.status(400).json({ error: "?id=<token id>" });
   try {
     const t = await tokenReserve(id);

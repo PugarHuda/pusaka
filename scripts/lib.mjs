@@ -46,7 +46,7 @@ export async function faucetAccount(accountId) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ newAccountId: accountId, newAccountPublicKey: kp.getPublicKey().toString() }),
   });
-  if (!res.ok) throw new Error(`faucet ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`faucet ${res.status}: ${await res.text()}${res.status === 429 ? " (the NEAR testnet faucet limits each IP; pass existing accounts whose keys are in .keys/ instead)" : ""}`);
   saveKey(accountId, kp);
   return kp;
 }
