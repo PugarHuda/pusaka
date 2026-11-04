@@ -34,7 +34,7 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 
 1. Open **https://pusaka-two.vercel.app**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
 2. **Buy:** Pusaka #4 is for sale at 0.5 NEAR with 10,000 sats verified on NEAR. Click *Buy*. **See:** "You own Pusaka #4", and you can now *Withdraw* its BTC to any `tb1…` address.
-3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.55 within 3 days, backed by 164,446 verified sats (loan-to-value ~1.5%). Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
+3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.55 within 3 days, backed by 153,946 verified sats (loan-to-value under 2%). Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
 4. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
 
 ## Try it
@@ -47,7 +47,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `61 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`) plus storage and input validation.
+See: `95 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
