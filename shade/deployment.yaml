@@ -9,8 +9,8 @@ docker_compose_path: ./docker-compose.yaml
 agent_contract:
   contract_id: pusaka-agent.testnet
   deploy_custom:
-    enabled: true
-    funding_amount: 6
+    enabled: false
+    funding_amount: 8
     delete_key: false
     deploy_from_source:
       enabled: false
@@ -41,12 +41,14 @@ approve_measurements:
       "measurements": <MEASUREMENTS>
     }
 
+# Literal list: Phala's PPID API currently returns an empty entry and two 64-byte ones the contract (16-byte PPIDs) rejects. Refresh with
+# curl https://cloud-api.phala.network/api/v1/attestations/ppids
 approve_ppids:
-  enabled: true
+  enabled: false
   method_name: approve_ppids
   args: |
     {
-      "ppids": <PPIDS>
+      "ppids": ["25d230545a3e572bb25a69240d2319d2","3235086ca6743dfc60122d9662c6adaf","330defc989651469feae69a4a2fc2deb","3e306e133b7fdaa7bb79f67634cb520c","4065414cf7057d456a6ea7e01ec89f3a","4feaf7607bbb8699de5df347974ba4f5","58813387e6767e03cc2ed191aed34df9","5ab0c7d7d087758efa30a4b802dcfce2","62d54040cb9dfc08bb13006fa75ece56","6d29fd8d39de97bd27127c2747d41f79","75a2e7811a06c71a2430313cf6cd20fc","789e24484ea860fd2658896b8a535721","789e53db7374a8d22cb8b326aa254f23","897d3eb76ea887b783f9ad3d0771034b","a900c5d1de0b847f88ce7f32a69ddb5b","adee94b34274339c33b6f9a43a89ed2c","d5a036543e001ebe821a231306bece64","dc1e11aa6a4e37981776d7628eb3c0ed","de3c592b079106991b91654de5387395","e4ffa50fecdb05482bc4876586f77dd3","eafec44909bde673eae8ca96caf17c9d","f37d9549776d97f732b306ca10222e35","fbfc1e852c2c0d462212efe4ce34d8c4"]
     }
 
 # The image comes from CI (GHCR), not a local Docker build.
@@ -60,7 +62,7 @@ deploy_to_phala:
   enabled: true
   app_name: pusaka-agent
   env_file_path: ./.env
-  dstack_version: 0.5.8
+  dstack_version: 0.5.7
   instance_type: tdx.small
   public_logs: true
   public_sysinfo: true
