@@ -458,7 +458,7 @@ impl Pusaka {
         let pkh = btc::hash160(&pk);
         let inputs: Vec<_> = utxos.iter().map(|u| (u.txid.clone(), u.vout, u.value.0)).collect();
         let dest = hex::decode(&to_script_hex).expect("bad script hex");
-        let spend = btc::build_spend(&pkh, &inputs, dest, amount_sat.0, fee_sat.0);
+        let spend = btc::build_spend(&pkh, &inputs, dest, amount_sat.0, fee_sat.0, format!("pusaka:{token_id}").as_bytes());
 
         // Record every outpoint *before* asking for signatures. If a signature is
         // produced but never reaches our callback (MPC timeout, late respond), it is

@@ -129,15 +129,18 @@ pub struct Spend {
 }
 
 /// Builds a v2 tx spending `inputs` (txid in explorer/display hex, vout, value) to
-/// `dest_script`, sending change back to `pkh`. Panics on bad amounts.
+/// `dest_script`, sending change back to `pkh`, plus a 0-value OP_RETURN with `memo` (if any) last.
+/// Panics on bad amounts.
 pub fn build_spend(
     pkh: &[u8; 20],
     inputs: &[(String, u32, u64)],
     dest_script: Vec<u8>,
     amount: u64,
     fee: u64,
+    memo: &[u8],
 ) -> Spend {
     assert!(amount >= DUST_SAT, "amount below dust");
+    assert!(memo.len() <= 75, "memo too long for one OP_RETURN push");
     let total: u64 = inputs.iter().map(|i| i.2).sum();
     let change = total
         .checked_sub(amount)
@@ -167,6 +170,13 @@ pub fn build_spend(
             value: Amount::from_sat(change),
             script_pubkey: ScriptBuf(p2wpkh_script(pkh)),
         });
+    }
+    // Provenance: any explorer shows which Pusaka paid this ("pusaka:4"). Last, so the payment
+    // stays output 0 and the change output 1.
+    if !memo.is_empty() {
+        let mut script = vec![0x6a, memo.len() as u8]; // OP_RETURN <push memo>
+        script.extend_from_slice(memo);
+        outputs.push(TxOut { value: Amount::from_sat(0), script_pubkey: ScriptBuf(script) });
     }
 
     let tx: BitcoinTransaction = TransactionBuilder::new::<BITCOIN>()

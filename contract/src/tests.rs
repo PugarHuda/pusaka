@@ -1300,3 +1300,24 @@ fn e3_zero_value_evm_withdrawal_rejected() {
     let _ = c.withdraw_eth("1".into(), U64(EVM_CHAINS[0]), U64(0), "0x2af9ED1D3fe79c9a61518c9bFFA71bc3Fa1C3b63".into(),
         U128(0), U128(21_000), U128(1), U128(1), None);
 }
+
+#[test]
+fn o1_every_withdrawal_carries_its_pusaka_in_op_return() {
+    let pkh = [7u8; 20];
+    let memo = b"pusaka:1";
+    let with = btc::build_spend(&pkh, &[(TXID.into(), 0, 100_000)], btc::p2wpkh_script(&[9u8; 20]), 10_000, 500, memo);
+    let hex = btc::unsigned_hex(&with.tx);
+    // OP_RETURN, push 8 bytes, "pusaka:1", after the payment and change outputs (value 0)
+    let op_return = format!("00000000000000000a6a08{}", hex::encode(memo));
+    assert!(hex.contains(&op_return), "{hex}");
+    // the signed message covers it: same inputs without the memo give different sighashes
+    let without = btc::build_spend(&pkh, &[(TXID.into(), 0, 100_000)], btc::p2wpkh_script(&[9u8; 20]), 10_000, 500, b"");
+    assert_ne!(with.sighashes, without.sighashes);
+    assert!(!btc::unsigned_hex(&without.tx).contains("6a08"));
+}
+
+#[test]
+#[should_panic(expected = "memo too long")]
+fn o2_memo_fits_one_push() {
+    let _ = btc::build_spend(&[7u8; 20], &[(TXID.into(), 0, 100_000)], btc::p2wpkh_script(&[9u8; 20]), 10_000, 500, &[b'x'; 76]);
+}
