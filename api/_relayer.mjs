@@ -58,8 +58,8 @@ export async function relay(b64) {
   return { tx: res.transaction.hash, sender: sd.delegateAction.senderId, methods: sd.delegateAction.actions.map((a) => a.functionCall.methodName) };
 }
 
-/** Proves every confirmed, unproven deposit of a token, paid by the relayer. */
-export async function proveToken(tokenId) {
+/** Proves every confirmed, unproven deposit of a token, paid by `relayer` (the TEE agent passes its own account). */
+export async function proveToken(tokenId, relayer) {
   if (!/^\d{1,9}$/.test(String(tokenId))) throw Object.assign(new Error("bad token id"), { status: 400 });
   const info = await provider.callFunction({ contractId: CONTRACT, method: "token_info", args: { token_id: String(tokenId) } });
   if (!info?.btc_pubkey) throw Object.assign(new Error("no such Pusaka"), { status: 404 });
@@ -68,7 +68,8 @@ export async function proveToken(tokenId) {
   const todo = bal.spendable.filter((u) => u.value >= 10_000 && u.status?.confirmed
     && u.status.block_height + BTC_MIN_CONFIRMATIONS - 1 <= lc
     && !info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout)).slice(0, 4);
-  const relayer = relayerAccount();
+  if (!todo.length) return { light_client_height: lc, results: [] };
+  relayer ??= relayerAccount();
   const results = [];
   for (const u of todo) {
     const proof = await depositProof(u.txid, u.vout);

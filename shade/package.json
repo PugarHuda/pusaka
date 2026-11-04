@@ -1,0 +1,18 @@
+{
+  "name": "pusaka-shade-agent",
+  "private": true,
+  "type": "module",
+  "description": "Pusaka's deposit prover as a Shade Agent: runs in a Phala TEE, registers its attestation on-chain, proves BTC deposits with its own key",
+  "scripts": {
+    "start": "node shade/agent.mjs"
+  },
+  "dependencies": {
+    "@neardefi/shade-agent-js": "2.2.0",
+    "near-api-js": "7.4.0",
+    "borsh": "2.0.0",
+    "@noble/curves": "2.4.0",
+    "@scure/base": "2.2.0",
+    "bitcoinjs-lib": "7.0.5",
+    "viem": "2.57.14"
+  }
+}

@@ -1,0 +1,75 @@
+# shade deploy: agent contract pusaka-agent.testnet (requires a real TDX attestation),
+# approves this compose's measurements + Phala PPIDs, deploys to the smallest Phala TEE.
+# Cost: tdx.small ~$0.06/h. Delete the CVM after the demo (stopped CVMs still bill storage).
+environment: TEE
+network: testnet
+docker_compose_path: ./docker-compose.yaml
+
+agent_contract:
+  contract_id: pusaka-agent.testnet
+  deploy_custom:
+    enabled: true
+    funding_amount: 6
+    delete_key: false
+    deploy_from_source:
+      enabled: false
+      source_path: ./agent-contract
+      reproducible_build: false
+    deploy_from_wasm:
+      enabled: true
+      wasm_path: ./agent-contract/target/near/shade_contract_template.wasm
+    use_global_by_hash:
+      enabled: false
+      global_hash: 8eHvv9q4eovoUgDXYEduwv3dbcfXkCyPP9TSmhUSxkcm
+    init:
+      enabled: true
+      method_name: new
+      args: |
+        {
+          "requires_tee": <REQUIRES_TEE>,
+          "attestation_expiration_time_ms": <7_DAYS>,
+          "owner_id": <MASTER_ACCOUNT_ID>,
+          "mpc_contract_id": <DEFAULT_MPC_CONTRACT_ID>
+        }
+
+approve_measurements:
+  enabled: true
+  method_name: approve_measurements
+  args: |
+    {
+      "measurements": <MEASUREMENTS>
+    }
+
+approve_ppids:
+  enabled: true
+  method_name: approve_ppids
+  args: |
+    {
+      "ppids": <PPIDS>
+    }
+
+# The image comes from CI (GHCR), not a local Docker build.
+build_docker_image:
+  enabled: false
+  tag: ghcr.io/pugarhuda/pusaka-agent
+  cache: true
+  dockerfile_path: ./Dockerfile
+
+tee_config:
+  dstack_version: 0.5.8
+  instance_type: tdx.small
+  public_logs: true
+  public_sysinfo: true
+  deploy:
+    enabled: true
+    app_name: pusaka-agent
+    env_file_path: ./.env
+  phala:
+    enabled: true
+
+whitelist_agent_for_local:
+  method_name: whitelist_agent_for_local
+  args: |
+    {
+      "account_id": <AGENT_ACCOUNT_ID>
+    }
