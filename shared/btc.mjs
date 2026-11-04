@@ -506,9 +506,9 @@ export async function broadcastNear(b64) {
 export * from "./ckd.mjs";
 
 // ---------- verified USDC: deposits NEAR MPC attests (foreign-transaction verification) ----------
-const contractView = async (method, args) => {
+const contractView = async (method, args, contractId = CONTRACT) => {
   const r = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query",
-    params: { request_type: "call_function", finality: "optimistic", account_id: CONTRACT, method_name: method, args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) } }) })).json();
+    params: { request_type: "call_function", finality: "optimistic", account_id: contractId, method_name: method, args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) } }) })).json();
   if (!r.result?.result) throw new Error(r.error?.cause?.name ?? r.result?.error ?? "view failed");
   return JSON.parse(new TextDecoder().decode(new Uint8Array(r.result.result)));
 };
@@ -547,3 +547,15 @@ export async function usdcToProve(tokenId, { blocks = 45_000 } = {}) {
 export const PROVE_USDC_DEPOSIT = 2_000_000_000_000_000_000_000n;
 /** Same floor as the contract (0.01 USDC). */
 export const MIN_PROVEN_USDC = 10_000n;
+
+/**
+ * nBTC a buyer can rely on in a Pusaka's NEAR account. A signed ft_transfer (withdraw_nbtc) may be
+ * held back and broadcast after a sale, so, like the account's NEAR, it only counts once the
+ * access-key nonce has reached the contract's near_nonce_floor.
+ */
+export async function nbtcBalances(account, floor) {
+  const [raw, b] = await Promise.all([contractView("ft_balance_of", { account_id: account }, NBTC).catch(() => "0"), nearBalances(account, floor)]);
+  const sats = BigInt(raw ?? 0);
+  const clear = b.nonce >= BigInt(floor);
+  return { sats, safe: clear ? sats : 0n, atRisk: clear ? 0n : sats };
+}

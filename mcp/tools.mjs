@@ -13,7 +13,7 @@ import {
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
-  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nearProvider,
+  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 
@@ -99,8 +99,9 @@ export async function inspect(token_id) {
     solAddress(token_id).then((a) => solBalances(a, info.history).then((b) => ({ address: a, safe_lamports: b.safe, at_risk_lamports: b.atRisk }))).catch(() => null),
     nearAccount(token_id).then(async (a) => {
       const b = await nearBalances(a, await view("near_nonce_floor", { token_id }));
-      const nbtc = await provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: a } }).catch(() => null);
-      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk, nbtc_sats: nbtc && Number(nbtc) };
+      const floor = await view("near_nonce_floor", { token_id });
+      const n = await nbtcBalances(a, floor).catch(() => null);
+      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk, nbtc_safe_sats: n && Number(n.safe), nbtc_at_risk_sats: n && Number(n.atRisk) };
     }).catch(() => null),
   ]);
   if (sol) out.sol = sol;

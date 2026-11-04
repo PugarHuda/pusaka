@@ -4,7 +4,7 @@ import {
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
-  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress,
+  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances,
   ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
@@ -580,10 +580,10 @@ function NbtcSection({ t, canWithdraw, onDone }) {
   useEffect(() => {
     if (!a?.address) return;
     Promise.all([
-      provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: a.address } }).catch(() => "0"),
+      nbtcBalances(a.address, a.floor ?? 0).catch(() => ({ sats: 0n, safe: 0n, atRisk: 0n })),
       nbtcDepositAddress(a.address).catch(() => null),
-    ]).then(([balance, deposit]) => setState({ balance: BigInt(balance), deposit }));
-  }, [a?.address]);
+    ]).then(([b, deposit]) => setState({ balance: b.sats, safe: b.safe, atRisk: b.atRisk, deposit }));
+  }, [a?.address, a?.floor]);
   if (!a?.address || !state) return null;
 
   async function send(e) {
@@ -609,7 +609,8 @@ function NbtcSection({ t, canWithdraw, onDone }) {
   return (
     <section>
       <h2>nBTC on NEAR</h2>
-      <p className="amount small"><span>{state.balance.toLocaleString()}</span> nBTC sats in its NEAR account</p>
+      <p className="amount small"><span>{state.safe.toLocaleString()}</span> nBTC sats in its NEAR account</p>
+      {state.atRisk > 0n && <p className="warn">{state.atRisk.toLocaleString()} nBTC sats are at risk: a transaction signed from this account (nonce {String(a.floor)}) hasn't been used yet, so it could still move them.</p>}
       <p className="muted">Withdraw this Pusaka's BTC to the Omni Bridge address below and Near-One's relayer, checking it against
         the same Bitcoin light client, mints nBTC (NEP-141) into the Pusaka's own NEAR account. It moves with the NFT, and
         only its holder can send it: the contract signs one `ft_transfer` on {NBTC}, nothing else.</p>
@@ -746,6 +747,7 @@ function Ledger({ history }) {
     if (e.kind === "WithdrawErc20" && e.signed) out.push(`${formatUnits(BigInt(e.amount), 6)} USDC`);
     if (e.kind === "WithdrawSol" && e.signed) out.push(`${sol9(e.lamports)} SOL`);
     if (e.kind === "WithdrawNear" && e.signed) out.push(`${near(e.amount)} NEAR`);
+    if (e.kind === "WithdrawNbtc" && e.signed) out.push(`${Number(e.sats).toLocaleString()} nBTC sats`);
   }
   // The contract keeps the latest 32 events; past that, the full record is in NEAR's NEP-297 logs.
   const partial = history.length > 0 && history[0].event.kind !== "Mint";
@@ -787,6 +789,7 @@ function describe(e) {
     case "WithdrawErc20": return `Signed a withdrawal of ${formatUnits(BigInt(e.amount), 6)} USDC on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
     case "WithdrawSol": return `Signed a withdrawal of ${sol9(e.lamports)} SOL${e.signed ? "" : " (signature failed)"}`;
     case "WithdrawNear": return `Signed a transfer of ${near(e.amount)} NEAR from its own account${e.signed ? "" : " (signature failed)"}`;
+    case "WithdrawNbtc": return `Signed a transfer of ${Number(e.sats).toLocaleString()} nBTC sats from its own account${e.signed ? "" : " (signature failed)"}`;
     case "Royalty": return `Royalty of ${near(e.amount)} NEAR paid to its creator ${e.creator}`;
     case "Approved": return `Approved ${e.account} to sell it`;
     case "ApprovalsRevoked": return "Stopped selling on outside markets";
