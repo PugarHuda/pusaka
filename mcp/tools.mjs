@@ -3,6 +3,7 @@
 //
 //   PUSAKA_ACCOUNT_ID=agent.testnet PUSAKA_PRIVATE_KEY=ed25519:… npx pusaka-mcp
 //   PUSAKA_MAX_SPEND_NEAR=5   hard cap on NEAR this server will spend per session (default 5)
+//   PUSAKA_ALLOW_OUTFLOWS=1   needed for give / withdraw_* (off by default); PUSAKA_ALLOWED_RECIPIENTS=a,b limits where
 // Without an account it runs read-only (overview, inspect).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -23,6 +24,16 @@ const account = ACCOUNT_ID && process.env.PUSAKA_PRIVATE_KEY
   : null;
 const toYocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 18n;
 const toNear = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6;
+
+// Outflow guard: tools that move a Pusaka or its assets away (give, withdraw_*) are off unless the
+// operator opts in, optionally to an allowlist of recipients. The NEAR cap below can't bound them:
+// they move BTC/ETH/SOL or the NFT itself, not NEAR from the agent's account.
+//   PUSAKA_ALLOW_OUTFLOWS=1   PUSAKA_ALLOWED_RECIPIENTS=alice.testnet,tb1q…,0xabc…
+const ALLOWED = (process.env.PUSAKA_ALLOWED_RECIPIENTS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+function outflow(to) {
+  if (process.env.PUSAKA_ALLOW_OUTFLOWS !== "1") throw new Error("Outflows are off: set PUSAKA_ALLOW_OUTFLOWS=1 (and ideally PUSAKA_ALLOWED_RECIPIENTS) to let this agent move a Pusaka or its assets.");
+  if (ALLOWED.length && !ALLOWED.includes(String(to).trim().toLowerCase())) throw new Error(`${to} isn't in PUSAKA_ALLOWED_RECIPIENTS.`);
+}
 
 // Spending guard: the agent can never move more NEAR than this in one session.
 const CAP = toYocto(process.env.PUSAKA_MAX_SPEND_NEAR ?? "5");
@@ -212,6 +223,7 @@ reg("pusaka_withdraw_btc", {
   description: "Send BTC out of your Pusaka to a Bitcoin address. The contract builds the transaction, NEAR MPC signs it, this server verifies and broadcasts it.",
   inputSchema: { token_id: z.string(), to: z.string(), amount_btc: z.number().positive(), fee_sats: z.number().int().positive().optional() },
 }, tool(async ({ token_id, to, amount_btc, fee_sats = 300 }) => {
+  outflow(to);
   const info = await view("token_info", { token_id });
   const bal = await balances(btcAddress(info.btc_pubkey), info.signed_outpoints);
   const ins = [...bal.spendable].sort((a, b) => b.value - a.value).slice(0, 8);
@@ -230,6 +242,7 @@ reg("pusaka_give", {
   description: "Give your Pusaka to another NEAR account: the NFT and everything it controls (BTC, ETH, SOL, its NEAR account, the letter) move in one transaction. Refuses accounts that don't exist, since a Pusaka sent to an account nobody controls is lost.",
   inputSchema: { token_id: z.string(), to: z.string() },
 }, tool(async ({ token_id, to }) => {
+  outflow(to);
   const receiver = to.trim().toLowerCase();
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
   await call("nft_transfer", { receiver_id: receiver, token_id, memo: "given by an agent through Pusaka MCP" }, { deposit: 1n, tgas: 50 });
@@ -240,6 +253,7 @@ reg("pusaka_withdraw_eth", {
   description: `Send ETH or USDC out of your Pusaka on an EVM chain (${EVM_CHAINS.map((c) => `${c.chain.id} ${c.chain.name}`).join(", ")}). The contract builds the EIP-1559 transaction, NEAR MPC signs it with the same key that holds the BTC, this server checks the signature recovers to the Pusaka's address and broadcasts.`,
   inputSchema: { token_id: z.string(), to: z.string(), amount: z.number().positive(), chain_id: z.number().int().optional(), usdc: z.boolean().optional() },
 }, tool(async ({ token_id, to, amount, chain_id = EVM_CHAINS[0].chain.id, usdc = false }) => {
+  outflow(to);
   const c = EVM_CHAINS.find((x) => x.chain.id === chain_id);
   if (!c) throw new Error(`chain_id must be one of ${EVM_CHAINS.map((x) => x.chain.id).join(", ")}`);
   if (!isAddress(to)) throw new Error(`${to} isn't an EVM address`);
@@ -264,6 +278,7 @@ reg("pusaka_withdraw_sol", {
   description: "Send SOL out of your Pusaka (its Ed25519 MPC key is a Solana address). The contract builds a plain System transfer, NEAR MPC signs it, this server broadcasts.",
   inputSchema: { token_id: z.string(), to: z.string(), sol: z.number().positive() },
 }, tool(async ({ token_id, to, sol }) => {
+  outflow(to);
   if (!isSolAddress(to)) throw new Error(`${to} isn't a Solana address`);
   const from = await solAddress(token_id);
   const info = await view("token_info", { token_id });
@@ -281,6 +296,7 @@ reg("pusaka_withdraw_near", {
   description: "Send NEAR out of your Pusaka's own NEAR account (an implicit account of its Ed25519 MPC key). The contract only ever signs a single Transfer from it.",
   inputSchema: { token_id: z.string(), to: z.string(), near: z.number().positive() },
 }, tool(async ({ token_id, to, near }) => {
+  outflow(to);
   const receiver = to.trim().toLowerCase();
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
   const acct = await nearAccount(token_id);

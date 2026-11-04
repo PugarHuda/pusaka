@@ -14,7 +14,7 @@ const client = new Client({ name: "pusaka-smoke", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [path.join(import.meta.dirname, "server.mjs")],
-  env: { ...process.env, PUSAKA_ACCOUNT_ID: id, PUSAKA_PRIVATE_KEY: private_key, PUSAKA_MAX_SPEND_NEAR: "2" },
+  env: { ...process.env, PUSAKA_ACCOUNT_ID: id, PUSAKA_PRIVATE_KEY: private_key, PUSAKA_MAX_SPEND_NEAR: "2", PUSAKA_ALLOW_OUTFLOWS: "" },
 }));
 
 const show = async (name, args = {}) => {
@@ -33,5 +33,7 @@ const refused = (r, why) => { if (!r.isError || !why.test(r.content[0].text)) th
 refused(await show("pusaka_fund_loan", { token_id: "1", max_ltv: 0.001 }), /Loan-to-value .* is above/);
 // Guard: price cap. #4 is listed at 0.5 NEAR; an agent capped at 0.1 must refuse.
 refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above your max/);
+// Guard: outflows (give, withdraw_*) are off unless the operator opts in.
+refused(await show("pusaka_give", { token_id: "4", to: "pusaka-seller.testnet" }), /Outflows are off/);
 await client.close();
 console.log("\nsmoke ok");
