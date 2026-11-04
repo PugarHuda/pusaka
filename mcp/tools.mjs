@@ -88,6 +88,11 @@ export async function inspect(token_id) {
       return e ? { chain: c.chain.name, chain_id: c.chain.id, address: addr, safe_wei: e.safe, at_risk_wei: e.atRisk, usdc_safe: e.usdcSafe, usdc_at_risk: e.usdcAtRisk }
         : { chain: c.chain.name, error: "unreachable" };
     }));
+    // Attested by NEAR MPC (foreign-tx verification) and counted on-chain: needs no EVM RPC to trust.
+    out.usdc_verified = (await view("usdc_info", { token_id }).catch(() => [])).map((x) => ({
+      chain: x.chain, chain_id: Number(x.chain_id), verified_usdc: Number(x.verified) / 1e6, proven_deposits: x.deposits.length,
+      note: "proven by NEAR MPC reading the chain, minus all USDC this contract ever signed out",
+    }));
   }
   // The Ed25519 MPC key: a Solana address and the Pusaka's own NEAR implicit account.
   const [sol, nearAcct] = await Promise.all([

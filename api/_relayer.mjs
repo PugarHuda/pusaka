@@ -6,7 +6,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { base58 } from "@scure/base";
 import {
-  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch,
+  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch, usdcToProve, PROVE_USDC_DEPOSIT,
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
@@ -104,7 +104,9 @@ export async function proveToken(tokenId, relayer) {
   const todo = bal.spendable.filter((u) => u.value >= 10_000 && u.status?.confirmed
     && u.status.block_height + BTC_MIN_CONFIRMATIONS - 1 <= lc
     && !info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout)).slice(0, 4);
-  if (!todo.length) return { light_client_height: lc, results: [] };
+  // USDC on Base/Arbitrum, attested by NEAR MPC: only finalized logs (the MPC reads finalized blocks)
+  const usdc = (await usdcToProve(tokenId).catch(() => [])).filter((d) => d.finalized).slice(0, 2);
+  if (!todo.length && !usdc.length) return { light_client_height: lc, results: [], usdc: [] };
   relayer ??= relayerAccount();
   const results = [];
   for (const u of todo) {
@@ -115,7 +117,12 @@ export async function proveToken(tokenId, relayer) {
       args: { token_id: String(tokenId), ...proof }, deposit: PROVE_DEPOSIT, gas: teraToGas(100) });
     results.push({ txid: u.txid, vout: u.vout, sats: u.value, proven: ok });
   }
-  return { light_client_height: lc, results };
+  const usdcResults = [];
+  for (const d of usdc) {
+    const ok = await relayer.callFunction({ contractId: CONTRACT, methodName: "prove_usdc_deposit", args: d.args, deposit: PROVE_USDC_DEPOSIT, gas: teraToGas(150) });
+    usdcResults.push({ chain: d.chain, tx: d.args.tx_hash, log_index: Number(d.args.log_index), usdc: d.usdc, proven: ok });
+  }
+  return { light_client_height: lc, results, usdc: usdcResults };
 }
 
 /** req.body, but a malformed JSON body is the client’s mistake (400), not ours. */

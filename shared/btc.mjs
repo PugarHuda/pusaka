@@ -489,3 +489,43 @@ export async function broadcastNear(b64) {
   return r.transaction.hash;
 }
 export * from "./ckd.mjs";
+
+// ---------- verified USDC: deposits NEAR MPC attests (foreign-transaction verification) ----------
+const contractView = async (method, args) => {
+  const r = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "optimistic", account_id: CONTRACT, method_name: method, args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) } }) })).json();
+  if (!r.result?.result) throw new Error(r.error?.cause?.name ?? r.result?.error ?? "view failed");
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(r.result.result)));
+};
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+/**
+ * USDC Transfer logs paying a Pusaka that the contract hasn't counted yet, on every chain NEAR MPC
+ * verifies (usdc_info lists them), with the prove_usdc_deposit args ready. `finalized` says whether
+ * the MPC can read it yet. Scans the last `blocks` blocks (public RPCs cap eth_getLogs ranges).
+ */
+export async function usdcToProve(tokenId, { blocks = 45_000 } = {}) {
+  const [to, info] = await Promise.all([contractView("evm_address", { token_id: String(tokenId) }), contractView("usdc_info", { token_id: String(tokenId) })]);
+  if (!to) return [];
+  const out = [];
+  for (const v of info) {
+    const c = EVM_CHAINS.find((x) => x.chain.id === Number(v.chain_id));
+    if (!c) continue;
+    const rpc = (method, params) => fetch(c.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
+      .then((r) => r.json()).then((j) => { if (j.error) throw new Error(j.error.message); return j.result; });
+    const [head, fin] = await Promise.all([rpc("eth_blockNumber", []).then((h) => parseInt(h)), rpc("eth_getBlockByNumber", ["finalized", false]).then((b) => parseInt(b.number))]);
+    for (let b = Math.max(0, head - blocks); b <= head; b += 9_000) {
+      const logs = await rpc("eth_getLogs", [{ address: v.usdc, topics: [TRANSFER_TOPIC, null, "0x" + to.slice(2).padStart(64, "0")],
+        fromBlock: "0x" + b.toString(16), toBlock: "0x" + Math.min(b + 8_999, head).toString(16) }]);
+      for (const l of logs) {
+        if (v.deposits.some((d) => d.tx === l.transactionHash && Number(d.log_index) === parseInt(l.logIndex))) continue;
+        out.push({ chain: c.chain.name, chain_id: c.chain.id, usdc: Number(BigInt(l.data)) / 1e6, finalized: parseInt(l.blockNumber) <= fin, args: {
+          token_id: String(tokenId), chain_id: String(c.chain.id), tx_hash: l.transactionHash, log_index: String(parseInt(l.logIndex)),
+          transaction_index: String(parseInt(l.transactionIndex)), block_hash: l.blockHash, block_number: String(parseInt(l.blockNumber)), data: l.data, topics: l.topics } });
+      }
+    }
+  }
+  return out;
+}
+/** Storage deposit for one proven USDC deposit (refunded if the MPC doesn't attest it). */
+export const PROVE_USDC_DEPOSIT = 2_000_000_000_000_000_000_000n;

@@ -1321,3 +1321,113 @@ fn o1_every_withdrawal_carries_its_pusaka_in_op_return() {
 fn o2_memo_fits_one_push() {
     let _ = btc::build_spend(&[7u8; 20], &[(TXID.into(), 0, 100_000)], btc::p2wpkh_script(&[9u8; 20]), 10_000, 500, &[b'x'; 76]);
 }
+
+// ---------- verified USDC: NEAR MPC foreign-transaction verification (domain 3) ----------
+
+#[test]
+fn u1_payload_hash_matches_what_the_mpc_signed_live() {
+    // A Base Sepolia USDC Transfer, verified by v1.signer-prod.testnet on 4 Nov 2026
+    // (tx BKeg9y2vhjfYKggRj7Y5PLiFgPTsxHmE7havcxaKchk4): it answered this payload_hash.
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    let t = |s: &str| usdc::hex32(s, "t");
+    let log = usdc::Log {
+        tx: t("0xb7deb81a095bbaeff6a98b5fa40fa745db59ea3da87697790a02efdd5c0b5ee1"),
+        log_index: 2,
+        tx_index: 3,
+        block_hash: t("0x665a4d5b935791082e35ef0c73378064e605f429d70b7065d21ef4d6ca5064a3"),
+        block_number: 54193413,
+        address: hex::decode("036cbd53842c5426634e7929541ec2318f3dcf7e").unwrap().try_into().unwrap(),
+        data: "0x00000000000000000000000000000000000000000000000000000000000003e8".into(),
+        topics: vec![
+            t("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"),
+            t("0x0000000000000000000000002e0c37b721124e2558baf75f6f8e6cc9f14aec29"),
+            t("0x0000000000000000000000002e0c37b721124e2558baf75f6f8e6cc9f14aec29"),
+        ],
+    };
+    assert_eq!(hex::encode(usdc::payload_hash(6, &log)), "9c1b7c49425dd65d55425055037697390b05894776026eea393a8b27fdcbb497");
+    assert_eq!(usdc::amount(&log.data), 1000);
+}
+
+fn evm_of_token() -> String { format!("{:0>64}", hex::encode(btc::evm_address_of_mpc_key(MPC_KEY))) }
+
+fn prove_usdc(c: &mut Pusaka, to_topic: &str, chain: u64) {
+    ctx("bob.testnet", NearToken::from_millinear(5), vec![]);
+    let _ = c.prove_usdc_deposit("1".into(), U64(chain), format!("0x{}", "ab".repeat(32)), U64(4), U64(0),
+        format!("0x{}", "cd".repeat(32)), U64(100), format!("0x{:0>64}", "f4240"),
+        vec![format!("0x{}", usdc::TRANSFER_TOPIC), format!("0x{}", "11".repeat(32)), format!("0x{to_topic}")]);
+}
+
+#[test]
+fn u2_mint_records_the_evm_address_of_the_same_key() {
+    let c = setup();
+    assert_eq!(c.evm_address("1".into()).unwrap(), format!("0x{}", hex::encode(btc::evm_address_of_mpc_key(MPC_KEY))));
+}
+
+#[test]
+fn u3_proof_asks_the_mpc_to_confirm_exactly_these_facts() {
+    let mut c = setup();
+    prove_usdc(&mut c, &evm_of_token(), usdc::CHAINS[0].0);
+    let (method, args) = ckd_request();
+    assert_eq!(method, "verify_foreign_transaction");
+    let r = &args["request"];
+    assert_eq!(r["domain_id"], 3);
+    let chain = usdc::CHAINS[0].1;
+    assert_eq!(r["request"][chain]["tx_id"], "ab".repeat(32));
+    assert_eq!(r["request"][chain]["extractors"][0]["Log"]["log_index"], 4);
+    assert_eq!(r["request"][chain]["finality"], "Finalized");
+    assert_eq!(r["expected_payload_hash"].as_str().unwrap().len(), 64);
+}
+
+#[test]
+#[should_panic(expected = "doesn't pay this Pusaka")]
+fn u4_transfer_to_someone_else_rejected() {
+    let mut c = setup();
+    prove_usdc(&mut c, &"22".repeat(32), usdc::CHAINS[0].0);
+}
+
+#[test]
+#[should_panic(expected = "not verifiable by NEAR MPC")]
+fn u4_chain_the_mpc_cannot_read_rejected() {
+    let mut c = setup();
+    prove_usdc(&mut c, &evm_of_token(), 11155111); // Sepolia L1: not in the MPC's foreign chains
+}
+
+fn mpc_answers(c: &mut Pusaka, payload_hash: &str) -> bool {
+    as_contract(vec![PromiseResult::Successful(format!(r#"{{"payload_hash":"{payload_hash}","signature":{{}}}}"#).into_bytes())]);
+    c.on_usdc_proven("1".into(), U64(usdc::CHAINS[0].0), "ab".repeat(32), U64(4), U128(1_000_000), "aa".repeat(32), acc("bob.testnet"))
+}
+
+#[test]
+fn u5_only_an_attested_deposit_counts_and_only_once() {
+    let mut c = setup();
+    assert!(!mpc_answers(&mut c, &"bb".repeat(32))); // the MPC saw something else
+    assert_eq!(c.usdc_info("1".into())[0]["verified"], "0");
+    assert!(mpc_answers(&mut c, &"aa".repeat(32)));
+    assert!(!mpc_answers(&mut c, &"aa".repeat(32))); // same log again
+    let info = &c.usdc_info("1".into())[0];
+    assert_eq!(info["verified"], "1000000");
+    assert_eq!(info["deposits"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn u6_signing_usdc_out_lowers_verified_before_the_signature_exists() {
+    let mut c = setup();
+    assert!(mpc_answers(&mut c, &"aa".repeat(32)));
+    let (chain, _, _, usdc_addr) = usdc::CHAINS[0];
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth("1".into(), U64(chain), U64(0), "0x2af9ED1D3fe79c9a61518c9bFFA71bc3Fa1C3b63".into(),
+        U128(400_000), U128(60_000), U128(1), U128(1), Some(format!("0x{}", usdc_addr.to_uppercase())));
+    let info = &c.usdc_info("1".into())[0];
+    assert_eq!(info["signed_out"], "400000");
+    assert_eq!(info["verified"], "600000");
+}
+
+#[test]
+fn u6_other_tokens_dont_touch_the_usdc_count() {
+    let mut c = setup();
+    assert!(mpc_answers(&mut c, &"aa".repeat(32)));
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.withdraw_eth("1".into(), U64(usdc::CHAINS[0].0), U64(0), "0x2af9ED1D3fe79c9a61518c9bFFA71bc3Fa1C3b63".into(),
+        U128(400_000), U128(60_000), U128(1), U128(1), Some(format!("0x{}", "12".repeat(20))));
+    assert_eq!(c.usdc_info("1".into())[0]["verified"], "1000000");
+}

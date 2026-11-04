@@ -103,6 +103,13 @@ pub fn compress_mpc_key(s: &str) -> Vec<u8> {
     out
 }
 
+/// The EVM address of the same MPC key: keccak256(x || y)[12..] of the uncompressed point.
+pub fn evm_address_of_mpc_key(s: &str) -> [u8; 20] {
+    let raw = bs58::decode(s.strip_prefix("secp256k1:").expect("not a secp256k1 key")).into_vec().expect("bad base58");
+    assert_eq!(raw.len(), 64, "expected 64-byte uncompressed key");
+    env::keccak256_array(&raw)[12..].try_into().unwrap()
+}
+
 pub fn hash160(data: &[u8]) -> [u8; 20] {
     env::ripemd160_array(&env::sha256_array(data))
 }

@@ -47,6 +47,8 @@ async function loadToken(id, { light = false } = {}) {
         const floor = await view("eth_nonce_floor", { token_id: id, chain_id: String(c.chain.id) });
         return evmBalances(ethAddr, floor, c.chain.id).then((b) => ({ ...b, c, floor })).catch(() => ({ c, error: true }));
       })),
+      // USDC attested by NEAR MPC (foreign-tx verification), counted by the contract itself
+      verified: await view("usdc_info", { token_id: id }).catch(() => []),
     };
   }
   // The Ed25519 key (MPC domain 1) is both a Solana address and a NEAR implicit account.
@@ -440,7 +442,7 @@ function EthSection({ t, canWithdraw, onDone }) {
       <h2>Ether and USDC inside</h2>
       <p className="muted">The same key controls one address on every EVM chain. Pusaka signs for these:</p>
       <table className="chains">
-        <thead><tr><th>Chain</th><th>ETH</th><th>USDC</th></tr></thead>
+        <thead><tr><th>Chain</th><th>ETH</th><th>USDC</th><th>USDC verified on NEAR</th></tr></thead>
         <tbody>{eth.chains.map((b) => (
           <tr key={b.c.chain.id}>
             <td><a href={`${b.c.explorer}/address/${eth.address}`} target="_blank" rel="noreferrer">{b.c.chain.name}</a></td>
@@ -448,9 +450,14 @@ function EthSection({ t, canWithdraw, onDone }) {
               <td>{eth6(b.safe)}{b.atRisk > 0n && <span className="warn-inline"> +{eth6(b.atRisk)} at risk</span>}</td>
               <td>{formatUnits(b.usdcSafe, 6)}{b.usdcAtRisk > 0n && <span className="warn-inline"> +{formatUnits(b.usdcAtRisk, 6)} at risk</span>}</td>
             </>}
+            {(() => {
+              const v = eth.verified.find((x) => Number(x.chain_id) === b.c.chain.id);
+              return <td>{v ? formatUnits(BigInt(v.verified), 6) : <span className="muted" title="NEAR MPC doesn't verify this chain">n/a</span>}</td>;
+            })()}
           </tr>))}
         </tbody>
       </table>
+      <p className="muted">USDC verified on NEAR: deposits the NEAR MPC network read on a finalized block and attested (foreign-transaction verification), minus every USDC this contract ever signed out. Trust it without any EVM RPC.</p>
       {eth.chains.some((b) => b.atRisk > 0n || b.usdcAtRisk > 0n) && <p className="warn">Amounts marked at risk have a signed transaction that hasn't been used on that chain yet, so it could still move them.</p>}
       <p className="addr"><span>{eth.address}</span> <CopyButton text={eth.address} /></p>
       {canWithdraw && funded && (

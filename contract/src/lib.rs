@@ -6,6 +6,7 @@
 
 mod art;
 mod btc;
+mod usdc;
 
 use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
 use near_contract_standards::non_fungible_token::enumeration::NonFungibleTokenEnumeration;
@@ -73,6 +74,11 @@ pub const ROYALTY_BPS: u128 = 250;
 const ED25519_DOMAIN: u32 = 1;
 /// NEAR MPC confidential key derivation (BLS12-381).
 const CKD_DOMAIN: u32 = 2;
+/// NEAR MPC foreign-transaction verification (secp256k1 attestations of other chains' txs).
+const FOREIGN_TX_DOMAIN: u32 = 3;
+/// Storage for one proven USDC deposit record, and for a token's signed-out USDC counter.
+const USDC_DEPOSIT_BYTES: u64 = 120;
+const USDC_OUT_BYTES: u64 = 80;
 
 #[derive(BorshStorageKey)]
 #[near]
@@ -411,7 +417,144 @@ impl Pusaka {
             env::panic_str("MPC key derivation failed; call refresh_key");
         };
         let s: String = serde_json::from_slice(&bytes).expect("key json");
+        raw_put(&format!("ea:{token_id}"), &btc::evm_address_of_mpc_key(&s));
         self.btc_keys.insert(token_id, btc::compress_mpc_key(&s));
+    }
+
+    // ---------- verified USDC (NEAR MPC foreign-transaction verification, domain 3) ----------
+
+    /// The token's EVM address as the contract knows it (from the MPC's uncompressed key).
+    /// Tokens minted before this was stored need one `evm_key` call.
+    pub fn evm_address(&self, token_id: TokenId) -> Option<String> {
+        raw_get::<[u8; 20]>(&format!("ea:{token_id}")).map(|a| format!("0x{}", hex::encode(a)))
+    }
+
+    /// Anyone: fetches the token's key from the MPC again to record its EVM address.
+    pub fn evm_key(&mut self, token_id: TokenId) -> Promise {
+        require!(self.btc_keys.contains_key(&token_id), "NoKey");
+        require!(self.evm_address(token_id.clone()).is_none(), "EvmAddressKnown");
+        Promise::new(self.mpc.clone())
+            .function_call(
+                "derived_public_key",
+                json!({"path": btc_path(&token_id), "predecessor": env::current_account_id(), "domain_id": 0}).to_string().into_bytes(),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(KEY_TGAS),
+            )
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).on_evm_key(token_id))
+    }
+
+    #[private]
+    pub fn on_evm_key(&mut self, token_id: TokenId) {
+        let bytes = env::promise_result_checked(0, 256).unwrap_or_else(|_| env::panic_str("MPC key derivation failed"));
+        let s: String = serde_json::from_slice(&bytes).expect("key json");
+        // same key the token's BTC uses, or something is badly wrong
+        require!(self.btc_keys.get(&token_id) == Some(&btc::compress_mpc_key(&s)), "key mismatch");
+        raw_put(&format!("ea:{token_id}"), &btc::evm_address_of_mpc_key(&s));
+    }
+
+    /// Anyone can prove a USDC deposit into a Pusaka on Base or Arbitrum (the EVM chains NEAR MPC
+    /// verifies). Pass the Transfer log as the chain's RPC returns it. The contract checks it is
+    /// Circle's USDC paying this token's address, hashes the exact facts and asks the MPC network
+    /// to confirm them on a finalized block. Attach ~0.002 NEAR for storage (refunded on failure).
+    #[payable]
+    #[allow(clippy::too_many_arguments)]
+    pub fn prove_usdc_deposit(
+        &mut self,
+        token_id: TokenId,
+        chain_id: U64,
+        tx_hash: String,
+        log_index: U64,
+        transaction_index: U64,
+        block_hash: String,
+        block_number: U64,
+        data: String,
+        topics: Vec<String>,
+    ) -> Promise {
+        let (cid, name, index, usdc_addr) = usdc::chain(chain_id.0).unwrap_or_else(|| env::panic_str("chain not verifiable by NEAR MPC; see usdc::CHAINS"));
+        let to = raw_get::<[u8; 20]>(&format!("ea:{token_id}")).unwrap_or_else(|| env::panic_str("EVM address unknown: call evm_key first"));
+        require!(topics.len() == 3, "a Transfer log has 3 topics");
+        require!(topics[0].trim_start_matches("0x") == usdc::TRANSFER_TOPIC, "not a Transfer log");
+        let mut padded = [0u8; 32];
+        padded[12..].copy_from_slice(&to);
+        require!(usdc::hex32(&topics[2], "topics[2]") == padded, "this Transfer doesn't pay this Pusaka");
+        let amount = usdc::amount(&data);
+        require!(amount > 0, "zero transfer");
+        let tx = usdc::hex32(&tx_hash, "tx_hash");
+        let key = format!("ud:{token_id}:{cid}");
+        let deposits: Vec<UsdcDeposit> = raw_get(&key).unwrap_or_default();
+        require!(!deposits.iter().any(|d| d.tx == tx && d.log_index == log_index.0), "already proven");
+        require!(deposits.len() < MAX_PROVEN, "too many proven USDC deposits");
+        let log = usdc::Log {
+            tx,
+            log_index: log_index.0,
+            tx_index: transaction_index.0,
+            block_hash: usdc::hex32(&block_hash, "block_hash"),
+            block_number: block_number.0,
+            address: hex::decode(usdc_addr).unwrap().try_into().unwrap(),
+            data: data.to_ascii_lowercase(),
+            topics: topics.iter().map(|t| usdc::hex32(t, "topic")).collect(),
+        };
+        let expected = hex::encode(usdc::payload_hash(index, &log));
+        charge_storage(USDC_DEPOSIT_BYTES, 0);
+        let mut request = serde_json::Map::new();
+        request.insert(name.into(), json!({"tx_id": hex::encode(tx), "extractors": [{"Log": {"log_index": log_index.0}}], "finality": "Finalized"}));
+        Promise::new(self.mpc.clone())
+            .function_call_weight(
+                "verify_foreign_transaction",
+                json!({"request": {"request": request, "domain_id": FOREIGN_TX_DOMAIN, "payload_version": 1, "expected_payload_hash": expected}})
+                    .to_string()
+                    .into_bytes(),
+                NearToken::from_yoctonear(1),
+                Gas::from_tgas(SIGN_TGAS),
+                GasWeight(1),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(10))
+                    .with_unused_gas_weight(0)
+                    .on_usdc_proven(token_id, chain_id, hex::encode(tx), log_index, U128(amount), expected, env::predecessor_account_id()),
+            )
+    }
+
+    #[private]
+    #[allow(clippy::too_many_arguments)]
+    pub fn on_usdc_proven(&mut self, token_id: TokenId, chain_id: U64, tx: String, log_index: U64, amount: U128, expected: String, payer: AccountId) -> bool {
+        // Only the MPC contract's answer to our own request reaches here; it carries the payload
+        // hash the network signed after reading the chain itself.
+        let attested = env::promise_result_checked(0, 2048)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .and_then(|v| v["payload_hash"].as_str().map(|h| h.eq_ignore_ascii_case(&expected)))
+            .unwrap_or(false);
+        let key = format!("ud:{token_id}:{}", chain_id.0);
+        let mut deposits: Vec<UsdcDeposit> = raw_get(&key).unwrap_or_default();
+        let tx = usdc::hex32(&tx, "tx");
+        let stored = attested && !deposits.iter().any(|d| d.tx == tx && d.log_index == log_index.0) && deposits.len() < MAX_PROVEN;
+        if stored {
+            deposits.push(UsdcDeposit { tx, log_index: log_index.0, amount: amount.0 });
+            raw_put(&key, &deposits);
+        } else {
+            refund(payer, env::storage_byte_cost().saturating_mul(USDC_DEPOSIT_BYTES as u128));
+        }
+        stored
+    }
+
+    /// Per chain: USDC proven by NEAR MPC, ever signed out by this contract, and what a buyer or
+    /// lender can rely on (`verified` = proven - signed out), in USDC base units (6 decimals).
+    pub fn usdc_info(&self, token_id: TokenId) -> Vec<Value> {
+        usdc::CHAINS
+            .iter()
+            .map(|c| {
+                let deposits: Vec<UsdcDeposit> = raw_get(&format!("ud:{token_id}:{}", c.0)).unwrap_or_default();
+                let proven: u128 = deposits.iter().map(|d| d.amount).sum();
+                let out = raw_get::<u128>(&format!("uo:{token_id}:{}", c.0)).unwrap_or(0);
+                json!({
+                    "chain_id": U64(c.0), "chain": c.1, "usdc": format!("0x{}", c.3),
+                    "verified": U128(proven.saturating_sub(out)), "proven": U128(proven), "signed_out": U128(out),
+                    "deposits": deposits.iter().map(|d| json!({"tx": format!("0x{}", hex::encode(d.tx)), "log_index": U64(d.log_index), "amount": U128(d.amount)})).collect::<Vec<_>>(),
+                })
+            })
+            .collect()
     }
 
     /// Retries key derivation if the mint callback failed.
@@ -674,7 +817,16 @@ impl Pusaka {
         // A buyer only trusts the balance once the chain's nonce has passed the floor.
         let key = format!("{token_id}:{}", chain_id.0);
         let new_entry = !self.eth_nonces.contains_key(&key);
-        charge_storage(if new_entry { ETH_NONCE_BYTES } else { 0 }, 1);
+        // Verified USDC = proven deposits - everything ever signed out, recorded before signing.
+        let usdc_out = usdc::chain(chain_id.0)
+            .filter(|c| erc20.as_deref().is_some_and(|t| t.trim_start_matches("0x").eq_ignore_ascii_case(c.3)))
+            .map(|_| format!("uo:{token_id}:{}", chain_id.0));
+        let new_out = usdc_out.as_ref().is_some_and(|k| !env::storage_has_key(k.as_bytes()));
+        charge_storage(if new_entry { ETH_NONCE_BYTES } else { 0 } + if new_out { USDC_OUT_BYTES } else { 0 }, 1);
+        if let Some(k) = usdc_out {
+            let out = raw_get::<u128>(&k).unwrap_or(0).saturating_add(value_wei.0);
+            raw_put(&k, &out);
+        }
         let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0 + 1);
         self.eth_nonces.insert(key, floor);
         self.bump_epoch(&token_id, 1);
@@ -1236,6 +1388,24 @@ impl Pusaka {
             h.remove(0);
         }
     }
+}
+
+/// A USDC deposit NEAR MPC attested (see usdc.rs).
+#[near(serializers = [borsh])]
+pub struct UsdcDeposit {
+    pub tx: [u8; 32],
+    pub log_index: u64,
+    pub amount: u128,
+}
+
+// ponytail: raw storage under string prefixes (ea:, ud:, uo:) instead of new state fields, so
+// adding verified USDC needed no migration. Upgrade: fold into Pusaka with the next migrate().
+fn raw_get<T: near_sdk::borsh::BorshDeserialize>(key: &str) -> Option<T> {
+    env::storage_read(key.as_bytes()).map(|b| near_sdk::borsh::from_slice(&b).expect("raw storage"))
+}
+
+fn raw_put<T: near_sdk::borsh::BorshSerialize>(key: &str, value: &T) {
+    env::storage_write(key.as_bytes(), &near_sdk::borsh::to_vec(value).unwrap());
 }
 
 fn refund(to: AccountId, amount: NearToken) {
