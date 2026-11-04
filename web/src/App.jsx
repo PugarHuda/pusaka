@@ -662,7 +662,8 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
 
   async function run(what, fn) {
     setBusy(true); setMsg(null);
-    try { const r = await fn(); setMsg({ ok: true, text: `${what}${r?.gasless ? " (gas paid by Pusaka's relayer)" : ""}.` }); await load(); await onDone(); }
+    // refresh first, so the message never shows next to the old owner or the old date
+    try { const r = await fn(); await Promise.all([load(), onDone()]); setMsg({ ok: true, text: `${what}${r?.gasless ? " (gas paid by Pusaka's relayer)" : ""}.` }); }
     catch (err) { setMsg({ ok: false, text: err.message }); }
     finally { setBusy(false); }
   }
