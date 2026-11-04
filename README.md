@@ -148,9 +148,9 @@ token's `metadata.extra` and moves with the NFT. Writing is locked while the tok
 so a buyer gets the letter they saw. Limit, stated plainly: the sealing key is held by the server (derived from its
 secret), so the operator could read letters; NEAR MPC's confidential key derivation (domain 2) is the upgrade path.
 
-Try it: `node scripts/holder-test.mjs` (signs NEP-413 messages with local keys: the holder gets in; a non-holder, a
+Try it: `node scripts/holder-test.mjs` (creates two faucet accounts and mints a Pusaka, then signs NEP-413 messages: the holder gets in; a non-holder, a
 stale or non-numeric timestamp, a signature made for another site, and a key presented for the wrong account are refused).
-`node scripts/handover.mjs` sells a Pusaka twice on testnet and checks the royalty and the room changing hands.
+`node scripts/handover.mjs` mints a Pusaka from a fresh account, seals a letter, sells it twice and checks the 2.5% royalty and the room changing hands. Both run from a clean clone (no keys needed).
 
 ## Per-NFT history
 

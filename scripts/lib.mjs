@@ -1,6 +1,6 @@
 // Node helpers for Pusaka scripts: NEAR accounts and contract calls. Bitcoin helpers live in shared/.
 import { Account, JsonRpcProvider, KeyPair, teraToGas } from "near-api-js";
-import { CONTRACT, NETWORK, NEAR_RPC } from "@pusaka/shared";
+import { CONTRACT, NETWORK, NEAR_RPC, MINT_DEPOSIT, mintedTokenId } from "@pusaka/shared";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -49,6 +49,21 @@ export async function faucetAccount(accountId) {
   if (!res.ok) throw new Error(`faucet ${res.status}: ${await res.text()}`);
   saveKey(accountId, kp);
   return kp;
+}
+
+export async function ensureAccount(id) {
+  if (!fs.existsSync(keyFile(id))) await faucetAccount(id);
+  return account(id);
+}
+
+/** For scripts that must run from a clean clone: faucet accounts pusaka-<role>-<tag>.testnet; the first mints a Pusaka. */
+export async function freshSetup(roles) {
+  const tag = Date.now().toString(36);
+  const ids = [];
+  for (const r of roles) { ids.push(`pusaka-${r}-${tag}.testnet`); await ensureAccount(ids.at(-1)); }
+  const tokenId = mintedTokenId(await callRaw(account(ids[0]), "nft_mint", {}, { deposit: MINT_DEPOSIT }), ids[0]);
+  console.log(`fresh accounts ${ids.join(", ")}; ${ids[0]} minted Pusaka #${tokenId}`);
+  return { ids, tokenId };
 }
 
 export async function view(method, args = {}, contractId = CONTRACT) {

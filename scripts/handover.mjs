@@ -1,14 +1,18 @@
 // Live: a Pusaka changes hands twice; the creator earns a royalty on the resale, and the holder
 // room (sealed letter) opens only for whoever holds it now.
-//   node handover.mjs [token_id=5] [creator] [buyer] [third]
+//   node handover.mjs                          fresh faucet accounts mint, seal a letter, sell twice (clean clone)
+//   node handover.mjs <token_id> <creator> <buyer> <third>   keys from ../.keys
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import { KeyPair, parseNearAmount } from "near-api-js";
 import { holderRoom, accessMessage, nep413Hash } from "../api/_holder.mjs";
-import { account, call, view, keyFile, provider, sleep } from "./lib.mjs";
+import { account, call, view, keyFile, provider, sleep, freshSetup } from "./lib.mjs";
 
-const [id = "5", a = "pusaka-seller.testnet", b = "pusaka-buyer.testnet", c = "pusaka-b-mvzgq3wm.testnet"] = process.argv.slice(2);
+const fresh = process.argv.length <= 2;
+const [id, a, b, c] = fresh ? await freshSetup(["c", "b", "t"]).then(({ ids, tokenId }) => [tokenId, ...ids]) : process.argv.slice(2);
+// ponytail: in-process the letter key comes from LETTER_SECRET; a fresh token gets a letter sealed with it.
+if (fresh) process.env.LETTER_SECRET ??= "local-test-secret";
 const HOST = "pusaka-two.vercel.app";
 const auth = (acct) => {
   const kp = KeyPair.fromString(JSON.parse(fs.readFileSync(keyFile(acct))).private_key);
@@ -31,6 +35,11 @@ const sell = async (seller, buyer, near) => {
   return r;
 };
 
+if (fresh) {
+  const { sealed } = await holderRoom({ token_id: id, auth: auth(a), action: "seal", text: `From the creator of Pusaka #${id}, for whoever holds it.` }, HOST);
+  await call(account(a), "set_letter", { token_id: id, sealed }, { deposit: 10_000_000_000_000_000_000_000n });
+  await sleep(1500);
+}
 console.log("before:", a, "->", (await room(a)).letter ? "opens the letter" : "room", (await room(a)).error ?? "");
 await sell(a, b, "0.1");
 await sleep(1500);

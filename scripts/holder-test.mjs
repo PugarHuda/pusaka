@@ -1,14 +1,16 @@
 // Exercises the holder room end to end against the live contract, signing NEP-413 messages with local keys.
-//   node holder-test.mjs [token_id=5] [holder=pusaka-seller.testnet] [other=pusaka-buyer.testnet]
+//   node holder-test.mjs                      fresh faucet accounts + a new Pusaka (works from a clean clone)
+//   node holder-test.mjs <token_id> <holder> <other>   keys from ../.keys
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { KeyPair } from "near-api-js";
 import fs from "node:fs";
 import { holderRoom, accessMessage, nep413Hash } from "../api/_holder.mjs";
-import { keyFile, account, call, sleep } from "./lib.mjs";
+import { keyFile, account, call, sleep, freshSetup } from "./lib.mjs";
 
 process.env.LETTER_SECRET ??= "local-test-secret";
-const [tokenId = "5", holder = "pusaka-seller.testnet", other = "pusaka-buyer.testnet"] = process.argv.slice(2);
+const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const [tokenId, holder, other] = args.length ? args : await freshSetup(["h", "o"]).then(({ ids, tokenId }) => [tokenId, ...ids]);
 const HOST = "pusaka-two.vercel.app";
 
 function sign(accountId, { at = Date.now(), recipient = HOST, tid = tokenId } = {}) {
