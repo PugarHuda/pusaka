@@ -258,10 +258,10 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Deposit proven by the relayer ("Prove for free", no wallet) | [EYLPHJGX…](https://testnet.near.rocks/tx/EYLPHJGX6rQNDyD6eTMVwmSMR4enPwb75ATDfW4TMWiS): `prove_deposit` signed by `pusaka-relayer.testnet`, returned `true` |
 | Sold on an outside market: Pusaka #2 listed on Mintbase's testnet market (`nft_approve` with a price), bought there by `pusaka-buyer.testnet`; Mintbase called `nft_transfer_payout` | approve [HK7ski1J…](https://testnet.near.rocks/tx/HK7ski1JBYfEKdZoEFkQSHtJuwGts6ZCcUPhwcZ1hMGS), buy [CCxgRJ7i…](https://testnet.near.rocks/tx/CCxgRJ7iwKccnTEwpToZNC9hg3BW17tqqD5oj2X9VXcB); seller received 0.196 NEAR; a withdrawal attempted while approved was refused |
 | The Pusaka's own NEAR account: Pusaka #5 funded its implicit account `0065858e…b2db`, then the contract built a Transfer, the MPC signed it with Ed25519, and NEAR accepted it | [3npsdnYo…](https://testnet.near.rocks/tx/3npsdnYooNieWN5Lc3g7pUGVF6vLZfypj5njZpYnFcjJ): 0.05 NEAR out, signed in 8.4 s |
-| Solana: contract-built System transfer for Pusaka #5's Solana address, signed by the MPC's Ed25519 key | signature verifies for `12Ync8r3…t8vN` (8.0 s); not broadcast because the devnet RPC faucet is closed and the address holds no SOL yet |
+| Solana: contract-built System transfer for Pusaka #5's Solana address, signed by the MPC's Ed25519 key | signature verified for `12Ync8r3…t8vN` (8.9 s), then broadcast: 0.1 SOL sent to Pusaka #1's Solana address, [finalized](https://explorer.solana.com/tx/Pz1o8vTdtViK5Vd9YdbsWPRjwHuwLk6aUmaWvj3ik7UVycmyJEhepWBX5E5UFmLNFm6UmwUjXv31dMe8VT3Qmwb?cluster=devnet) (#5 went 1 → 0.899995 SOL; #1 went 0 → 0.1) |
 | Holder room on the deployed API, sealed letter on-chain | letter stored with `set_letter` ([EZdhBpqg…](https://testnet.near.rocks/tx/EZdhBpqgrzjKGEaVDpGXt8JCBTovTQkdgRHRWRofdHh2)); the holder read it, a non-holder got 403 |
 | Two resales of Pusaka #5 (`scripts/handover.mjs`) | creator `pusaka-seller.testnet` received exactly 0.005 NEAR (2.5% of 0.2); each previous holder was locked out of the room and the new one read the letter |
-| Unit tests | 94 / 94 passing, on the testnet and the mainnet build |
+| Unit tests | 95 / 95 passing, on the testnet and the mainnet build |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here

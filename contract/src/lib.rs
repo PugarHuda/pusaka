@@ -602,15 +602,18 @@ impl Pusaka {
         payer: AccountId,
     ) -> bool {
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
-        if !ok {
-            // Nothing was stored: give the prover back the storage they paid for.
-            refund(payer, env::storage_byte_cost().saturating_mul(PROVEN_BYTES as u128));
-        }
+        let mut stored = false;
         if ok {
             let list = self.proven.entry(token_id).or_default();
+            // A parallel proof of the same outpoint, or the cap, can make this a no-op.
             if list.len() < MAX_PROVEN && !list.iter().any(|u| u.txid == txid && u.vout == vout) {
                 list.push(ProvenUtxo { txid, vout, value });
+                stored = true;
             }
+        }
+        if !stored {
+            // Nothing was stored: give the prover back the storage they paid for.
+            refund(payer, env::storage_byte_cost().saturating_mul(PROVEN_BYTES as u128));
         }
         ok
     }

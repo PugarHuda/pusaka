@@ -746,6 +746,21 @@ fn p6_registry_is_capped() {
 }
 
 #[test]
+fn p8_prover_refunded_whenever_nothing_is_stored() {
+    // Two parallel proofs of one outpoint both pass prove_deposit's "already proven" check;
+    // the second callback stores nothing and must hand the storage deposit back.
+    let refunds = || near_sdk::test_utils::get_created_receipts().iter()
+        .filter(|r| r.receiver_id.as_str() == "bob.testnet").count();
+    let mut c = setup();
+    assert!(proven(&mut c, b"true", 0, 70_000));
+    assert_eq!(refunds(), 0, "stored: keeps the deposit");
+    assert!(proven(&mut c, b"true", 0, 70_000));
+    assert_eq!(refunds(), 1, "duplicate: refunded");
+    assert!(!proven(&mut c, b"false", 1, 70_000));
+    assert_eq!(refunds(), 1, "rejected: refunded");
+}
+
+#[test]
 #[should_panic(expected = "already signed for")]
 fn p7_cannot_reprove_a_signed_outpoint() {
     // After a withdrawal prunes a proven deposit, re-proving that outpoint must fail,
