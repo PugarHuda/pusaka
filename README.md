@@ -48,7 +48,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `134 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h…` the heir) plus storage and input validation.
+See: `135 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h…` the heir) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -223,7 +223,7 @@ The web app shows this verified amount first, offers *Prove deposit* for confirm
 
 - **On-chain dynamic image.** `nft_token(s)` returns `media` as an SVG drawn by the contract (`contract/src/art.rs`) from the token's Bitcoin key: the brass ring fills with BTC *verified by the light client*, and a red seal appears while it's listed, collateral, or signing. Any NEAR wallet shows the current state, no server involved.
 - **Live description:** "Holds 0.00174946 BTC verified on NEAR by the Bitcoin light client."
-- **NEP-297 events:** mints emit `nft_mint` (the standard helper we first used didn't, so indexers missed the collection; `emit_mint_events` re-emitted for older tokens). Transfers, sales and loan defaults emit `nft_transfer`. (NearBlocks' testnet indexer has not processed new blocks since 27 Sep 2026, so the collection doesn't show there yet; the events are on-chain and covered by `n1_mint_emits_nep297_event`.)
+- **NEP-297 events:** mints emit `nft_mint` (the standard helper we first used didn't, so indexers missed the collection; `emit_mint_events` re-emitted for older tokens). Transfers, sales and loan defaults emit `nft_transfer`. Because the image and description are computed live from the verified BTC and the lock state, every change to them (a proven deposit, a listing, a loan, a signature, a sale) emits NEP-171 1.2.0 `nft_metadata_update`, so wallets and indexers know to re-fetch (`n1_mint_emits_nep297_event`, `n4_metadata_update_when_the_art_changes`). Indexed: FastNear's NFT API lists the collection for its holders, e.g. `curl https://test.api.fastnear.com/v1/account/pusaka-buyer.testnet/nft` → `pusaka-btc.testnet`. (NearBlocks' testnet indexer has not processed new blocks since 27 Sep 2026.)
 
 ## For AI agents: Pusaka over MCP
 
@@ -369,7 +369,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
 | USDC attested by NEAR MPC foreign-transaction verification (Base Sepolia, finalized block) | [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m): `on_usdc_proven` true; `usdc_info(5)` verified 0.01 USDC |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
-| Unit tests | 134 / 134 passing, on the testnet and the mainnet build |
+| Unit tests | 135 / 135 passing, on the testnet and the mainnet build |
 | Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192840b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 

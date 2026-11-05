@@ -1640,3 +1640,24 @@ fn h10_another_tokens_holder_doesnt_touch_this_clock() {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.list("1".into(), NearToken::from_near(5), None, None)));
     assert_eq!(c.heir_of("1".into()).unwrap()["last_seen_ms"], "0");
 }
+
+fn metadata_updates() -> usize {
+    near_sdk::test_utils::get_logs().iter()
+        .filter(|l| l.starts_with("EVENT_JSON:") && l.contains("\"event\":\"nft_metadata_update\"") && l.contains("\"token_ids\":[\"1\"]"))
+        .count()
+}
+
+#[test]
+fn n4_metadata_update_when_the_art_changes() {
+    let mut c = setup();
+    // a deposit the light client rejects changes nothing, so nothing is announced
+    assert!(!proven(&mut c, b"false", 0, 100_000));
+    assert_eq!(metadata_updates(), 0);
+    // more verified BTC: new ring and description
+    assert!(proven(&mut c, b"true", 0, 100_000));
+    assert_eq!(metadata_updates(), 1);
+    // listing locks it: the art shows the lock
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    assert_eq!(metadata_updates(), 1, "one event for the listing");
+}

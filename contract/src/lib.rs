@@ -284,6 +284,7 @@ pub struct SignedSpend {
     standard(standard = "nep171", version = "1.2.0"),
     standard(standard = "nep177", version = "2.0.0"),
     standard(standard = "nep178", version = "1.0.0"),
+    standard(standard = "nep181", version = "1.0.0"),
     standard(standard = "nep199", version = "2.0.0"),
     standard(standard = "nep297", version = "1.0.0"),
     standard(standard = "nep330", version = "1.3.0"),
@@ -795,11 +796,14 @@ impl Pusaka {
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
         let mut stored = false;
         if ok {
-            let list = self.proven.entry(token_id).or_default();
+            let list = self.proven.entry(token_id.clone()).or_default();
             // A parallel proof of the same outpoint, or the cap, can make this a no-op.
             if list.len() < MAX_PROVEN && !list.iter().any(|u| u.txid == txid && u.vout == vout) {
                 list.push(ProvenUtxo { txid, vout, value });
                 stored = true;
+            }
+            if stored {
+                emit_metadata_update(&token_id); // more verified BTC: new art and description
             }
         }
         if !stored {
@@ -1516,6 +1520,8 @@ impl Pusaka {
     }
 
     fn log(&mut self, token_id: &str, event: Event) {
+        // Every logged event changes the owner or the lock state, and so the live art (with_art).
+        emit_metadata_update(token_id);
         let h = self.history.entry(token_id.to_string()).or_default();
         h.push(Entry { at_ms: U64(env::block_timestamp_ms()), event });
         // ponytail: bounded so list/cancel spam can't grow storage; full history lives in tx logs
@@ -1523,6 +1529,13 @@ impl Pusaka {
             h.remove(0);
         }
     }
+}
+
+/// NEP-171 1.2.0 `nft_metadata_update`: the token's metadata is computed live (`with_art`), so wallets and
+/// indexers need this to know when to fetch it again.
+fn emit_metadata_update(token_id: &str) {
+    let e = json!({ "standard": "nep171", "version": "1.2.0", "event": "nft_metadata_update", "data": [{ "token_ids": [token_id] }] });
+    env::log_str(&format!("EVENT_JSON:{e}"));
 }
 
 /// A USDC deposit NEAR MPC attested (see usdc.rs).
