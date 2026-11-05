@@ -1383,7 +1383,7 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
     </>)}
     {borrower && ext && <p>{loan.lender} offers {days(ext.extra_ms)} more for {near(ext.fee)} NEAR.{" "}
       {btn("extend", "Accept extension", "Extending…", async () => {
-        await call("accept_extension", { token_id: id }, { deposit: BigInt(ext.fee) });
+        await call("accept_extension", { token_id: id, extra_ms: ext.extra_ms }, { deposit: BigInt(ext.fee) });
         return `Extended. Now due ${when(due + Number(ext.extra_ms))}.`;
       })}</p>}
     {lender && form("propose", async () => {

@@ -1543,6 +1543,11 @@ impl Pusaka {
     }
 }
 
+/// Events a third party can repeat cheaply go to the transaction log only, not the bounded history.
+fn log_only(token_id: &str, e: &Event) {
+    env::log_str(&format!("pusaka #{token_id}: {}", serde_json::to_string(e).unwrap_or_default()));
+}
+
 /// NEP-171 1.2.0 `nft_metadata_update`: the token's metadata is computed live (`with_art`), so wallets and
 /// indexers need this to know when to fetch it again.
 fn emit_metadata_update(token_id: &str) {
@@ -1939,6 +1944,9 @@ pub struct LoanOffer {
     pub duration_ms: U64,
     /// Storage the lender paid for this entry; refunded with the principal.
     pub storage: NearToken,
+    /// For an offer on one token: its sign epoch when the lender looked. Any signature since (a
+    /// withdrawal of the collateral) voids the offer; the borrower's own expected epoch can't.
+    pub sign_epoch: Option<u32>,
 }
 
 /// The lender's offer to move a funded loan's due date by `extra_ms` for `fee`. Bound to the
@@ -1996,7 +2004,11 @@ impl Pusaka {
             repay,
             duration_ms,
             storage: NearToken::from_yoctonear(0),
+            sign_epoch: None,
         };
+        if let Some(t) = &offer.token_id {
+            offer.sign_epoch = Some(self.epoch(t));
+        }
         raw_put(&offer_key(id), &offer);
         let bytes = env::storage_usage() - before;
         offer.storage = env::storage_byte_cost().saturating_mul(bytes as u128);
@@ -2025,7 +2037,11 @@ impl Pusaka {
         self.assert_free(&token_id);
         self.assert_epoch(&token_id, expected_sign_epoch);
         match (&offer.token_id, offer.min_verified_sats) {
-            (Some(t), _) => require!(*t == token_id, "OfferForAnotherToken"),
+            (Some(t), _) => {
+                require!(*t == token_id, "OfferForAnotherToken");
+                // the lender priced this token's BTC at offer time; a withdrawal since bumps the epoch
+                require!(offer.sign_epoch == Some(self.epoch(&token_id)), "StateChanged: the Pusaka signed something after this offer was made");
+            }
             (None, Some(min)) => require!(self.verified_sats(&token_id) >= min.0, "BelowSatsFloor"),
             _ => env::panic_str("bad offer"),
         }
@@ -2084,7 +2100,8 @@ impl Pusaka {
         loan.duration_ms = new_duration_ms;
         loan.due_ms = Some(U64(new_due));
         self.loans.insert(token_id.clone(), loan);
-        self.log(&token_id, Event::LoanRefinanced { from: old.clone(), to, repay: new_repay, due_ms: U64(new_due) });
+        // ponytail: tx log, not the 32-entry history: two accounts refinancing back and forth must not flush it
+        log_only(&token_id, &Event::LoanRefinanced { from: old.clone(), to, repay: new_repay, due_ms: U64(new_due) });
         refund(old, paid);
     }
 
@@ -2116,12 +2133,13 @@ impl Pusaka {
         let key = extension_key(&token_id);
         if !env::storage_has_key(key.as_bytes()) { charge_storage(EXTENSION_BYTES, 0); }
         raw_put(&key, &Extension { lender, due_ms: due, extra_ms: extra_ms.0, fee });
-        self.log(&token_id, Event::ExtensionProposed { extra_ms, fee });
+        log_only(&token_id, &Event::ExtensionProposed { extra_ms, fee }); // repeatable by the lender: kept out of the history
     }
 
     /// The borrower takes the lender's extension before the due date, attaching exactly `fee`.
     #[payable]
-    pub fn accept_extension(&mut self, token_id: TokenId) {
+    /// `extra_ms` restates what the borrower agreed to, so the lender can't swap the proposal just before.
+    pub fn accept_extension(&mut self, token_id: TokenId, extra_ms: U64) {
         let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
         let lender = loan.lender.clone().expect("LoanNotFunded");
         require!(env::predecessor_account_id() == loan.borrower, "NotBorrower");
@@ -2131,6 +2149,7 @@ impl Pusaka {
         let x: Extension = raw_get(&key).expect("NoExtension");
         require!(x.lender == lender && x.due_ms == due, "NoExtension: proposed for an earlier loan or lender");
         require!(env::attached_deposit() == x.fee, format!("WrongFee: attach exactly {}", x.fee));
+        require!(x.extra_ms == extra_ms.0, "TermsChanged: the extension proposal changed");
         let new_due = U64(due.checked_add(x.extra_ms).expect("duration too long"));
         loan.due_ms = Some(new_due);
         self.loans.insert(token_id.clone(), loan);

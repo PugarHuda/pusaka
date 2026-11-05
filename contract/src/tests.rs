@@ -2065,7 +2065,7 @@ fn o12_extension_moves_the_due_date_and_pays_the_fee_to_the_lender() {
     proposed(&mut c);
     assert!(c.loan_extension("1".into()).is_some());
     at("alice.testnet", N(1), 3_000);
-    c.accept_extension("1".into());
+    c.accept_extension("1".into(), U64(DAY_MS));
     assert_eq!(paid_to("bob.testnet"), N(1).as_yoctonear());
     assert_eq!(c.token_info("1".into()).unwrap().loan.unwrap().due_ms, Some(U64(1_000 + 2 * DAY_MS)));
     assert!(c.loan_extension("1".into()).is_none(), "used up");
@@ -2085,7 +2085,7 @@ fn o12_extension_after_the_due_date_fails() {
     let mut c = funded_loan();
     proposed(&mut c);
     at("alice.testnet", N(1), 1_000 + DAY_MS);
-    c.accept_extension("1".into());
+    c.accept_extension("1".into(), U64(DAY_MS));
 }
 
 #[test]
@@ -2094,7 +2094,7 @@ fn o12_extension_with_the_wrong_fee_fails() {
     let mut c = funded_loan();
     proposed(&mut c);
     at("alice.testnet", NearToken::from_millinear(999), 3_000);
-    c.accept_extension("1".into());
+    c.accept_extension("1".into(), U64(DAY_MS));
 }
 
 #[test]
@@ -2105,5 +2105,27 @@ fn o12_old_lenders_extension_dies_with_a_refinance() {
     at("carol.testnet", N(11), 2_500);
     c.refinance_loan("1".into(), N(11), U64(DAY_MS));
     at("alice.testnet", N(1), 3_000);
-    c.accept_extension("1".into());
+    c.accept_extension("1".into(), U64(DAY_MS));
+}
+
+#[test]
+#[should_panic(expected = "StateChanged")]
+fn o13_owner_cannot_withdraw_then_accept_an_offer_made_for_the_full_btc() {
+    let mut c = setup();
+    assert!(proven(&mut c, b"true", 0, 100_000));
+    let id = offer(&mut c, Some("1"), None); // the lender saw 100,000 sats
+    withdraw(&mut c, "alice.testnet", &[0]); // the owner takes the BTC out
+    let _ = sign_ok(&mut c, &[0], &[true]);
+    let now = c.token_info("1".into()).unwrap().sign_epoch;
+    at("alice.testnet", NearToken::from_yoctonear(0), 2_000);
+    c.accept_loan_offer("1".into(), id, now); // the owner's own (current) epoch doesn't help
+}
+
+#[test]
+#[should_panic(expected = "TermsChanged")]
+fn o14_borrower_accepts_only_the_extension_they_saw() {
+    let mut c = funded_loan();
+    proposed(&mut c); // the lender: one day for 1 NEAR
+    at("alice.testnet", N(1), 3_000);
+    c.accept_extension("1".into(), U64(7 * DAY_MS)); // the borrower agreed to a week; the proposal says a day
 }
