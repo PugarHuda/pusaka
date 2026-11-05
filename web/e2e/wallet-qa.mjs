@@ -5,14 +5,23 @@
 //   node wallet-qa.mjs <profileDir> heir                              name heir, free + paid check-in, remove
 //   node wallet-qa.mjs <profileDir> add-form <.keys/heir.json>        add the heir (pusaka-seller)
 //   node wallet-qa.mjs <profileDir> claim                             reconnect as the heir and claim, once due
+//   node wallet-qa.mjs <profileDir> judge <buyId> <lendId>            the README's try-it path: Buy one, Lend on another
 import fs from "node:fs";
 import { chromium } from "playwright";
-const [profile, step, keyFile] = process.argv.slice(2);
+const [profile, step, keyFile, arg2] = process.argv.slice(2);
 const redact = (s) => s.replace(/ed25519:\w+/g, "[key]");
 const dump = (p) => p.evaluate(() => [...document.querySelectorAll("input,textarea,button,label,h1,h2,h3,p,[role=dialog]")]
   .filter((e) => e.offsetParent).map((e) => `${e.tagName}|${(e.placeholder || e.innerText || e.type || "").slice(0, 120)}${e.disabled ? " [disabled]" : ""}`).join("\n"));
 const ctx = await chromium.launchPersistentContext(profile, { headless: true, viewport: { width: 1200, height: 900 } });
 const p = ctx.pages()[0] ?? await ctx.newPage();
+// Some networks can't reach the Bitcoin explorers from a browser (ISP blocks); Node can. Same requests, real answers.
+if (process.env.QA_PROXY_BTC) await ctx.route((u) => ["mempool.space", "blockstream.info"].includes(u.hostname), async (route) => {
+  const r = route.request();
+  try {
+    const res = await fetch(r.url(), { method: r.method(), body: r.postData() ?? undefined, signal: AbortSignal.timeout(20_000) });
+    await route.fulfill({ status: res.status, headers: { "access-control-allow-origin": "*", "content-type": res.headers.get("content-type") ?? "text/plain" }, body: Buffer.from(await res.arrayBuffer()) });
+  } catch { await route.abort(); }
+});
 try {
   if (step === "import-form") {
     await p.goto("https://wallet.intear.tech/");
@@ -145,6 +154,71 @@ try {
     await act("remove heir", () => heirSection().getByRole("button", { name: "Remove heir" }).click());
     const hist = await p.locator("ol.history").innerText();
     console.log("history:", hist.split("\n").filter((l) => /heir|still here/i.test(l)).slice(0, 5).join(" | "));
+  }
+  if (step === "repay") { // switch the app to the borrower (arg: account) and repay the loan on token arg2
+    const [who, id] = [keyFile, arg2];
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
+    await p.waitForTimeout(5000);
+    const acct = p.getByTitle("Disconnect wallet");
+    if (await acct.count()) { await acct.click(); await p.waitForTimeout(2000); }
+    await p.getByRole("button", { name: /connect/i }).first().click();
+    await p.waitForTimeout(3000);
+    await p.getByText("Intear Wallet", { exact: true }).click();
+    await p.waitForTimeout(2000);
+    const pop = ctx.waitForEvent("page", { timeout: 30_000 });
+    for (const fr of p.frames()) { const b = fr.getByText("Web", { exact: true }); if (await b.count()) { await b.first().click(); break; } }
+    const w = await pop;
+    await w.waitForLoadState(); await w.waitForTimeout(4000);
+    await w.screenshot({ path: `${profile}-repay-connect.png` });
+    console.log("connect popup:", (await w.getByRole("button").allInnerTexts()).join(" / ").replace(/s+/g, " ").slice(0, 300));
+    await w.getByText("Selected Account").click(); await w.waitForTimeout(1000); // open the account dropdown
+    await w.getByText(who, { exact: true }).last().click();
+    await w.waitForTimeout(1000);
+    await w.getByRole("button", { name: "Connect", exact: true }).click();
+    await p.waitForTimeout(6000);
+    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    const actions = p.locator("section.actions");
+    const btn = actions.getByRole("button", { name: /^Repay/ });
+    await btn.waitFor({ timeout: 40_000 });
+    const wp = ctx.waitForEvent("page", { timeout: 20_000 });
+    const t0 = Date.now();
+    await btn.click();
+    const w2 = await wp; await w2.waitForLoadState(); await w2.waitForTimeout(4000);
+    await w2.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+    for (let i = 0; i < 90 && !(await actions.getByRole("status").count()); i++) await p.waitForTimeout(1000);
+    console.log(`repay #${id} -> [${(await actions.getByRole("status").allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    await p.waitForTimeout(3000);
+    console.log("after:", (await actions.innerText()).replace(/\s+/g, " ").slice(0, 200));
+  }
+  if (step === "judge") {
+    const [buyId, lendId] = [keyFile, arg2];
+    const actions = () => p.locator("section.actions");
+    // click, approve in the wallet, then wait for the section's result message
+    const act = async (label, button) => {
+      await button.waitFor({ timeout: 40_000 });
+      const pop = ctx.waitForEvent("page", { timeout: 20_000 }).catch(() => null);
+      const t0 = Date.now();
+      await button.click();
+      const w = await pop;
+      if (!w) throw new Error(`${label}: no wallet popup`);
+      await w.waitForLoadState(); await w.waitForTimeout(4000);
+      console.log(`  [${label}] wallet buttons: ${(await w.getByRole("button").allInnerTexts()).join(" / ").replace(/\s+/g, " ").slice(0, 200)}`);
+      await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+      for (let i = 0; i < 90 && !(await actions().getByRole("status").count()); i++) await p.waitForTimeout(1000);
+      console.log(`${label} -> [${(await actions().getByRole("status").allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    };
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${buyId}`);
+    await p.waitForTimeout(4000);
+    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    await act(`buy #${buyId}`, actions().getByRole("button", { name: /^Buy for/ }));
+    await p.waitForTimeout(3000);
+    console.log("owner line:", await p.getByText(/^Owned by/).innerText().catch(() => "?"), "| actions:", (await actions().innerText()).replace(/\s+/g, " ").slice(0, 200));
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${lendId}`);
+    await p.waitForTimeout(5000);
+    console.log("loan before:", (await actions().innerText()).replace(/\s+/g, " ").slice(0, 300));
+    await act(`lend on #${lendId}`, actions().getByRole("button", { name: /^Lend/ }));
+    await p.waitForTimeout(3000);
+    console.log("loan after:", (await actions().innerText()).replace(/\s+/g, " ").slice(0, 300));
   }
   console.log(redact(await dump(p)).split("\n").slice(-3).join("\n"));
   await p.screenshot({ path: `${profile}-${step}.png` });

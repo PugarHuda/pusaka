@@ -5,7 +5,7 @@ import {
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
   nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances,
-  ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE,
+  ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE, exitQuote,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
@@ -26,6 +26,35 @@ function usePrices() {
   }, []);
   return p;
 }
+// One NEAR Intents quote per amount and address per page load, shared by the BTC and loan sections.
+const quotes = new Map();
+function useExitQuote(sats, evm) {
+  const [q, setQ] = useState(null);
+  useEffect(() => {
+    if (!(sats > 0) || !evm) return;
+    const k = `${sats}:${evm}`;
+    if (!quotes.has(k)) quotes.set(k, exitQuote(sats, evm).catch((e) => ({ error: e.message })));
+    let live = true;
+    quotes.get(k).then((x) => live && setQ(x));
+    return () => { live = false; };
+  }, [sats, evm]);
+  return q;
+}
+function ExitQuote({ sats, evm }) {
+  const q = useExitQuote(sats, evm);
+  if (!(sats > 0)) return null;
+  if (!q) return <p className="muted exit-quote">Asking NEAR Intents solvers what this BTC would fetch…</p>;
+  if (q.error) return <p className="muted exit-quote">No NEAR Intents quote right now ({q.error}).</p>;
+  return (
+    <p className="exit-quote">
+      Exit value: swapped through <a href="https://docs.near-intents.org" target="_blank" rel="noreferrer">NEAR Intents</a>, this
+      BTC fetches <strong>{q.usdc.toFixed(2)} USDC</strong> on Base (at least {q.minUsdc.toFixed(2)}), paid to this Pusaka's own
+      EVM address in about {Math.round(q.seconds / 60)} min. <span className="muted">Live solver quote from 1Click (dry run on mainnet
+      liquidity: nothing is sent).</span>
+    </p>
+  );
+}
+
 const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 
 // ---------- data ----------
@@ -280,6 +309,7 @@ function Detail({ id, accountId }) {
           <h2>Bitcoin inside, verified on NEAR</h2>
           <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
           {px && Number(info.verified_sats) > 0 && <p className="muted">About {usd(Number(info.verified_sats) / 1e8 * px.btcUsd)} at mainnet BTC prices.</p>}
+          <ExitQuote sats={Number(info.verified_sats)} evm={evmAddress(info.btc_pubkey)} />
           <p className="muted">
             {Number(info.verified_sats) > 0
               ? <>{Number(info.verified_sats).toLocaleString()} sats proven by the Bitcoin light client on NEAR and never signed
@@ -895,6 +925,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
   const [now] = useState(() => Date.now()); // render-stable "now" for due dates
+  const exit = useExitQuote(info.loan ? Number(info.verified_sats) : 0, evmAddress(info.btc_pubkey)); // shared with the BTC section
 
   async function run(label, fn) {
     setBusy(label); setMsg(null);
@@ -943,6 +974,8 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
             <p className="stats">
               Loan {usd(st.principalUsd)}, collateral {usd(st.collateralUsd)}: loan-to-value <strong>{Number.isFinite(st.ltv) ? pct(st.ltv) : "no verified collateral"}</strong>,
               interest <strong>{pct(st.apr)} a year</strong>. Mainnet prices from mempool.space and Rhea, {px.crossChecked ? "within 5% of CoinGecko" : "not cross-checked (CoinGecko unavailable)"}.
+              {exit?.usdc > 0 && <> If the lender takes the collateral, NEAR Intents solvers pay <strong>{usd(exit.usdc)}</strong> for its BTC
+                right now, {(exit.usdc / st.principalUsd).toFixed(1)}× the loan.</>}
             </p>
           );
         })()}

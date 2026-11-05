@@ -234,3 +234,9 @@ test("the README's try-it stock is there and the relayer can pay for it", async 
   expect(backed.filter((t) => t.listing).length, "Pusakas for sale (run scripts/restock.mjs)").toBeGreaterThanOrEqual(1);
   expect(backed.filter((t) => t.loan && !t.loan.lender).length, "loan requests (run scripts/restock.mjs)").toBeGreaterThanOrEqual(1);
 });
+
+test("a Pusaka's BTC has a live NEAR Intents exit quote, and a loan says how often it covers the loan", async ({ page }) => {
+  await page.goto("/#/pusaka/12");
+  await expect(page.locator(".exit-quote")).toContainText(/fetches [\d.]+ USDC on Base \(at least [\d.]+\)/, { timeout: 40_000 });
+  await expect(page.locator(".actions .stats")).toContainText(/NEAR Intents solvers pay \$[\d.,]+ for its BTC right now, [\d.]+× the loan/, { timeout: 40_000 });
+});

@@ -34,7 +34,7 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 
 1. Open **https://pusaka-two.vercel.app**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
 2. **Buy:** Pusaka #4 is for sale at 0.5 NEAR with 10,000 sats verified on NEAR (#10 and #11 are listed the same way, in case a judge before you bought it). Click *Buy*. **See:** "You own Pusaka #4", and you can now *Withdraw* its BTC to any `tb1…` address.
-3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.55 within 3 days, backed by 101,446 verified sats (loan-to-value under 2%); #12 and #13 ask the same, backed by 10,000 sats each. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
+3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.501 within 3 days (about 24% a year), backed by 90,946 verified sats (loan-to-value about 3%); #12, #13 and #14 ask the same, backed by 10,000 sats each. The page also shows what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
    Stock runs out? `node scripts/restock.mjs` mints new demo Pusakas, funds each with 10,000 sats from #1's own BTC (a real withdrawal), proves them through the light client and lists them; re-run it after a Bitcoin confirmation (it needs the demo account's key, so it is for us, not for judges).
 4. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
 
@@ -104,6 +104,19 @@ npm run dev        # http://localhost:5173
 - **A lender comes first:** while a loan is funded, the heir can't claim; an open listing or loan request of the silent holder is withdrawn when the heir claims, and NEP-178 approvals are cleared, so no market can sell it afterwards.
 - **Public:** `heir_of` shows the heir and the date from which they can claim, on the page and in `pusaka_inspect`, so a buyer knows. Shortest silence: 10 minutes on testnet (to show it), 30 days on mainnet.
 
+**When things go wrong:**
+
+| Case | What happens |
+|---|---|
+| Holder is alive but offline (travel, hospital) | Nothing moves until the full silence has passed; one gas-free `still_here` from any device, or any action on the Pusaka, restarts it. Pick a silence longer than any planned absence. |
+| Holder loses their NEAR key | The heir is their recovery: after the silence, the heir claims the Pusaka and everything it holds. Without an heir, it is lost like any NEAR account. |
+| Heir loses their key, or dies | Nothing breaks: the holder names a new heir (`set_heir`) or removes them; until the silence passes, an heir can do nothing. |
+| Hostile heir | They can only claim after the holder's silence; before that every claim is refused (`h1_heir_claims_only_after_the_silence`; someone else never can: `h3_nobody_else_claims`). The holder can replace or remove them at any time. |
+| Heir's key is stolen | The thief is in the heir's place: they can claim only after the silence. The holder replaces the heir (`set_heir`) and the stolen key is useless. |
+| Holder sells or lends | A sale clears the will; a funded loan blocks the claim, so the lender is paid or takes the collateral first. |
+| Relayer is down or refuses | `still_here` and `claim_inheritance` are ordinary contract calls: the app falls back to the wallet paying the gas. |
+| Our servers disappear | The rules are in the contract (`heir_of`, `claim_inheritance`); any NEAR wallet or CLI can call them, no app needed. |
+
 **Verified live (4 Nov 2026, `node scripts/heir.mjs pusaka-buyer.testnet pusaka-seller.testnet 2 --give-back`):** the holder named an heir with a 10-minute silence; the heir's early claim was refused; the holder [checked in gas-free](https://testnet.near.rocks/tx/BvrzBTo5Ej9bVaw7MhDi3LWx2WYSXJkD9MLD13gmSxa), restarting the clock; after 10 minutes of silence a claim by anyone else was refused and the heir [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn) (history: `HeirSet → StillHere → Inherited`, the Mintbase approval cleared). Deployed wasm: CI's reproducible build of `d90dd3c` (sha256 `fd640732…`, [Ab5153Lm…](https://testnet.near.rocks/tx/Ab5153LmmM4gztjdRqqA1ccwAorCpVTm4k288nXdsb9g)). **Through the web app with a real wallet** (Intear, driven by Playwright: `web/e2e/wallet-qa.mjs`): the holder named an heir, checked in [gas-free](https://testnet.near.rocks/tx/4e2eVr3xLfCrEatxVnYEBcAw9FxxwXXCf4aJKcew2rrQ), checked in again inside the relayer's window with one paid prompt, removed and re-named the heir; after 10 minutes of silence the heir connected and pressed *Claim inheritance*, [relayed gas-free](https://testnet.near.rocks/tx/9ky2ifykN8BppSFr2mEahEXExpZqVveADWeDc1wfBQS7). This run found and fixed three UI bugs: a double wallet prompt when the free check-in was used up, the free/paid choice being made at page load instead of at click, and the result message appearing before the page refreshed. Re-run on the current build (`da6e39f`, where any holder action counts as proof of life): the relayer refused a second free check-in within a tenth of the silence, then [relayed one](https://testnet.near.rocks/tx/6gcNCKkSP9XZpurWXsxoqSX882v9YB8WjSRAAhRwxfcV) a minute later, and the heir [claimed again](https://testnet.near.rocks/tx/4JXv66X9jJ735QyVQSywV8JCeRMKUihnnYJyJXvNF6bu).
 
 ## How it works
@@ -156,6 +169,10 @@ sealed letter.
 
 The holder can write a letter for the next holder, sealed with a key **no server ever sees**: NEAR MPC's confidential key
 derivation (CKD, domain 2 on `v1.signer-prod.testnet`, BLS12-381).
+
+> docs.near.org's Chain Signatures page still lists only the two signing domains. The MPC contract itself runs four:
+> `near view v1.signer-prod.testnet state` shows `0 CaitSith Sign`, `1 Frost Sign`, `2 ConfidentialKeyDerivation CKD`,
+> `3 CaitSith ForeignTx` (source: [near/mpc](https://github.com/near/mpc)). Pusaka uses all four.
 
 1. The browser makes a one-time BLS12-381 key and calls `letter_key(token_id, app_public_key, write_nonce)`. The contract
    checks the caller owns the token and forwards `request_app_private_key` to the MPC under the path
@@ -280,6 +297,15 @@ existed. Try: `node scripts/prove-usdc.mjs <payer.testnet> <token_id>`; the rela
 
 The web app values collateral and listings with live market data: BTC/USD from mempool.space, NEAR (and ETH) from Rhea/Ref, i.e. NEAR DEX prices. A loan shows its loan-to-value and annualised interest; a listing shows how far above or below the BTC's value it is priced. NEAR's on-chain oracles (`pyth-oracle.near`, `pyth-oracle.testnet`, `priceoracle.near`) were all stale when we checked, so the contract doesn't depend on a price; the numbers are labelled as mainnet prices. (Re-checked 4 Nov 2026: `pyth-oracle.testnet` last published in June, `priceoracle.near` returns no prices, and Pyth's Hermes now needs a paid API key.) Each price is cross-checked against CoinGecko: if BTC, NEAR or ETH differ by more than 5% the API answers an error, and the MCP agent's `pusaka_fund_loan` refuses to fund on a single source.
 
+**Exit value through NEAR Intents.** A price feed says what BTC is worth; a lender wants to know what *this* collateral
+sells for. Every Pusaka page (and `pusaka_inspect` over MCP) asks [NEAR Intents](https://docs.near-intents.org) 1Click for a
+live, solver-signed quote to swap its verified BTC into USDC on Base, paid to the Pusaka's own EVM address, and shows the
+amount, the minimum after 1% slippage and the time (about 13 minutes). On a loan it adds how many times that covers the
+loan. The request is `dry: true`: the solvers quote, but no deposit address is opened, so nothing can be sent.
+1Click only quotes mainnet liquidity, so on testnet it prices the same amount of real BTC; below about 6,400 sats it
+answers "amount too low" and the page says so. Code: `shared/intents.mjs`, test `shared/intents.test.mjs`.
+Try: `curl -s -X POST https://1click.chaindefuser.com/v0/quote -H 'content-type: application/json' -d '{"dry":true,"swapType":"EXACT_INPUT","slippageTolerance":100,"originAsset":"nep141:btc.omft.near","depositType":"ORIGIN_CHAIN","destinationAsset":"nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near","amount":"10000","refundTo":"0x578c38a22c2bb08b07b45451f65a7cd4dac50ba8","refundType":"INTENTS","recipient":"0x578C38A22c2BB08b07b45451f65A7CD4daC50Ba8","recipientType":"DESTINATION_CHAIN","deadline":"2030-01-01T00:00:00Z"}'` (Pusaka #12's EVM address).
+
 ## Why the seller can't keep the Bitcoin
 
 Every way we found for a seller to try to keep the BTC after selling, and what stops it:
@@ -297,7 +323,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T5 | Anyone else requests a signature | Owner check; the MPC path can only be used by the contract account | `t5_non_owner_withdraw_fails`, `seller_cannot_withdraw_after_sale` |
 | T6 | Mint a token whose "address" is really yours | The key comes from the MPC contract via an on-chain call, not from the caller | `key_is_compressed_from_mpc_format` |
 | T7 | Fund the token with an unconfirmed (RBF) transaction, sell, then double-spend the deposit back | The safe balance only counts **confirmed** coins; unconfirmed ones are shown separately and not counted | client logic in `shared/btc.mjs` (`balances`) |
-| T8 | `nft_transfer_call` gives the receiver the token mid-call; it withdraws the BTC, then returns an empty token | `nft_transfer_call` is disabled; Pusaka moves only by `nft_transfer` or the built-in market | `transfer_call_is_disabled` |
+| T8 | `nft_transfer_call` gives the receiver the token mid-call; it withdraws the BTC, then returns an empty token | `nft_transfer_call` is disabled (a deliberate deviation from NEP-171's interface); Pusaka moves only by `nft_transfer` or the built-in market | `transfer_call_is_disabled` |
 | T10 | Get an EVM transaction signed, keep it, sell, broadcast later | The contract records a per-chain **nonce floor** (highest signed nonce + 1) before signing. A buyer only counts the ETH once the account's on-chain nonce reaches the floor; until then it shows as at risk | `e1_nonce_floor_recorded_before_signing`, `e1_floor_never_goes_down` |
 | T14 | Sign a NEAR transfer from the Pusaka's own account, keep it, sell, broadcast later | The contract records a **nonce floor** before signing; a buyer counts that NEAR only once the account's access-key nonce reached it | `a2_near_floor_recorded_before_signing_and_never_drops` |
 | T15 | Plant a second key on the Pusaka's NEAR account before selling | The contract builds the transaction itself and only ever signs a single `Transfer` action: no `AddKey`, `DeleteKey` or calls | `a1_near_tx_layout` |
@@ -327,8 +353,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 |---|---|
 | Ownership transfer of the BTC (`buy`, until the transaction and its refunds are final) | **3.0 s**, one NEAR transaction, 0 Bitcoin fees |
 | MPC signature for a 1-input withdrawal (request to signed tx) | 6.8 s – 13.7 s across 5 runs |
-| Bitcoin transactions built by the contract and accepted by testnet4 | [bfdcdcf2…](https://mempool.space/testnet4/tx/bfdcdcf22ea5e1816d995dc27166737a11e25d30c7950a881754526d532bb9e7), [1b6a8926…](https://mempool.space/testnet4/tx/1b6a8926a1b46a0f057bbe30c5eaf1de854f749bad098998d741ea1314817349), [79fd2311…](https://mempool.space/testnet4/tx/79fd2311787dddada2079f75721e1648e6c7d8e7bdf1487aa1b75dde45979e77) (Pusaka #1 funding Pusaka #2), [e5272011…](https://mempool.space/testnet4/tx/e527201185af46e04dddb57411a31790ebfaacb42ff06ea273ea04ff112eef90) (demo with fresh accounts), [7232cac5…](https://mempool.space/testnet4/tx/7232cac5c77f2aebd6e07a7f264531550d033a55b80a754d2d2e63face5962ef), [e2553636…](https://mempool.space/testnet4/tx/e2553636a332080c4b0c1d2417971a8ba362c71f41a7b1aecbfeb4ebcb57d5ce) |
-| Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
+| Bitcoin transactions built by the contract and accepted by testnet4 (2 Nov, before Pusaka moved to testnet3, the network NEAR's light client tracks) | [bfdcdcf2…](https://mempool.space/testnet4/tx/bfdcdcf22ea5e1816d995dc27166737a11e25d30c7950a881754526d532bb9e7), [1b6a8926…](https://mempool.space/testnet4/tx/1b6a8926a1b46a0f057bbe30c5eaf1de854f749bad098998d741ea1314817349), [79fd2311…](https://mempool.space/testnet4/tx/79fd2311787dddada2079f75721e1648e6c7d8e7bdf1487aa1b75dde45979e77) (Pusaka #1 funding Pusaka #2), [e5272011…](https://mempool.space/testnet4/tx/e527201185af46e04dddb57411a31790ebfaacb42ff06ea273ea04ff112eef90) (demo with fresh accounts), [7232cac5…](https://mempool.space/testnet4/tx/7232cac5c77f2aebd6e07a7f264531550d033a55b80a754d2d2e63face5962ef), [e2553636…](https://mempool.space/testnet4/tx/e2553636a332080c4b0c1d2417971a8ba362c71f41a7b1aecbfeb4ebcb57d5ce) |
+| Full flow through the web app with Meteor Wallet (mint, list, buy, withdraw; 2 Nov, on testnet4) | passed; withdrawal [edbf984c…](https://mempool.space/testnet4/tx/edbf984cd4bfc9db49a8305cee4cfd642b14d3c25246167decc8790f45c4caa6) was built in the contract, signed by MPC, assembled and broadcast by the browser |
 | Same key on Ethereum: contract-built EIP-1559 tx for Sepolia, MPC-signed, broadcast | [0x85a7466d…](https://sepolia.etherscan.io/tx/0x85a7466d06d1af540315b8b1fa2b33956a773784742c4352d095f8909478eecb): 0.002 ETH out of Pusaka #1. Before it, the 0.01 ETH deposit showed as **at risk** (an earlier nonce-0 signature existed); once nonce 0 was used on-chain, the rest showed as safe |
 | Trustless deposit proof: testnet3 tx [2caf27f4…](https://mempool.space/testnet/tx/2caf27f4151b0399cb8cc3d89a9b4f9e8dff6d5affe3612be41310a968c035a0) proven by `btc-client-v4.testnet` via `prove_deposit` | `true` in 3.4 s; 176,246 sats verified on NEAR |
 | Gas-free listing from the web app (Meteor *Sign Delegate Action*, NEP-366) | [EN69gz4r…](https://testnet.near.rocks/tx/EN69gz4rrqPk8qyTYJFsNtY5kSZaFHNoXxCKTfrSbdsn): signer `pusaka-relayer.testnet`, a `Delegate` action from `pusaka-w-mvzhtaw8.testnet`; the owner's balance changed by 0 NEAR |

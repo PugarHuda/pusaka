@@ -13,7 +13,7 @@ import {
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
-  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider,
+  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 
@@ -71,6 +71,10 @@ export async function inspect(token_id) {
   const heir = await view("heir_of", { token_id }).catch(() => null);
   if (heir) out.heir = { ...heir, note: "if the holder doesn't check in by claimable_from_ms, this account can claim the Pusaka; a sale clears it" };
   if (px) out.usd = { btc_inside: (verified / 1e8) * px.btcUsd, btc_usd: px.btcUsd, near_usd: px.nearUsd, source: px.crossChecked ? "mempool.space, Rhea; cross-checked with CoinGecko (mainnet prices)" : "mempool.space, Rhea (mainnet prices; second source unavailable)" };
+  // What the BTC really sells for: a solver-signed NEAR Intents quote (dry run, nothing sent), not just a price feed.
+  if (verified && info.btc_pubkey) out.exit_quote = await exitQuote(verified, evmAddress(info.btc_pubkey))
+    .then((q) => ({ usdc_on_base: q.usdc, min_usdc: q.minUsdc, seconds: q.seconds, solver_signature: q.signature, source: "NEAR Intents 1Click, dry run on mainnet liquidity" }))
+    .catch((e) => ({ error: e.message }));
   if (info.listing) {
     const price = toNear(info.price_now);
     out.listing = { seller: info.listing.seller, price_now_near: price, floor_near: toNear(info.listing.floor), ends_ms: info.listing.end_ms };
@@ -81,6 +85,7 @@ export async function inspect(token_id) {
     out.loan = { borrower: l.borrower, lender: l.lender, principal_near: toNear(l.principal), repay_near: toNear(l.repay),
       duration_ms: l.duration_ms, due_ms: l.due_ms };
     if (px) Object.assign(out.loan, loanStats(l, verified, px));
+    if (px && out.exit_quote?.usdc_on_base) out.loan.collateral_exit_covers = out.exit_quote.usdc_on_base / (toNear(l.principal) * px.nearUsd);
   }
   if (info.btc_pubkey) {
     const addr = evmAddress(info.btc_pubkey);
@@ -134,7 +139,7 @@ reg("pusaka_overview", {
 }));
 
 reg("pusaka_inspect", {
-  description: "Full due diligence on one Pusaka: verified BTC and its USD value, ETH (safe vs at risk), listing premium, loan LTV and APR, sign epoch.",
+  description: "Full due diligence on one Pusaka: verified BTC and its USD value, a live NEAR Intents quote for selling that BTC (exit value), ETH (safe vs at risk), listing premium, loan LTV, APR and how many times the collateral's exit value covers the loan, sign epoch.",
   inputSchema: { token_id: z.string() },
 }, tool(({ token_id }) => inspect(token_id)));
 

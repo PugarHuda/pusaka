@@ -548,6 +548,7 @@ export async function broadcastNear(b64) {
   return r.transaction.hash;
 }
 export * from "./ckd.mjs";
+export * from "./intents.mjs";
 
 // ---------- verified USDC: deposits NEAR MPC attests (foreign-transaction verification) ----------
 const contractView = async (method, args, contractId = CONTRACT) => {

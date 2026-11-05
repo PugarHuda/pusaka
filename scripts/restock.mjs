@@ -14,7 +14,7 @@ const SALE = Number(arg("sale", 3)), LOAN = Number(arg("loan", 3)), RESERVE = ar
 const DEMO = "pusaka-buyer.testnet", SATS = 10_000, FEE = 500; // SATS = the contract's MIN_PROVEN_SATS
 const provable = async (t) => (await utxos(btcAddress(t.btc_pubkey))).filter((u) => u.value >= SATS
   && !t.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout));
-const PRICE = parseNearAmount("0.5"), LOAN_TERMS = { principal: PRICE, repay: parseNearAmount("0.55"), duration_ms: String(3 * 86_400_000) };
+const PRICE = parseNearAmount("0.5"), LOAN_TERMS = { principal: PRICE, repay: parseNearAmount("0.501"), duration_ms: String(3 * 86_400_000) };
 const me = account(DEMO);
 const prove = async (t) => {
   const lc = await lightClientHeight();
@@ -42,7 +42,7 @@ for (const t of idle) {
   await prove(t);
   if (+(await view("token_info", { token_id: t.id })).verified_sats === 0) continue;
   if (sale.length < SALE) { await call(me, "list", { token_id: t.id, price: PRICE }); sale.push(t); console.log(`#${t.id}: listed at 0.5 NEAR`); }
-  else if (loan.length < LOAN) { await call(me, "request_loan", { token_id: t.id, ...LOAN_TERMS }); loan.push(t); console.log(`#${t.id}: asks 0.5 NEAR, repays 0.55 in 3 days`); }
+  else if (loan.length < LOAN) { await call(me, "request_loan", { token_id: t.id, ...LOAN_TERMS }); loan.push(t); console.log(`#${t.id}: asks 0.5 NEAR, repays 0.501 in 3 days (~24% a year)`); }
 }
 
 // 2. mint and fund what is still missing
