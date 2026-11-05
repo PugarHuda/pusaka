@@ -12,6 +12,16 @@ import {
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
 export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance"];
 const MAX_TGAS = 100n;
+/** list/cancel/loan-request ping-pong is free for the attacker; one relayed state change per token per minute caps it. */
+export const RELAY_COOLDOWN_MS = 60_000;
+const THROTTLED = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_request"]);
+/** Relayer-paid USDC proofs per token: each leaves 0.002 NEAR of storage, so dust deposits can't drain the relayer. */
+export const MAX_FREE_USDC_PROOFS = 4;
+// ponytail: per-instance memory, not a shared store; Fluid Compute reuses instances so parallel
+// duplicates mostly land here. A shared KV is the upgrade if someone scripts around it.
+const inFlight = new Set();
+const lastProve = new Map();
+const tooSoon = (msg) => Object.assign(new Error(msg), { status: 429 });
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 
@@ -82,7 +92,12 @@ export async function relay(b64) {
   const info = await provider.callFunction({ contractId: CONTRACT, method: "token_info", args: { token_id: String(args.token_id) } });
   const who = sd.delegateAction.senderId;
   let allowed = info?.token?.owner_id === who;
-  if (fc.methodName === "claim_collateral") allowed = info?.loan?.lender === who;
+  // only once overdue: before that the call panics on-chain and the relayer pays for nothing
+  if (fc.methodName === "claim_collateral") allowed = info?.loan?.lender === who && !!info.loan.due_ms && Number(info.loan.due_ms) <= Date.now();
+  if (THROTTLED.has(fc.methodName)) {
+    const last = Number(info?.history?.at(-1)?.at_ms ?? 0);
+    if (Date.now() - last < RELAY_COOLDOWN_MS) throw tooSoon(`Pusaka #${args.token_id} changed ${Math.round((Date.now() - last) / 1000)} s ago; gas-free again in ${Math.ceil((RELAY_COOLDOWN_MS - (Date.now() - last)) / 1000)} s`);
+  }
   if (fc.methodName === "still_here") {
     // the relayer pays: one free check-in per hour (or per tenth of the silence) is plenty;
     // more often than that the holder can still check in by paying their own gas
@@ -98,11 +113,18 @@ export async function relay(b64) {
     allowed = h?.heir === who && Number(h.claimable_from_ms) <= Date.now();
   }
   if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
-  const res = await relayerAccount().signAndSendTransaction({
-    receiverId: sd.delegateAction.senderId,
-    actions: [actions.signedDelegate({ delegateAction: sd.delegateAction, signature: sd.signature })],
-    waitUntil: "FINAL", // the app re-reads views at final; answering earlier shows the user stale state
-  });
+  // the same signed delegate posted N times in parallel would pass every check above N times
+  const key = `${who}:${sd.delegateAction.nonce}`;
+  if (inFlight.has(key)) throw Object.assign(new Error("this signed action is already being relayed"), { status: 409 });
+  inFlight.add(key);
+  let res;
+  try {
+    res = await relayerAccount().signAndSendTransaction({
+      receiverId: sd.delegateAction.senderId,
+      actions: [actions.signedDelegate({ delegateAction: sd.delegateAction, signature: sd.signature })],
+      waitUntil: "FINAL", // the app re-reads views at final; answering earlier shows the user stale state
+    });
+  } finally { inFlight.delete(key); }
   const failure = res.receipts_outcome?.find((r) => r.outcome.status.Failure)?.outcome.status.Failure;
   if (failure) throw Object.assign(new Error(JSON.stringify(failure).match(/Smart contract panicked: ([^"\\]+)/)?.[1] ?? "relayed call failed"), { status: 422 });
   return { tx: res.transaction.hash, sender: sd.delegateAction.senderId, methods: sd.delegateAction.actions.map((a) => a.functionCall.methodName) };
@@ -120,8 +142,14 @@ export async function proveToken(tokenId, relayer) {
     && u.status.block_height + BTC_MIN_CONFIRMATIONS - 1 <= lc
     && !info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout)).slice(0, 4);
   // USDC on Base/Arbitrum, attested by NEAR MPC: only finalized logs (the MPC reads finalized blocks)
-  const usdc = (await usdcToProve(tokenId).catch(() => [])).filter((d) => d.finalized).slice(0, 2);
+  const proved = (await provider.callFunction({ contractId: CONTRACT, method: "usdc_info", args: { token_id: String(tokenId) } }).catch(() => []))
+    .reduce((n, x) => n + x.deposits.length, 0);
+  const usdc = proved >= MAX_FREE_USDC_PROOFS ? [] // past the cap the holder proves (and pays) themselves
+    : (await usdcToProve(tokenId).catch(() => [])).filter((d) => d.finalized).slice(0, Math.min(2, MAX_FREE_USDC_PROOFS - proved));
   if (!todo.length && !usdc.length) return { light_client_height: lc, results: [], usdc: [] };
+  // two proofs of the same token at once would both pay; the contract only dedupes in the callback
+  if (Date.now() - (lastProve.get(String(tokenId)) ?? 0) < 30_000) throw tooSoon("a proof for this Pusaka was just sent; try again in a minute");
+  lastProve.set(String(tokenId), Date.now());
   relayer ??= relayerAccount();
   const results = [];
   for (const u of todo) {

@@ -796,9 +796,11 @@ impl Pusaka {
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
         let mut stored = false;
         if ok {
-            let list = self.proven.entry(token_id.clone()).or_default();
             // A parallel proof of the same outpoint, or the cap, can make this a no-op.
-            if list.len() < MAX_PROVEN && !list.iter().any(|u| u.txid == txid && u.vout == vout) {
+            // a withdrawal signed while the proof was in flight spends it: it must not be stored
+            let spent = self.signed.get(&token_id).is_some_and(|s| s.iter().any(|o| o.txid == txid && o.vout == vout));
+            let list = self.proven.entry(token_id.clone()).or_default();
+            if !spent && list.len() < MAX_PROVEN && !list.iter().any(|u| u.txid == txid && u.vout == vout) {
                 list.push(ProvenUtxo { txid, vout, value });
                 stored = true;
             }
@@ -1459,7 +1461,8 @@ impl Pusaka {
     fn split(&self, token_id: &TokenId, seller: &AccountId, amount: u128) -> Vec<(AccountId, u128)> {
         match self.creator(token_id).filter(|c| c != seller) {
             Some(c) => {
-                let r = amount * ROYALTY_BPS / 10_000;
+                // split before multiplying: a payout in a 24+-decimal FT must not overflow (and panic)
+                let r = amount / 10_000 * ROYALTY_BPS + amount % 10_000 * ROYALTY_BPS / 10_000;
                 vec![(seller.clone(), amount - r), (c, r)]
             }
             None => vec![(seller.clone(), amount)],

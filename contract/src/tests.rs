@@ -1746,3 +1746,25 @@ fn x5_transfer_call_clears_the_heir() {
     assert_eq!(owner(&c), acc("alice.testnet"));
     assert!(c.heir_of("1".into()).is_none());
 }
+
+#[test]
+fn y4_payout_of_a_huge_ft_balance_does_not_overflow() {
+    let c = resold();
+    let big = u128::MAX / 100; // a 24+-decimal FT; `amount * 250` alone would overflow
+    let p = c.nft_payout("1".into(), U128(big), Some(5));
+    let creator = p.payout.get(&acc("alice.testnet")).unwrap().0;
+    let owner = p.payout.get(&acc("bob.testnet")).unwrap().0;
+    assert_eq!(creator + owner, big, "nothing lost or created");
+    assert_eq!(creator, big / 10_000 * 250 + big % 10_000 * 250 / 10_000);
+}
+
+#[test]
+fn p9_a_proof_that_lands_after_a_withdrawal_signed_it_is_not_stored() {
+    let mut c = setup();
+    // the withdrawal signs outpoint 0 while its proof is still in flight
+    withdraw(&mut c, "alice.testnet", &[0]);
+    assert!(proven(&mut c, b"true", 0, 100_000)); // the light client still says it's in a block
+    let info = c.token_info("1".into()).unwrap();
+    assert!(info.proven_utxos.is_empty(), "a spent outpoint takes no MAX_PROVEN slot");
+    assert_eq!(info.verified_sats, U64(0));
+}
