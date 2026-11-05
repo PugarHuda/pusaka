@@ -3,6 +3,7 @@
 //   E2E_URL=http://localhost:5173 npm run e2e -w web
 // Read-only: no wallet, no transactions. Wallet flows were exercised by hand with Meteor (see README).
 import { test, expect } from "@playwright/test";
+import { nearFetch } from "@pusaka/shared";
 
 const errorsOf = (page) => {
   const errors = [];
@@ -223,8 +224,13 @@ test("every Pusaka has an heir section; the will is read from the contract", asy
 });
 
 // Monitoring as much as testing: CI runs this every 6 hours, so it fails before a judge finds an empty shelf.
-test("the README's try-it stock is there and the relayer can pay for it", async ({ request }) => {
-  const rpc = async (params) => (await (await request.post("https://test.rpc.fastnear.com", { data: { jsonrpc: "2.0", id: 1, method: "query", params: { finality: "final", ...params } } })).json()).result;
+test("the README's try-it stock is there and the relayer can pay for it", async () => {
+  // through the app's own RPC failover (FastNear, dRPC, NEAR): one rate-limited RPC must not page us
+  const rpc = async (params) => {
+    const body = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { finality: "final", ...params } }) })).json();
+    if (!body.result) throw new Error(`RPC: ${JSON.stringify(body.error ?? body).slice(0, 200)}`);
+    return body.result;
+  };
   const relayer = await rpc({ request_type: "view_account", account_id: "pusaka-relayer.testnet" });
   expect(Number(BigInt(relayer.amount) / 10n ** 21n) / 1000, "relayer NEAR (top it up)").toBeGreaterThan(2);
   const view = async (method, args) => JSON.parse(Buffer.from((await rpc({ request_type: "call_function", account_id: "pusaka-btc.testnet", method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") })).result).toString());
