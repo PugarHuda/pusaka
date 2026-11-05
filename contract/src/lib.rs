@@ -209,6 +209,13 @@ pub enum Event {
     StillHere,
     /// The heir claimed the Pusaka after the holder stayed silent for `after_ms`.
     Inherited { from: AccountId, to: AccountId },
+    /// The owner took a lender's standing offer; the loan is funded at once.
+    LoanOfferAccepted { offer_id: U64, lender: AccountId, due_ms: U64 },
+    /// A new lender paid the old one in full and took over on terms no worse for the borrower.
+    LoanRefinanced { from: AccountId, to: AccountId, repay: NearToken, due_ms: U64 },
+    LoanPartRepaid { amount: NearToken, remaining: NearToken },
+    ExtensionProposed { extra_ms: U64, fee: NearToken },
+    LoanExtended { due_ms: U64, fee: NearToken },
 }
 
 #[near(serializers = [json, borsh])]
@@ -1914,5 +1921,229 @@ impl Pusaka {
         let payout = self.nft_payout(token_id.clone(), balance, max_len_payout);
         NonFungibleTokenCore::nft_transfer(self, receiver_id, token_id, approval_id, memo);
         payout
+    }
+}
+
+// ---------- loan market: lender offers, refinancing, partial repayment, extensions ----------
+
+/// A lender's standing offer, with `principal` escrowed in the contract. Either for one
+/// token, or for any token with at least `min_verified_sats` proven by the light client.
+#[near(serializers = [json, borsh])]
+#[derive(Clone)]
+pub struct LoanOffer {
+    pub lender: AccountId,
+    pub token_id: Option<TokenId>,
+    pub min_verified_sats: Option<U64>,
+    pub principal: NearToken,
+    pub repay: NearToken,
+    pub duration_ms: U64,
+    /// Storage the lender paid for this entry; refunded with the principal.
+    pub storage: NearToken,
+}
+
+/// The lender's offer to move a funded loan's due date by `extra_ms` for `fee`. Bound to the
+/// lender and due date it was made for, so a stale one (repaid, refinanced) can't be accepted.
+#[near(serializers = [borsh])]
+pub struct Extension {
+    pub lender: AccountId,
+    pub due_ms: u64,
+    pub extra_ms: u64,
+    pub fee: NearToken,
+}
+
+const EXTENSION_BYTES: u64 = 200;
+const MAX_OFFERS_PAGE: u64 = 100;
+// ponytail: raw storage (lo#, lo:, lx:) like the heir feature, so no migration. Offers are
+// listed by scanning the id range; a per-token index is the upgrade if offers get many.
+const OFFER_COUNTER: &str = "lo#";
+
+fn offer_key(id: u64) -> String {
+    format!("lo:{id}")
+}
+
+fn extension_key(token_id: &str) -> String {
+    format!("lx:{token_id}")
+}
+
+#[near]
+impl Pusaka {
+    /// Lender posts a standing offer for one token (`token_id`) or for any token holding at
+    /// least `min_verified_sats` of light-client-proven BTC. Attach `principal` plus storage;
+    /// the excess is refunded. The principal stays escrowed until accepted or cancelled.
+    #[payable]
+    pub fn offer_loan(
+        &mut self,
+        token_id: Option<TokenId>,
+        min_verified_sats: Option<U64>,
+        principal: NearToken,
+        repay: NearToken,
+        duration_ms: U64,
+    ) -> U64 {
+        require!(token_id.is_some() != min_verified_sats.is_some(), "give exactly one of token_id, min_verified_sats");
+        if let Some(t) = &token_id {
+            self.owner_of(t);
+        }
+        require!(!principal.is_zero() && repay >= principal, "need 0 < principal <= repay");
+        require!(duration_ms.0 > 0, "duration_ms must be > 0");
+        let id: u64 = raw_get(OFFER_COUNTER).unwrap_or(0);
+        let before = env::storage_usage();
+        raw_put(OFFER_COUNTER, &(id + 1));
+        let mut offer = LoanOffer {
+            lender: env::predecessor_account_id(),
+            token_id,
+            min_verified_sats,
+            principal,
+            repay,
+            duration_ms,
+            storage: NearToken::from_yoctonear(0),
+        };
+        raw_put(&offer_key(id), &offer);
+        let bytes = env::storage_usage() - before;
+        offer.storage = env::storage_byte_cost().saturating_mul(bytes as u128);
+        raw_put(&offer_key(id), &offer); // same size: u128 is fixed width
+        charge_storage(bytes, principal.as_yoctonear());
+        // ponytail: offers stay out of the token's history so nobody can flush it with cheap offers.
+        env::log_str(&format!("loan_offer {id} by {} for {}", offer.lender, offer.token_id.as_deref().unwrap_or("any")));
+        U64(id)
+    }
+
+    /// The lender takes the offer back with its principal and storage.
+    pub fn cancel_loan_offer(&mut self, offer_id: U64) {
+        let offer: LoanOffer = raw_get(&offer_key(offer_id.0)).expect("NoOffer");
+        require!(env::predecessor_account_id() == offer.lender, "NotLender");
+        env::storage_remove(offer_key(offer_id.0).as_bytes());
+        env::log_str(&format!("loan_offer {} cancelled", offer_id.0));
+        refund(offer.lender, offer.principal.saturating_add(offer.storage));
+    }
+
+    /// The owner takes a standing offer: the loan is funded at once on the offer's terms and
+    /// the principal goes to the owner. Same checks as `request_loan` + `fund_loan`, including
+    /// `expected_sign_epoch` (T4), so the lender's sats floor holds when the loan starts.
+    pub fn accept_loan_offer(&mut self, token_id: TokenId, offer_id: U64, expected_sign_epoch: u32) {
+        let offer: LoanOffer = raw_get(&offer_key(offer_id.0)).expect("NoOffer");
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        self.assert_epoch(&token_id, expected_sign_epoch);
+        match (&offer.token_id, offer.min_verified_sats) {
+            (Some(t), _) => require!(*t == token_id, "OfferForAnotherToken"),
+            (None, Some(min)) => require!(self.verified_sats(&token_id) >= min.0, "BelowSatsFloor"),
+            _ => env::panic_str("bad offer"),
+        }
+        let borrower = env::predecessor_account_id();
+        require!(borrower != offer.lender, "SelfLoan");
+        let due = U64(env::block_timestamp_ms().checked_add(offer.duration_ms.0).expect("duration too long"));
+        // Removed before any transfer: the same offer can't be accepted or cancelled again.
+        env::storage_remove(offer_key(offer_id.0).as_bytes());
+        self.loans.insert(
+            token_id.clone(),
+            Loan {
+                borrower: borrower.clone(),
+                principal: offer.principal,
+                repay: offer.repay,
+                duration_ms: offer.duration_ms,
+                lender: Some(offer.lender.clone()),
+                due_ms: Some(due),
+            },
+        );
+        self.log(&token_id, Event::LoanOfferAccepted { offer_id, lender: offer.lender.clone(), due_ms: due });
+        Promise::new(borrower).transfer(offer.principal).detach();
+        refund(offer.lender, offer.storage);
+    }
+
+    /// Open offers with ids in `[from, from + limit)` and the next id, for paging.
+    pub fn loan_offers(&self, from: Option<U64>, limit: Option<U64>) -> Value {
+        let next: u64 = raw_get(OFFER_COUNTER).unwrap_or(0);
+        let from = from.map_or(0, |f| f.0);
+        let end = from.saturating_add(limit.map_or(MAX_OFFERS_PAGE, |l| l.0.min(MAX_OFFERS_PAGE))).min(next);
+        let offers: Vec<Value> = (from..end)
+            .filter_map(|id| raw_get::<LoanOffer>(&offer_key(id)).map(|o| json!({ "id": U64(id), "offer": o })))
+            .collect();
+        json!({ "next_id": U64(next), "offers": offers })
+    }
+
+    /// Anyone but the borrower takes over a funded, not overdue loan: attach exactly the
+    /// current `repay`, which pays the old lender in full. The new terms may only be better
+    /// for the borrower (repay no higher, due no earlier), so the borrower need not sign.
+    #[payable]
+    pub fn refinance_loan(&mut self, token_id: TokenId, new_repay: NearToken, new_duration_ms: U64) {
+        let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        let old = loan.lender.clone().expect("LoanNotFunded");
+        let due = loan.due_ms.unwrap().0;
+        let now = env::block_timestamp_ms();
+        require!(now < due, "Overdue: only repay or claim now");
+        let to = env::predecessor_account_id();
+        require!(to != loan.borrower, "SelfLoan");
+        require!(to != old, "AlreadyLender");
+        require!(!new_repay.is_zero() && new_repay <= loan.repay, "WorseTerms: new_repay must be > 0 and <= the current repay");
+        let new_due = now.checked_add(new_duration_ms.0).expect("duration too long");
+        require!(new_due >= due, "WorseTerms: the new due date must not be earlier");
+        let paid = env::attached_deposit();
+        require!(paid == loan.repay, format!("attach exactly the current repay, {}", loan.repay));
+        loan.lender = Some(to.clone());
+        loan.repay = new_repay;
+        loan.duration_ms = new_duration_ms;
+        loan.due_ms = Some(U64(new_due));
+        self.loans.insert(token_id.clone(), loan);
+        self.log(&token_id, Event::LoanRefinanced { from: old.clone(), to, repay: new_repay, due_ms: U64(new_due) });
+        refund(old, paid);
+    }
+
+    /// The borrower pays part of the loan before it is due; it goes straight to the lender.
+    /// To pay the rest in full use `repay_loan`, which also releases the Pusaka.
+    #[payable]
+    pub fn repay_partial(&mut self, token_id: TokenId) {
+        let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        let lender = loan.lender.clone().expect("LoanNotFunded");
+        require!(env::predecessor_account_id() == loan.borrower, "NotBorrower");
+        require!(env::block_timestamp_ms() < loan.due_ms.unwrap().0, "Overdue: repay in full with repay_loan");
+        let paid = env::attached_deposit();
+        require!(!paid.is_zero() && paid < loan.repay, "attach less than what is left; use repay_loan for all of it");
+        loan.repay = loan.repay.checked_sub(paid).unwrap();
+        let remaining = loan.repay;
+        self.loans.insert(token_id.clone(), loan);
+        self.log(&token_id, Event::LoanPartRepaid { amount: paid, remaining });
+        Promise::new(lender).transfer(paid).detach();
+    }
+
+    /// The lender offers to move the due date by `extra_ms` for `fee`. Attach storage once.
+    #[payable]
+    pub fn propose_extension(&mut self, token_id: TokenId, extra_ms: U64, fee: NearToken) {
+        let loan = self.loans.get(&token_id).expect("NoLoan");
+        let lender = loan.lender.clone().expect("LoanNotFunded");
+        require!(env::predecessor_account_id() == lender, "NotLender");
+        require!(extra_ms.0 > 0, "extra_ms must be > 0");
+        let due = loan.due_ms.unwrap().0;
+        let key = extension_key(&token_id);
+        if !env::storage_has_key(key.as_bytes()) { charge_storage(EXTENSION_BYTES, 0); }
+        raw_put(&key, &Extension { lender, due_ms: due, extra_ms: extra_ms.0, fee });
+        self.log(&token_id, Event::ExtensionProposed { extra_ms, fee });
+    }
+
+    /// The borrower takes the lender's extension before the due date, attaching exactly `fee`.
+    #[payable]
+    pub fn accept_extension(&mut self, token_id: TokenId) {
+        let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
+        let lender = loan.lender.clone().expect("LoanNotFunded");
+        require!(env::predecessor_account_id() == loan.borrower, "NotBorrower");
+        let due = loan.due_ms.unwrap().0;
+        require!(env::block_timestamp_ms() < due, "Overdue: the extension had to be taken before the due date");
+        let key = extension_key(&token_id);
+        let x: Extension = raw_get(&key).expect("NoExtension");
+        require!(x.lender == lender && x.due_ms == due, "NoExtension: proposed for an earlier loan or lender");
+        require!(env::attached_deposit() == x.fee, format!("WrongFee: attach exactly {}", x.fee));
+        let new_due = U64(due.checked_add(x.extra_ms).expect("duration too long"));
+        loan.due_ms = Some(new_due);
+        self.loans.insert(token_id.clone(), loan);
+        env::storage_remove(key.as_bytes());
+        self.log(&token_id, Event::LoanExtended { due_ms: new_due, fee: x.fee });
+        refund(lender, x.fee);
+    }
+
+    /// The lender's open extension proposal for this token's current loan, if any.
+    pub fn loan_extension(&self, token_id: TokenId) -> Option<Value> {
+        let loan = self.loans.get(&token_id)?;
+        let x: Extension = raw_get(&extension_key(&token_id))?;
+        (loan.lender.as_ref() == Some(&x.lender) && loan.due_ms.map(|d| d.0) == Some(x.due_ms))
+            .then(|| json!({ "lender": x.lender, "extra_ms": U64(x.extra_ms), "fee": x.fee }))
     }
 }
