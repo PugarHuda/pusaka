@@ -196,7 +196,7 @@ footer p { max-width: var(--measure); margin: 0; }
   .detail { grid-template-columns: 1fr; }
   .detail-face { position: static; }
   .history li { grid-template-columns: 1fr; gap: 0; }
-  .net { display: none; }
+  .net { font-size: 0.75em; }
   .bar { flex-wrap: wrap; }
   .wordmark { margin-right: auto; }
 }

@@ -135,7 +135,7 @@ reg("pusaka_overview", {
       for_sale_near: i.price_now ? toNear(i.price_now) : null,
       loan: i.loan ? (i.loan.lender ? "funded" : `asking ${toNear(i.loan.principal)} NEAR`) : null };
   }));
-  return { contract: CONTRACT, network: NETWORK, agent: ACCOUNT_ID ?? "read-only", spend_cap_near: toNear(CAP), spent_near: toNear(spent), pusaka: rows };
+  return { contract: CONTRACT, network: NETWORK, agent: ACCOUNT_ID ?? "read-only", spend_cap_near: toNear(CAP), spent_near: toNear(spent), pusaka: rows.sort((a, b) => Number(a.token_id) - Number(b.token_id)) };
 }));
 
 reg("pusaka_inspect", {

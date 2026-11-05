@@ -60,34 +60,44 @@ const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 
 // ---------- data ----------
 
+const EMPTY_BAL = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
+/** The contract's own numbers only: enough to render the page while the chains answer. */
+async function loadTokenQuick(id) {
+  const info = await view("token_info", { token_id: id });
+  if (!info) return null;
+  return { id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: { ...EMPTY_BAL, loading: true }, eth: null, sol: null, nearAcct: null };
+}
+
 async function loadToken(id) {
   const info = await view("token_info", { token_id: id });
   if (!info) return null;
   const address = info.btc_pubkey ? btcAddress(info.btc_pubkey) : null;
-  let bal = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
-  if (address) bal = await balances(address, info.signed_outpoints).catch(() => ({ ...bal, error: true }));
-  let eth = null;
-  if (info.btc_pubkey) {
-    const ethAddr = evmAddress(info.btc_pubkey);
-    eth = {
-      address: ethAddr,
-      chains: await Promise.all(EVM_CHAINS.map(async (c) => {
+  const ethAddr = info.btc_pubkey && evmAddress(info.btc_pubkey);
+  // every chain at once: a slow Bitcoin explorer no longer delays the EVM, SOL and NEAR reads
+  const [bal, eth, sn] = await Promise.all([
+    address ? balances(address, info.signed_outpoints).catch(() => ({ ...EMPTY_BAL, error: true })) : EMPTY_BAL,
+    ethAddr ? Promise.all([
+      Promise.all(EVM_CHAINS.map(async (c) => {
         const floor = await view("eth_nonce_floor", { token_id: id, chain_id: String(c.chain.id) });
         return evmBalances(ethAddr, floor, c.chain.id).then((b) => ({ ...b, c, floor })).catch(() => ({ c, error: true }));
       })),
       // USDC attested by NEAR MPC (foreign-tx verification), counted by the contract itself
-      verified: await view("usdc_info", { token_id: id }).catch(() => []),
-    };
-  }
-  // The Ed25519 key (MPC domain 1) is both a Solana address and a NEAR implicit account.
-  const [sol, nearAcct] = await Promise.all([
+      view("usdc_info", { token_id: id }).catch(() => []),
+    ]).then(([chains, verified]) => ({ address: ethAddr, chains, verified })) : null,
+    loadEd25519(id, info),
+  ]);
+  return { id, info, address, bal, eth, sol: sn[0], nearAcct: sn[1] };
+}
+
+// The Ed25519 key (MPC domain 1) is both a Solana address and a NEAR implicit account.
+function loadEd25519(id, info) {
+  return Promise.all([
     solAddress(id).then((a) => solBalances(a, info.history).then((b) => ({ ...b, address: a })).catch(() => ({ address: a, error: true }))).catch(() => null),
     nearAccount(id).then(async (a) => {
       const floor = await view("near_nonce_floor", { token_id: id });
       return nearBalances(a, floor).then((b) => ({ ...b, address: a, floor })).catch(() => ({ address: a, floor, error: true }));
     }).catch(() => null),
   ]);
-  return { id, info, address, bal, eth, sol, nearAcct };
 }
 
 function useAccount() {
@@ -155,7 +165,7 @@ export default function App() {
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
       <main>{tokenId === "bad"
-        ? <section><h2>Page not found</h2><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
+        ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
@@ -181,7 +191,7 @@ function Home() {
         // mempool.space never blanks the gallery or the verified total
         const ts = infos.map((info) => ({
           id: info.token.token_id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: null,
-        })).reverse();
+        })).sort((a, b) => Number(b.id) - Number(a.id)); // nft_tokens is in string order ("10" < "2")
         setTokens(ts);
         ts.forEach((t) => t.address && balances(t.address, t.info.signed_outpoints).then((bal) =>
           setTokens((cur) => cur.map((x) => (x.id === t.id ? { ...x, bal } : x)))).catch(() => {}));
@@ -317,6 +327,7 @@ const ACTIVITY = {
   claim_inheritance: "inherited one", nft_approve: "listed one on Mintbase",
   nft_revoke_all: "stopped selling on Mintbase", offer_loan: "offered a loan", cancel_loan_offer: "withdrew a loan offer",
   accept_loan_offer: "took a loan offer", refinance_loan: "refinanced a loan", repay_partial: "repaid part of a loan",
+  letter_key: "opened a sealed letter", set_letter: "sealed a letter for the next holder",
   propose_extension: "offered a loan extension", accept_extension: "extended a loan", nft_transfer: "transferred one", migrate: "upgraded the contract",
   DeployContract: "upgraded the contract",
 };
@@ -354,13 +365,18 @@ function Detail({ id, accountId }) {
   const [t, setT] = useState(null);
   const [missing, setMissing] = useState(false);
   const [failed, setFailed] = useState(false);
-  const refresh = useCallback(() => loadToken(id)
-    .then((x) => { setFailed(false); if (x) setT(x); else setMissing(true); })
-    .catch(() => setFailed(true)), [id]);
+  const refresh = useCallback(() => {
+    let full = false;
+    // contract data renders first; balances from Bitcoin, EVM, Solana and NEAR fill in when they answer
+    loadTokenQuick(id).then((x) => { if (!full) { if (x) setT(x); else setMissing(true); } }).catch(() => {});
+    return loadToken(id)
+      .then((x) => { full = true; setFailed(false); if (x) setT(x); else setMissing(true); })
+      .catch(() => setFailed(true));
+  }, [id]);
   useEffect(() => { refresh(); }, [refresh]);
   const px = usePrices(); // hooks before any early return
 
-  if (missing) return <p className="error">There is no Pusaka #{id}. <a href="#/">See all Pusaka</a></p>;
+  if (missing) return <section><h1>No Pusaka #{id}</h1><p className="error">There is no Pusaka #{id} yet. <a href="#/">See all Pusaka</a></p></section>;
   if (!t && failed) return <p className="error">Couldn't reach NEAR to load Pusaka #{id}. <button onClick={refresh}>Try again</button></p>;
   if (!t) return <p className="muted">Loading Pusaka #{id}…</p>;
 
@@ -400,7 +416,7 @@ function Detail({ id, accountId }) {
           {address ? (
             <p className="addr">
               <a href={`${EXPLORER}/address/${address}`} target="_blank" rel="noreferrer">{address}</a>
-              <CopyButton text={address} />
+              <CopyButton text={address} what="Bitcoin address" />
               <a className="link-btn" href={`bitcoin:${address}?label=${encodeURIComponent(`Pusaka #${id}`)}`}>Open in a Bitcoin wallet</a>
             </p>
           ) : (
@@ -573,7 +589,7 @@ function EthSection({ t, canWithdraw, onDone }) {
       </table>
       <p className="muted">USDC verified on NEAR: deposits the NEAR MPC network read on a finalized block and attested (foreign-transaction verification), minus every USDC this contract ever signed out. Trust it without any EVM RPC.</p>
       {eth.chains.some((b) => b.atRisk > 0n || b.usdcAtRisk > 0n) && <p className="warn">Amounts marked at risk have a signed transaction that hasn't been used on that chain yet, so it could still move them.</p>}
-      <p className="addr"><span>{eth.address}</span> <CopyButton text={eth.address} /></p>
+      <p className="addr"><span>{eth.address}</span> <CopyButton text={eth.address} what="EVM address" /></p>
       {canWithdraw && funded && (
         <form onSubmit={send} className="stack">
           <label>From <span className="row">
@@ -623,7 +639,7 @@ function SolSection({ t, canWithdraw, onDone }) {
         <p className="amount small"><span>{sol9(sol.safe)}</span> SOL</p>
         {sol.atRisk > 0n && <p className="warn">{sol9(sol.atRisk)} SOL is at risk until {new Date(sol.clearAt).toLocaleTimeString()}: a SOL transfer was signed in the last few minutes, and it stays valid until its blockhash expires.</p>}
       </>}
-      <p className="addr"><a href={SOL.explorer(`address/${sol.address}`)} target="_blank" rel="noreferrer">{sol.address}</a> <CopyButton text={sol.address} /></p>
+      <p className="addr"><a href={SOL.explorer(`address/${sol.address}`)} target="_blank" rel="noreferrer">{sol.address}</a> <CopyButton text={sol.address} what="Solana address" /></p>
       {canWithdraw && sol.lamports > 0n && (
         <form onSubmit={send} className="stack">
           <label>Send SOL to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Solana address" required spellCheck="false" /></label>
@@ -669,7 +685,7 @@ function NearAccountSection({ t, canWithdraw, onDone }) {
         {a.atRisk > 0n && <p className="warn">{near(a.atRisk)} NEAR is at risk: a signed transfer for nonce {a.floor} hasn't been used yet.</p>}
         {!a.exists && <p className="muted">Empty so far. Send NEAR to the account below to create it.</p>}
       </>}
-      <p className="addr"><a href={`${NEAR_EXPLORER}/account/${a.address}`} target="_blank" rel="noreferrer">{a.address}</a> <CopyButton text={a.address} /></p>
+      <p className="addr"><a href={`${NEAR_EXPLORER}/account/${a.address}`} target="_blank" rel="noreferrer">{a.address}</a> <CopyButton text={a.address} what="NEAR account" /></p>
       {canWithdraw && a.yocto > 0n && (
         <form onSubmit={send} className="stack">
           <label>Send NEAR to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name.testnet" required spellCheck="false" /></label>
@@ -730,7 +746,7 @@ function NbtcSection({ t, canWithdraw, onDone }) {
       <p className="muted">Withdraw this Pusaka's BTC to the Omni Bridge address below and Near-One's relayer, checking it against
         the same Bitcoin light client, mints nBTC (NEP-141) into the Pusaka's own NEAR account. It moves with the NFT, and
         only its holder can send it: the contract signs one `ft_transfer` on {NBTC}, nothing else.</p>
-      {state.deposit && <p className="addr"><span>{state.deposit}</span> <CopyButton text={state.deposit} label="Copy deposit address" /></p>}
+      {state.deposit && <p className="addr"><span>{state.deposit}</span> <CopyButton text={state.deposit} label="Copy deposit address" what="Omni Bridge deposit address" /></p>}
       {canWithdraw && state.balance > 0n && (
         <form onSubmit={send} className="stack">
           <label>Send nBTC to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name.testnet" required spellCheck="false" autoCapitalize="none" /></label>
@@ -950,10 +966,10 @@ function Ledger({ history }) {
   );
 }
 
-function CopyButton({ text, label = "Copy" }) {
+function CopyButton({ text, label = "Copy", what = "address" }) {
   const [done, setDone] = useState(false);
   return (
-    <button className="link" onClick={() => navigator.clipboard.writeText(text).then(() => setDone(true))}>
+    <button className="link" aria-label={done ? `Copied ${what}` : `Copy ${what}`} onClick={() => navigator.clipboard.writeText(text).then(() => setDone(true))}>
       {done ? "Copied" : label}
     </button>
   );

@@ -42,13 +42,13 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable 
 
 Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the contract.
 
-### 1. Run the unit tests (offline, ~1 min) — Rust
+### 1. Run the unit tests (offline; ~4 min on a cold build, ~10 s after) — Rust
 
 ```sh
 cd contract && cargo test
 ```
 
-See: `144 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h…` the heir) plus storage and input validation.
+See: `175 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -57,25 +57,28 @@ npm install
 npm run demo
 ```
 
-What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the deployed contract):
+What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the deployed contract; the numbers match what the script prints):
 
-1. Two fresh NEAR accounts are created through the public NEAR testnet faucet. **See:** `created pusaka-s-….testnet`.
-2. The seller mints a Pusaka. The contract fetches its Bitcoin key from the MPC contract on-chain. **See:** a `tb1q…` address.
-3. **The one manual step:** send testnet3 BTC to that address, e.g. one click at [coinfaucet.eu/en/btc-testnet](https://coinfaucet.eu/en/btc-testnet/) (one request per IP per 12 h; any testnet3 faucet works). The script waits for **1 Bitcoin confirmation**, then calls `prove_deposit`: the contract parses the transaction, checks it pays this Pusaka, and the on-chain light client verifies the merkle proof. **See:** `proven by btc-client-v4.testnet: true` and `verified on NEAR: … sats`.
-4. The seller lists it for 1 NEAR, then tries to withdraw. **See:** `rejected (Listed)`.
-5. The buyer checks the safe balance and buys. **See:** `sold in ~3s — new owner: pusaka-b-…`. Nothing happened on Bitcoin.
-6. The old owner tries to withdraw. **See:** `rejected (NotOwner)`.
-7. The new owner withdraws 1000 sats. The contract builds the Bitcoin transaction, the MPC network signs it, the script verifies each signature locally and broadcasts. **See:** a `mempool.space/testnet/tx/…` link that the Bitcoin network accepted.
+0. Two fresh NEAR accounts are created through the public NEAR testnet faucet. **See:** `created pusaka-s-….testnet`.
+1. The seller mints a Pusaka. The contract fetches its Bitcoin key from the MPC contract on-chain. **See:** a `tb1q…` address.
+2. **The one manual step:** send testnet3 BTC to that address, e.g. one click at [coinfaucet.eu/en/btc-testnet](https://coinfaucet.eu/en/btc-testnet/) (one request per IP per 12 h; any testnet3 faucet works). The script waits for **1 Bitcoin confirmation**, then calls `prove_deposit`: the contract parses the transaction, checks it pays this Pusaka, and the on-chain light client verifies the merkle proof. **See:** `proven by btc-client-v4.testnet: true` and `verified on NEAR: … sats`.
+3. The seller lists it for 1 NEAR, then tries to withdraw. **See:** `rejected (Listed)`.
+4. The buyer checks the safe balance and buys. **See:** `sold in ~3s — new owner: pusaka-b-…`. Nothing happened on Bitcoin.
+5. The old owner tries to withdraw. **See:** `rejected (NotOwner)`.
+6. The new owner withdraws 1000 sats. The contract builds the Bitcoin transaction, the MPC network signs it, the script verifies each signature locally and broadcasts. **See:** a `mempool.space/testnet/tx/…` link that the Bitcoin network accepted.
+7. The buyer borrows 0.5 NEAR against the Pusaka and the seller lends it. **See:** the borrower's withdrawal rejected with `Collateralised`.
+8. The loan isn't repaid in time and the lender takes the Pusaka with its BTC. **See:** the lender as the new owner.
 
-Already have accounts in `.keys/` and a funded token? `npm run demo -- --token 1 --seller a.testnet --buyer b.testnet` skips steps 1–3.
+Already have accounts in `.keys/` and a funded token? `npm run demo -- --token 1 --seller a.testnet --buyer b.testnet` skips steps 0–2.
 
 ### 2b. End-to-end checks against the live app (~3 min)
 
 ```sh
-npm run e2e -w web          # Playwright, against https://pusaka-two.vercel.app
+npx playwright install chromium   # once, on a fresh machine
+npm run e2e -w web                # Playwright, against https://pusaka-two.vercel.app
 ```
 
-See: `23 passed` (home, detail, not-found recovery, phone layout, no-wallet actions, relayer and API input checks, on-chain NFT image, outside-market listings, EVM/SOL/NEAR accounts, holder room, reserves and badges, nBTC, heir section, security headers, and that the demo stock and the relayer's balance are there). Read-only: no wallet, no transactions. CI runs it on every push and every 6 hours.
+See: `25 passed` (home, detail, not-found recovery, phone layout, no-wallet actions, relayer and API input checks, on-chain NFT image, outside-market listings, EVM/SOL/NEAR accounts, holder room, reserves and badges, nBTC, heir section, security headers, the NEAR Intents exit quote, the Your Pusakas page, and that the demo stock and the relayer's balance are there). Read-only: no wallet, no transactions. CI runs it on every push and every 6 hours.
 
 **Monitoring** (NEAR security checklist: alert on every failed callback receipt). `node scripts/receipt-monitor.mjs [--hours 6]` reads every receipt of every transaction touching `pusaka-btc.testnet` or `pusaka-relayer.testnet` in the last 6 hours (FastNear tx API, no keys). It fails if a receipt the contract sent to itself failed (`on_key`, `on_signed*`, `on_deposit_proven`, `on_usdc_proven`, `nft_resolve_transfer`, ...), or if a token's signing lock (`pending`) has been held for 600+ blocks, which means a callback never cleared it and the owner needs `unlock_stale`. A user's own call that panics on purpose (a refused withdraw, a buy that hits `StateChanged`) is that caller's failed transaction, so it's only counted. CI runs it after the e2e checks, on the same 6-hour schedule.
 
@@ -121,7 +124,7 @@ npm run dev        # http://localhost:5173
 | Relayer is down or refuses | `still_here` and `claim_inheritance` are ordinary contract calls: the app falls back to the wallet paying the gas. |
 | Our servers disappear | The rules are in the contract (`heir_of`, `claim_inheritance`); any NEAR wallet or CLI can call them, no app needed. |
 
-**Verified live (4 Nov 2026, `node scripts/heir.mjs pusaka-buyer.testnet pusaka-seller.testnet 2 --give-back`):** the holder named an heir with a 10-minute silence; the heir's early claim was refused; the holder [checked in gas-free](https://testnet.near.rocks/tx/BvrzBTo5Ej9bVaw7MhDi3LWx2WYSXJkD9MLD13gmSxa), restarting the clock; after 10 minutes of silence a claim by anyone else was refused and the heir [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn) (history: `HeirSet → StillHere → Inherited`, the Mintbase approval cleared). Deployed wasm: CI's reproducible build of `d90dd3c` (sha256 `fd640732…`, [Ab5153Lm…](https://testnet.near.rocks/tx/Ab5153LmmM4gztjdRqqA1ccwAorCpVTm4k288nXdsb9g)). **Through the web app with a real wallet** (Intear, driven by Playwright: `web/e2e/wallet-qa.mjs`): the holder named an heir, checked in [gas-free](https://testnet.near.rocks/tx/4e2eVr3xLfCrEatxVnYEBcAw9FxxwXXCf4aJKcew2rrQ), checked in again inside the relayer's window with one paid prompt, removed and re-named the heir; after 10 minutes of silence the heir connected and pressed *Claim inheritance*, [relayed gas-free](https://testnet.near.rocks/tx/9ky2ifykN8BppSFr2mEahEXExpZqVveADWeDc1wfBQS7). This run found and fixed three UI bugs: a double wallet prompt when the free check-in was used up, the free/paid choice being made at page load instead of at click, and the result message appearing before the page refreshed. Re-run on the current build (`da6e39f`, where any holder action counts as proof of life): the relayer refused a second free check-in within a tenth of the silence, then [relayed one](https://testnet.near.rocks/tx/6gcNCKkSP9XZpurWXsxoqSX882v9YB8WjSRAAhRwxfcV) a minute later, and the heir [claimed again](https://testnet.near.rocks/tx/4JXv66X9jJ735QyVQSywV8JCeRMKUihnnYJyJXvNF6bu).
+**Verified live (4 Nov 2026, `node scripts/heir.mjs pusaka-buyer.testnet pusaka-seller.testnet 2 --give-back`):** the holder named an heir with a 10-minute silence; the heir's early claim was refused; the holder [checked in gas-free](https://testnet.near.rocks/tx/BvrzBTo5Ej9bVaw7MhDi3LWx2WYSXJkD9MLD13gmSxa), restarting the clock; after 10 minutes of silence a claim by anyone else was refused and the heir [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn) (history: `HeirSet → StillHere → Inherited`, the Mintbase approval cleared). Deployed at the time: CI's reproducible build of `d90dd3c` (sha256 `fd640732…`, [Ab5153Lm…](https://testnet.near.rocks/tx/Ab5153LmmM4gztjdRqqA1ccwAorCpVTm4k288nXdsb9g)). **Through the web app with a real wallet** (Intear, driven by Playwright: `web/e2e/wallet-qa.mjs`): the holder named an heir, checked in [gas-free](https://testnet.near.rocks/tx/4e2eVr3xLfCrEatxVnYEBcAw9FxxwXXCf4aJKcew2rrQ), checked in again inside the relayer's window with one paid prompt, removed and re-named the heir; after 10 minutes of silence the heir connected and pressed *Claim inheritance*, [relayed gas-free](https://testnet.near.rocks/tx/9ky2ifykN8BppSFr2mEahEXExpZqVveADWeDc1wfBQS7). This run found and fixed three UI bugs: a double wallet prompt when the free check-in was used up, the free/paid choice being made at page load instead of at click, and the result message appearing before the page refreshed. Re-run on the current build (`da6e39f`, where any holder action counts as proof of life): the relayer refused a second free check-in within a tenth of the silence, then [relayed one](https://testnet.near.rocks/tx/6gcNCKkSP9XZpurWXsxoqSX882v9YB8WjSRAAhRwxfcV) a minute later, and the heir [claimed again](https://testnet.near.rocks/tx/4JXv66X9jJ735QyVQSywV8JCeRMKUihnnYJyJXvNF6bu).
 
 ## How it works
 
@@ -238,7 +241,7 @@ The web app shows this verified amount first, offers *Prove deposit* for confirm
   "env": { "PUSAKA_ACCOUNT_ID": "agent.testnet", "PUSAKA_PRIVATE_KEY": "ed25519:…", "PUSAKA_MAX_SPEND_NEAR": "5" } } } }
 ```
 
-Tools: `pusaka_overview`, `pusaka_inspect` (verified BTC, USD value, ETH safe/at-risk, listing premium, loan LTV/APR, sign epoch), `pusaka_buy`, `pusaka_fund_loan`, `pusaka_repay_loan`, `pusaka_claim_collateral`, `pusaka_list`, `pusaka_cancel_listing`, `pusaka_request_loan`, `pusaka_prove_deposits`, `pusaka_withdraw_btc`, `pusaka_withdraw_eth` (ETH or USDC on any of its EVM chains), `pusaka_withdraw_sol`, `pusaka_withdraw_near` (its own NEAR account), `pusaka_give`, `pusaka_mint`. An agent can move everything a Pusaka holds. **Verified live through an MCP client (4 Nov):** [ETH on Sepolia](https://sepolia.etherscan.io/tx/0xd514c72366e9aa13de1223433544563848e00f020e2b1bef0e98388b35c4e9ed), [SOL on devnet](https://explorer.solana.com/tx/4oNMntvxmefB9L2jEdcmR3UNZC8xq2y2R4zFs18rbk5GhutjKCigezYfL6oLwFS27WnH6V1Uji3CuQi7Dp7ffuqE?cluster=devnet), [NEAR from #5's own account](https://testnet.near.rocks/tx/3YxDKPdAdp9Uy3J4dCojGechY1sXygXHCawwQtTEyk1D), and `pusaka_give` moved #7; it refused a nonexistent receiver, a malformed EVM address and more SOL than the Pusaka holds.
+Tools: `pusaka_overview`, `pusaka_inspect` (verified BTC, USD value, ETH safe/at-risk, listing premium, loan LTV/APR, sign epoch), `pusaka_buy`, `pusaka_fund_loan`, `pusaka_repay_loan`, `pusaka_claim_collateral`, `pusaka_list`, `pusaka_cancel_listing`, `pusaka_request_loan`, `pusaka_prove_deposits`, `pusaka_withdraw_btc`, `pusaka_withdraw_eth` (ETH or USDC on any of its EVM chains), `pusaka_withdraw_sol`, `pusaka_withdraw_near` (its own NEAR account), `pusaka_withdraw_nbtc`, `pusaka_give`, `pusaka_mint`, `pusaka_set_heir`, `pusaka_still_here`, `pusaka_claim_inheritance`. An agent can move everything a Pusaka holds. **Verified live through an MCP client (4 Nov):** [ETH on Sepolia](https://sepolia.etherscan.io/tx/0xd514c72366e9aa13de1223433544563848e00f020e2b1bef0e98388b35c4e9ed), [SOL on devnet](https://explorer.solana.com/tx/4oNMntvxmefB9L2jEdcmR3UNZC8xq2y2R4zFs18rbk5GhutjKCigezYfL6oLwFS27WnH6V1Uji3CuQi7Dp7ffuqE?cluster=devnet), [NEAR from #5's own account](https://testnet.near.rocks/tx/3YxDKPdAdp9Uy3J4dCojGechY1sXygXHCawwQtTEyk1D), and `pusaka_give` moved #7; it refused a nonexistent receiver, a malformed EVM address and more SOL than the Pusaka holds.
 Guard rails the agent can't talk its way around: tools that move a Pusaka or its assets out (`pusaka_give`, `pusaka_withdraw_*`) are off unless the operator sets `PUSAKA_ALLOW_OUTFLOWS=1`, optionally limited to `PUSAKA_ALLOWED_RECIPIENTS`; a per-session NEAR spend cap, `max_price_near` on buys, `max_ltv` on loans (it refuses collateral with no verified BTC), and the same sign-epoch / loan-terms binding as the web app.
 **Remote, no install:** point any MCP client at `https://pusaka-two.vercel.app/api/mcp` (Streamable HTTP) for the read-only tools (`pusaka_overview`, `pusaka_inspect`); check it with `node mcp/remote-smoke.mjs`. Trading tools stay local so the agent's key never leaves its machine.
 **Try:** `npm run smoke -w mcp` (read tools and guards) and `node mcp/trade.mjs <seller> <buyer> <id> <price>`. On testnet one agent listed Pusaka #1 for 0.3 NEAR and another bought it under a 0.35 NEAR cap.
@@ -377,7 +380,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
 | USDC attested by NEAR MPC foreign-transaction verification (Base Sepolia, finalized block) | [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m): `on_usdc_proven` true; `usdc_info(5)` verified 0.01 USDC |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
-| Unit tests | 144 / 144 passing, on the testnet and the mainnet build |
+| Unit tests | 175 / 175 passing, on the testnet and the mainnet build |
 | Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192840b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | The README's try-it path through the web app with a real wallet (Intear, driven by Playwright: `node web/e2e/wallet-qa.mjs <profile> judge 10 12`, then `repay pusaka-buyer.testnet 12`), current build | *Buy* #10: one wallet approval, "You own Pusaka #10…" in 9 s; *Lend* on #12: "Loan funded. The NEAR went to the borrower." in 8 s; the borrower's *Repay*: "Loan repaid. The Pusaka is unlocked." in 7 s. It also showed the old demo terms as 1,217% a year, so the asks now repay 0.501 for 0.5 (about 24% a year) |
 | `nft_metadata_update` (NEP-171 1.2.0) on a live change of the art | listing #15: [8YW6UFg1…](https://testnet.near.rocks/tx/8YW6UFg1qzuE3X8EEv2sQ75fQeFMuFUsP7EsPYRJVQ3F) logs `{"event":"nft_metadata_update","data":[{"token_ids":["15"]}]}` |
