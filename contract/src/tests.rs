@@ -169,14 +169,6 @@ fn unlock_stale_releases_after_timeout() {
 }
 
 #[test]
-#[should_panic(expected = "nft_transfer_call is disabled")]
-fn transfer_call_is_disabled() {
-    let mut c = setup();
-    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
-    let _ = c.nft_transfer_call(acc("market.testnet"), "1".into(), None, None, "".into());
-}
-
-#[test]
 #[should_panic(expected = "StateChanged")]
 fn t4_buy_with_stale_count_fails() {
     let mut c = setup();
@@ -1660,4 +1652,97 @@ fn n4_metadata_update_when_the_art_changes() {
     ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
     c.list("1".into(), NearToken::from_near(5), None, None);
     assert_eq!(metadata_updates(), 1, "one event for the listing");
+}
+
+// ---------- T8: nft_transfer_call locks the token until it resolves ----------
+
+fn transfer_call(c: &mut Pusaka) {
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let _ = c.nft_transfer_call(acc("market.testnet"), "1".into(), None, None, "".into());
+}
+
+/// `answer` is what nft_on_transfer returned (true = give it back); None = it failed.
+fn resolve(c: &mut Pusaka, answer: Option<bool>) -> bool {
+    as_contract(vec![match answer {
+        Some(b) => PromiseResult::Successful(b.to_string().into_bytes()),
+        None => PromiseResult::Failed,
+    }]);
+    c.nft_resolve_transfer(acc("alice.testnet"), acc("market.testnet"), "1".into(), None)
+}
+
+#[test]
+fn x1_receiver_keeps_it_and_may_sign_after_resolve() {
+    let mut c = setup();
+    transfer_call(&mut c);
+    assert_eq!(owner(&c), acc("market.testnet"));
+    assert!(c.token_info("1".into()).unwrap().pending);
+    assert!(resolve(&mut c, Some(false)));
+    assert_eq!(owner(&c), acc("market.testnet"));
+    assert!(!c.token_info("1".into()).unwrap().pending);
+    withdraw(&mut c, "market.testnet", &[0]);
+}
+
+#[test]
+fn x2_receiver_returns_it() {
+    let mut c = setup();
+    transfer_call(&mut c);
+    assert!(!resolve(&mut c, Some(true)));
+    assert_eq!(owner(&c), acc("alice.testnet"));
+    withdraw(&mut c, "alice.testnet", &[0]); // unlocked again
+}
+
+#[test]
+fn x2_failed_receiver_returns_it() {
+    let mut c = setup();
+    transfer_call(&mut c);
+    assert!(!resolve(&mut c, None));
+    assert_eq!(owner(&c), acc("alice.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "TransferCallPending")]
+fn x3_receiver_cannot_withdraw_during_the_call() {
+    let mut c = setup();
+    transfer_call(&mut c);
+    withdraw(&mut c, "market.testnet", &[0]);
+}
+
+#[test]
+#[should_panic(expected = "TransferCallPending")]
+fn x3_receiver_cannot_move_it_on_during_the_call() {
+    let mut c = setup();
+    transfer_call(&mut c);
+    ctx("market.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+}
+
+#[test]
+#[should_panic(expected = "TransferCallPending")]
+fn x4_receiver_cannot_list_during_the_call() {
+    let mut c = setup();
+    transfer_call(&mut c);
+    ctx("market.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+}
+
+#[test]
+#[should_panic(expected = "StateChanged")]
+fn x4_buyer_who_looked_before_the_call_fails() {
+    let mut c = setup();
+    let seen = c.token_info("1".into()).unwrap().sign_epoch;
+    transfer_call(&mut c);
+    resolve(&mut c, Some(true));
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    ctx("bob.testnet", NearToken::from_near(5), vec![]);
+    c.buy("1".into(), seen);
+}
+
+#[test]
+fn x5_transfer_call_clears_the_heir() {
+    let mut c = with_heir();
+    transfer_call(&mut c);
+    resolve(&mut c, Some(true));
+    assert_eq!(owner(&c), acc("alice.testnet"));
+    assert!(c.heir_of("1".into()).is_none());
 }

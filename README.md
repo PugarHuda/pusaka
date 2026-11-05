@@ -323,7 +323,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T5 | Anyone else requests a signature | Owner check; the MPC path can only be used by the contract account | `t5_non_owner_withdraw_fails`, `seller_cannot_withdraw_after_sale` |
 | T6 | Mint a token whose "address" is really yours | The key comes from the MPC contract via an on-chain call, not from the caller | `key_is_compressed_from_mpc_format` |
 | T7 | Fund the token with an unconfirmed (RBF) transaction, sell, then double-spend the deposit back | The safe balance only counts **confirmed** coins; unconfirmed ones are shown separately and not counted | client logic in `shared/btc.mjs` (`balances`) |
-| T8 | `nft_transfer_call` gives the receiver the token mid-call; it withdraws the BTC, then returns an empty token | `nft_transfer_call` is disabled (a deliberate deviation from NEP-171's interface); Pusaka moves only by `nft_transfer` or the built-in market | `transfer_call_is_disabled` |
+| T8 | `nft_transfer_call` gives the receiver the token mid-call; it withdraws the BTC, then returns an empty token | `nft_transfer_call` works as NEP-171 specifies, but the token is locked from the call until `nft_resolve_transfer`: the receiver owns it meanwhile, yet nobody can withdraw, sign, list, lend, approve or move it, and the sign epoch moves so a buyer who looked before must look again. If the receiver asks for it back (or fails), it returns to the sender with every asset in it | `x1_…`–`x5_…` |
 | T10 | Get an EVM transaction signed, keep it, sell, broadcast later | The contract records a per-chain **nonce floor** (highest signed nonce + 1) before signing. A buyer only counts the ETH once the account's on-chain nonce reaches the floor; until then it shows as at risk | `e1_nonce_floor_recorded_before_signing`, `e1_floor_never_goes_down` |
 | T14 | Sign a NEAR transfer from the Pusaka's own account, keep it, sell, broadcast later | The contract records a **nonce floor** before signing; a buyer counts that NEAR only once the account's access-key nonce reached it | `a2_near_floor_recorded_before_signing_and_never_drops` |
 | T15 | Plant a second key on the Pusaka's NEAR account before selling | The contract builds the transaction itself and only ever signs a single `Transfer` action: no `AddKey`, `DeleteKey` or calls | `a1_near_tx_layout` |
@@ -335,7 +335,7 @@ Every way we found for a seller to try to keep the BTC after selling, and what s
 | T20 | Use the Pusaka's NEAR account to call some other contract (or approve one) before selling | From that account the contract signs only a `Transfer` or one `ft_transfer` on the nBTC contract with 1 yocto; it never signs `AddKey`, other calls or approvals | `a1_near_tx_layout`, `b1_nbtc_tx_is_one_ft_transfer_on_the_nbtc_contract_with_one_yocto` |
 | T9 | A failed callback leaves the token locked forever | After ~600 blocks the owner can `unlock_stale`; safe because outpoints were recorded before signing | `unlock_stale_waits_for_timeout`, `unlock_stale_releases_after_timeout` |
 
-`nft_transfer_call` is disabled, and NEP-178 approvals freeze every asset (T13), so no marketplace or third party can move a Pusaka around these locks.
+`nft_transfer_call` locks the token until it resolves (T8), and NEP-178 approvals freeze every asset (T13), so no marketplace or third party can move a Pusaka around these locks.
 
 T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found by independent review passes during QA and fixed with the tests above.
 

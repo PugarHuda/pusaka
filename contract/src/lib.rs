@@ -8,7 +8,7 @@ mod art;
 mod btc;
 mod usdc;
 
-use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
+use near_contract_standards::non_fungible_token::core::{ext_nft_receiver, NonFungibleTokenCore, NonFungibleTokenResolver};
 use near_contract_standards::non_fungible_token::enumeration::NonFungibleTokenEnumeration;
 use near_contract_standards::non_fungible_token::metadata::{
     NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
@@ -1404,7 +1404,7 @@ impl Pusaka {
             listing: self.listings.get(&token_id).cloned(),
             price_now: self.listings.get(&token_id).map(|l| l.price_at(env::block_timestamp_ms())),
             loan: self.loans.get(&token_id).cloned(),
-            pending: self.pending.contains_key(&token_id),
+            pending: self.pending.contains_key(&token_id) || in_transfer_call(&token_id),
             sign_epoch: self.epoch(&token_id),
             signed_outpoints: self.signed.get(&token_id).cloned().unwrap_or_default(),
             proven_utxos: self.proven.get(&token_id).cloned().unwrap_or_default(),
@@ -1487,6 +1487,7 @@ impl Pusaka {
     fn assert_owner(&self, token_id: &TokenId) {
         let owner = self.tokens.owner_by_id.get(token_id).expect("NoToken");
         require!(owner == env::predecessor_account_id(), "NotOwner");
+        require!(!in_transfer_call(token_id), "TransferCallPending");
         let key = heir_key(token_id);
         if let Some(mut h) = raw_get::<Heir>(&key) {
             if h.owner == owner {
@@ -1507,6 +1508,7 @@ impl Pusaka {
     fn assert_unlocked(&self, token_id: &TokenId) {
         require!(self.btc_keys.contains_key(token_id), "KeyNotReady");
         require!(!self.pending.contains_key(token_id), "SignPending");
+        require!(!in_transfer_call(token_id), "TransferCallPending");
         require!(!self.listings.contains_key(token_id), "Listed");
         require!(!self.loans.contains_key(token_id), "Collateralised");
     }
@@ -1571,6 +1573,17 @@ pub struct Heir {
 
 fn heir_key(token_id: &str) -> String {
     format!("hr:{token_id}")
+}
+
+// ponytail: raw `tc:` key, like the heir's, so the lock needed no migration.
+fn transfer_call_key(token_id: &str) -> String {
+    format!("tc:{token_id}")
+}
+
+/// Set from nft_transfer_call until nft_resolve_transfer: the receiver owns the token meanwhile
+/// but nobody can sign, list, lend, approve or move it. No unlock_stale: the resolve always runs.
+fn in_transfer_call(token_id: &str) -> bool {
+    env::storage_has_key(transfer_call_key(token_id).as_bytes())
 }
 
 /// Any change of holder ends the old holder's will: a buyer never inherits someone else's heir.
@@ -1731,22 +1744,62 @@ impl NonFungibleTokenCore for Pusaka {
         self.log(&token_id, Event::Transfer { from, to: receiver_id });
     }
 
-    /// Disabled: during a transfer_call the receiver owns the token mid-flight and could
-    /// withdraw the BTC before handing back an empty token. Use nft_transfer or the market.
+    /// The receiver owns the token during the call but can't withdraw, sign, list or move it
+    /// (T8): the token stays locked until nft_resolve_transfer, which returns it if asked.
     #[payable]
     fn nft_transfer_call(
         &mut self,
-        _receiver_id: AccountId,
-        _token_id: TokenId,
-        _approval_id: Option<u64>,
-        _memo: Option<String>,
-        _msg: String,
+        receiver_id: AccountId,
+        token_id: TokenId,
+        approval_id: Option<u64>,
+        memo: Option<String>,
+        msg: String,
     ) -> PromiseOrValue<bool> {
-        env::panic_str("nft_transfer_call is disabled for Pusaka; use nft_transfer")
+        near_sdk::assert_one_yocto();
+        self.assert_unlocked(&token_id);
+        let sender = env::predecessor_account_id();
+        let (from, approvals) = self.tokens.internal_transfer(&sender, &receiver_id, &token_id, approval_id, memo);
+        clear_heir(&token_id);
+        raw_put(&transfer_call_key(&token_id), &());
+        // A buyer or lender who looked before the call must look again (T4/T19). Nothing was
+        // signed, so no approval cooldown (signed_at) is started.
+        self.sign_epoch.insert(token_id.clone(), self.epoch(&token_id) + 1);
+        self.log(&token_id, Event::Transfer { from: from.clone(), to: receiver_id.clone() });
+        ext_nft_receiver::ext(receiver_id.clone())
+            .with_unused_gas_weight(1)
+            .nft_on_transfer(sender, from.clone(), token_id.clone(), msg)
+            .then(
+                // ponytail: our own resolve gas, not the standard's 5 TGas: if the resolve ran out,
+                // the lock would never clear.
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(CALLBACK_TGAS))
+                    .with_unused_gas_weight(0)
+                    .nft_resolve_transfer(from, receiver_id, token_id, approvals),
+            )
+            .into()
     }
 
     fn nft_token(&self, token_id: TokenId) -> Option<Token> {
         self.tokens.nft_token(token_id).map(|t| self.with_art(t))
+    }
+}
+
+#[near]
+impl NonFungibleTokenResolver for Pusaka {
+    #[private]
+    fn nft_resolve_transfer(
+        &mut self,
+        previous_owner_id: AccountId,
+        receiver_id: AccountId,
+        token_id: TokenId,
+        approved_account_ids: Option<std::collections::HashMap<AccountId, u64>>,
+    ) -> bool {
+        env::storage_remove(transfer_call_key(&token_id).as_bytes());
+        let kept = self.tokens.nft_resolve_transfer(previous_owner_id.clone(), receiver_id.clone(), token_id.clone(), approved_account_ids);
+        if !kept {
+            self.log(&token_id, Event::Transfer { from: receiver_id, to: previous_owner_id });
+        }
+        kept
     }
 }
 
