@@ -20,6 +20,7 @@ export const MAX_FREE_USDC_PROOFS = 4;
 // ponytail: per-instance memory, not a shared store; Fluid Compute reuses instances so parallel
 // duplicates mostly land here. A shared KV is the upgrade if someone scripts around it.
 const inFlight = new Set();
+const lastRelay = new Map(); // token_id -> ms of the last relayed state change sent from this instance
 const lastProve = new Map();
 const tooSoon = (msg) => Object.assign(new Error(msg), { status: 429 });
 
@@ -95,7 +96,8 @@ export async function relay(b64) {
   // only once overdue: before that the call panics on-chain and the relayer pays for nothing
   if (fc.methodName === "claim_collateral") allowed = info?.loan?.lender === who && !!info.loan.due_ms && Number(info.loan.due_ms) <= Date.now();
   if (THROTTLED.has(fc.methodName)) {
-    const last = Number(info?.history?.at(-1)?.at_ms ?? 0);
+    // on-chain history lags the send; this instance's own reservation covers parallel delegates (any nonce)
+    const last = Math.max(Number(info?.history?.at(-1)?.at_ms ?? 0), lastRelay.get(String(args.token_id)) ?? 0);
     if (Date.now() - last < RELAY_COOLDOWN_MS) throw tooSoon(`Pusaka #${args.token_id} changed ${Math.round((Date.now() - last) / 1000)} s ago; gas-free again in ${Math.ceil((RELAY_COOLDOWN_MS - (Date.now() - last)) / 1000)} s`);
   }
   if (fc.methodName === "still_here") {
@@ -117,6 +119,7 @@ export async function relay(b64) {
   const key = `${who}:${sd.delegateAction.nonce}`;
   if (inFlight.has(key)) throw Object.assign(new Error("this signed action is already being relayed"), { status: 409 });
   inFlight.add(key);
+  if (THROTTLED.has(fc.methodName)) lastRelay.set(String(args.token_id), Date.now()); // reserve before awaiting
   let res;
   try {
     res = await relayerAccount().signAndSendTransaction({
