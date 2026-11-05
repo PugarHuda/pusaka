@@ -246,3 +246,13 @@ test("a Pusaka's BTC has a live NEAR Intents exit quote, and a loan says how oft
   await expect(page.locator(".exit-quote")).toContainText(/fetches [\d.]+ USDC on Base \(at least [\d.]+\)/, { timeout: 40_000 });
   await expect(page.locator(".actions .stats")).toContainText(/NEAR Intents solvers pay \$[\d.,]+ for its BTC right now, [\d.]+× the loan/, { timeout: 40_000 });
 });
+
+test("Your Pusakas without a wallet asks to connect, and fits a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#/mine");
+  await expect(page.getByRole("heading", { name: "Your Pusakas", level: 1 })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".mine")).toContainText("Connect your NEAR wallet to see the Pusakas you hold");
+  await expect(page.locator(".mine").getByRole("button", { name: "Connect NEAR wallet" })).toBeVisible();
+  await expect(page).toHaveTitle(/Your Pusakas/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
