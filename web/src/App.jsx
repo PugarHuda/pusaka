@@ -10,6 +10,7 @@ import {
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
+import { loadInfos, loadMine } from "./mine.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
 const eth6 = (wei) => Number(formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 6 });
@@ -110,6 +111,7 @@ function useRoute() {
     return () => removeEventListener("hashchange", f);
   }, []);
   if (/^#?\/?$/.test(hash)) return null; // home
+  if (/^#\/mine\/?$/.test(hash)) return "mine";
   const m = hash.match(/^#\/pusaka\/(\d{1,30})\/?$/);
   return m ? String(BigInt(m[1])) : "bad"; // "007" is #7; "1abc", "-1" and "#/x" aren't pages
 }
@@ -120,7 +122,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -143,6 +145,7 @@ export default function App() {
         <span className="net">{NETWORK === "mainnet" ? "Mainnet" : "Testnet demo"}</span>
         {accountId ? (
           <div className="who">
+            <a href="#/mine" className="nav-link">Your Pusakas</a>
             <button className="ghost" onClick={mint} disabled={!!minting && minting.endsWith("…")}>Mint a Pusaka</button>
             <button className="ghost" onClick={() => connector.disconnect()} title="Disconnect wallet">{accountId}</button>
           </div>
@@ -153,6 +156,7 @@ export default function App() {
       {minting && <p className="toast" role="status">{minting}</p>}
       <main>{tokenId === "bad"
         ? <section><h2>Page not found</h2><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
+        : tokenId === "mine" ? <Mine accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
@@ -171,13 +175,11 @@ function Home() {
   const [error, setError] = useState("");
   const px = usePrices();
   useEffect(() => {
-    view("nft_tokens", { from_index: "0", limit: 60 })
-      // allSettled: one token that fails to load must not hide the rest of the gallery
-      .then((ts) => Promise.allSettled(ts.map((t) => view("token_info", { token_id: t.token_id }))))
-      .then((rs) => {
+    loadInfos()
+      .then((infos) => {
         // the contract's numbers first; Bitcoin balances from Esplora fill in after, so a slow
         // mempool.space never blanks the gallery or the verified total
-        const ts = rs.filter((r) => r.status === "fulfilled" && r.value).map(({ value: info }) => ({
+        const ts = infos.map((info) => ({
           id: info.token.token_id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: null,
         })).reverse();
         setTokens(ts);
@@ -235,6 +237,75 @@ function Home() {
         ))}
       </section>
     </>
+  );
+}
+
+// ---------- your pusakas ----------
+
+/** One line on where a Pusaka stands, from its token_info. */
+function stateOf(info, now) {
+  if (info.pending) return "Locked while NEAR MPC signs";
+  if (info.listing) return `For sale at ${near(info.price_now ?? info.listing.price)} NEAR`;
+  if (info.loan?.lender) return `Collateral: ${near(info.loan.repay)} NEAR ${now >= Number(info.loan.due_ms) ? "was" : "is"} due ${when(info.loan.due_ms)}`;
+  if (info.loan) return `Asking to borrow ${near(info.loan.principal)} NEAR`;
+  if (Object.keys(info.token.approved_account_ids ?? {}).length > 0) return "On sale on Mintbase";
+  return "Not for sale";
+}
+
+function MineRow({ info, note, now }) {
+  const id = info.token.token_id;
+  return (
+    <li>
+      <a href={`#/pusaka/${id}`}>Pusaka #{id}</a>
+      <span className="mine-btc">{btc(Number(info.verified_sats))} BTC verified</span>
+      <span className="muted">{note ?? stateOf(info, now)}</span>
+    </li>
+  );
+}
+
+function Mine({ accountId }) {
+  const [got, setGot] = useState(null); // { accountId, mine } or { accountId, error }, so a switched wallet never shows the old one's
+  const [now] = useState(() => Date.now());
+  useEffect(() => {
+    if (!accountId) return;
+    let live = true;
+    loadMine(accountId).then((mine) => live && setGot({ accountId, mine }))
+      .catch((e) => live && setGot({ accountId, error: `Couldn't read the contract: ${e.message}` }));
+    return () => { live = false; };
+  }, [accountId]);
+  const cur = got?.accountId === accountId ? got : null;
+  const m = cur?.mine, error = cur?.error;
+
+  if (!accountId) return (
+    <section className="mine">
+      <h1>Your Pusakas</h1>
+      <p>Connect your NEAR wallet to see the Pusakas you hold, your loans and the ones that name you as heir.</p>
+      <button onClick={() => connector.connect()}>Connect NEAR wallet</button>
+    </section>
+  );
+  return (
+    <section className="mine">
+      <h1>Your Pusakas</h1>
+      <p className="muted">Read from {CONTRACT} for {accountId}.</p>
+      {error && <p className="error">{error}</p>}
+      {!m && !error && <p className="muted">Reading the contract…</p>}
+      {m && <>
+        <h2>You hold</h2>
+        {m.held.length ? <ul>{m.held.map((i) => <MineRow key={i.token.token_id} info={i} now={now} />)}</ul>
+          : <p className="muted">You don't hold a Pusaka yet. <a href="#/">See all Pusaka</a>, or mint one from the header.</p>}
+        {m.others?.length > 0 && <p className="muted">This account also holds NFTs from: {m.others.join(", ")}.</p>}
+
+        <h2>Loans</h2>
+        {m.loans.length ? <ul>{m.loans.map((i) => <MineRow key={i.token.token_id} info={i} now={now}
+          note={!i.loan.lender ? stateOf(i, now) : `${i.loan.lender === accountId ? `You lent ${near(i.loan.principal)} NEAR to ${i.loan.borrower}` : `You borrowed ${near(i.loan.principal)} NEAR from ${i.loan.lender}`}. ${stateOf(i, now)}`} />)}</ul>
+          : <p className="muted">No loans. You haven't borrowed against a Pusaka or lent against one.</p>}
+
+        <h2>You are the heir</h2>
+        {m.heirOf.length ? <ul>{m.heirOf.map(({ info, heir }) => <MineRow key={info.token.token_id} info={info} now={now}
+          note={now >= Number(heir.claimable_from_ms) ? `Claimable now from ${info.token.owner_id}` : `Claimable from ${when(heir.claimable_from_ms)} if ${info.token.owner_id} stays silent`} />)}</ul>
+          : <p className="muted">No Pusaka names you as its heir.</p>}
+      </>}
+    </section>
   );
 }
 

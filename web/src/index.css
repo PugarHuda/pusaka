@@ -232,3 +232,11 @@ textarea:focus, select:focus { border-color: var(--ink); outline: none; }
 .ledger dd { margin: 0; overflow-wrap: anywhere; }
 .addr span { overflow-wrap: anywhere; }
 .badge-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.nav-link { align-self: center; font-size: 0.95rem; padding: 0.35em 0.2em; }
+.mine { padding-top: 2.5rem; max-width: var(--measure); }
+.mine h1 { font-size: clamp(2rem, 5vw, 2.8rem); letter-spacing: -0.03em; margin: 0 0 0.4rem; }
+.mine h2 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
+.mine ul { list-style: none; padding: 0; margin: 0; }
+.mine li { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; padding: 0.55rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.mine li a { font-weight: 700; }
+.mine-btc { font-variant-numeric: tabular-nums; }
