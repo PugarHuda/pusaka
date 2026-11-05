@@ -47,5 +47,7 @@ jobs:
       - run: npm run build -w web
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e -w web
+      - run: node scripts/receipt-monitor.mjs --self-test
+      - run: node scripts/receipt-monitor.mjs --hours 6   # failed callback receipts / stale signing locks on testnet
       - run: node mcp/remote-smoke.mjs
       - run: npm run smoke -w mcp   # local MCP server; guards refuse before signing (throwaway key)
