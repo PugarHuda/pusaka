@@ -48,7 +48,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `124 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account) plus storage and input validation.
+See: `134 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h…` the heir) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -69,13 +69,13 @@ What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the 
 
 Already have accounts in `.keys/` and a funded token? `npm run demo -- --token 1 --seller a.testnet --buyer b.testnet` skips steps 1–3.
 
-### 2b. End-to-end checks against the live app (~20 s)
+### 2b. End-to-end checks against the live app (~3 min)
 
 ```sh
 npm run e2e -w web          # Playwright, against https://pusaka-two.vercel.app
 ```
 
-See: `7 passed` (home, detail, not-found recovery, phone layout, no-wallet actions, relayer input checks, on-chain NFT image).
+See: `23 passed` (home, detail, not-found recovery, phone layout, no-wallet actions, relayer and API input checks, on-chain NFT image, outside-market listings, EVM/SOL/NEAR accounts, holder room, reserves and badges, nBTC, heir section, security headers, and that the demo stock and the relayer's balance are there). Read-only: no wallet, no transactions. CI runs it on every push and every 6 hours.
 
 ### 3. Use the web app
 
@@ -321,7 +321,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 - The testnet contract is deployed with a full-access key we hold. A production deployment must remove it (or use a DAO) so the code can't be swapped.
 - Testnet only. No mainnet funds were used.
 
-## Measured on testnet (2 Nov 2026)
+## Measured on testnet (2–5 Nov 2026)
 
 | What | Result |
 |---|---|
@@ -343,7 +343,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
 | USDC attested by NEAR MPC foreign-transaction verification (Base Sepolia, finalized block) | [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m): `on_usdc_proven` true; `usdc_info(5)` verified 0.01 USDC |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
-| Unit tests | 124 / 124 passing, on the testnet and the mainnet build |
+| Unit tests | 134 / 134 passing, on the testnet and the mainnet build |
+| Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192840b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | Loan on testnet: request, fund, collateral locked, default, lender claims Pusaka + BTC; and request, fund, repay | passed (`npm run demo` steps 7–8) |
 
 ## What NEAR makes possible here
