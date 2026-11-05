@@ -67,7 +67,8 @@ export async function nearFetch(init) {
   let last;
   for (const url of NEAR_RPCS) {
     try {
-      const r = await fetch(url, init);
+      // a hung endpoint must fail over too, not hold the caller forever
+      const r = await fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(10_000) });
       if (r.status === 429 || r.status >= 500) { last = new Error(`${url}: HTTP ${r.status}`); continue; }
       // FastNear also reports rate limits inside a 200 body
       if ((await r.clone().json().catch(() => null))?.error?.code === -429) { last = new Error(`${url}: rate limited`); continue; }
@@ -95,18 +96,26 @@ export const NEAR_EXPLORER = CONFIG.nearExplorer;
 export const MEMPOOL = `${CONFIG.mempool}/api`;
 export const ESPLORA = [MEMPOOL, CONFIG.esploraFallback];
 
+const downUntil = new Map(); // endpoint -> ms; a failed endpoint is tried last for a while
+export const ESPLORA_COOLDOWN_MS = 5 * 60_000;
+
 /**
  * Esplora request with failover (mempool.space, then Blockstream) on timeouts, 429 and 5xx.
  * A 4xx answer (bad tx, unknown address) is the answer: returned, not retried elsewhere.
+ * An endpoint that fails goes to the back of the line for ESPLORA_COOLDOWN_MS, so a page making
+ * twenty requests waits out one timeout, not twenty.
  */
 export async function btcFetch(path, init = {}, timeoutMs = 10_000) {
   let last;
-  for (const base of ESPLORA) {
+  const now = Date.now();
+  const order = [...ESPLORA].sort((a, b) => ((downUntil.get(a) ?? 0) > now) - ((downUntil.get(b) ?? 0) > now));
+  for (const base of order) {
     try {
       const r = await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-      if (r.status === 429 || r.status >= 500) { last = new Error(`${new URL(base).host} answered ${r.status} for ${path}`); continue; }
+      if (r.status === 429 || r.status >= 500) throw new Error(`${new URL(base).host} answered ${r.status} for ${path}`);
+      downUntil.delete(base);
       return r;
-    } catch (e) { last = e; }
+    } catch (e) { last = e; downUntil.set(base, Date.now() + ESPLORA_COOLDOWN_MS); }
   }
   throw last;
 }
@@ -250,7 +259,7 @@ export const BTC_CONNECTOR = CONFIG.btcConnector;
 
 /** The Omni BTC connector address that mints nBTC to `recipient` (registered with Near-One's relayer, which verifies the deposit). */
 export async function nbtcDepositAddress(recipient) {
-  const r = await fetch(`${CONFIG.bridgeApi}/api/v3/utxo/get_user_deposit_address`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chain: "btc", recipient }) });
+  const r = await fetch(`${CONFIG.bridgeApi}/api/v3/utxo/get_user_deposit_address`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chain: "btc", recipient }), signal: AbortSignal.timeout(15_000) });
   if (!r.ok) throw new Error(`bridge API ${r.status}`);
   return (await r.json()).address;
 }
@@ -320,7 +329,7 @@ export async function broadcastEth(raw, chainId) {
 export const SOL = CONFIG.sol;
 /** A Solana signature dies with its blockhash (~150 slots, about a minute); this leaves margin. */
 export const SOL_SIGNATURE_TTL_MS = 3 * 60_000;
-const solRpc = (method, params = []) => fetch(SOL.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
+const solRpc = (method, params = []) => fetch(SOL.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(15_000) })
   .then((r) => r.json()).then((j) => { if (j.error) throw new Error(`Solana: ${j.error.message}`); return j.result; });
 
 /** Asks the MPC contract which Solana address belongs to this token. */
@@ -378,10 +387,10 @@ export async function prices() {
     return r.json();
   }
   const [btc, ref, cg] = await Promise.all([
-    fetch("https://mempool.space/api/v1/prices").then((r) => r.json()),
-    fetch("https://api.ref.finance/list-token-price").then((r) => r.json()),
+    fetch("https://mempool.space/api/v1/prices", { signal: AbortSignal.timeout(8000) }).then((r) => r.json()),
+    fetch("https://api.ref.finance/list-token-price", { signal: AbortSignal.timeout(8000) }).then((r) => r.json()),
     // independent second source; a lender's LTV guard shouldn't rest on one HTTP API
-    fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,near,ethereum&vs_currencies=usd")
+    fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,near,ethereum&vs_currencies=usd", { signal: AbortSignal.timeout(8000) })
       .then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
   const near = Number(ref["wrap.near"]?.price);
@@ -410,7 +419,7 @@ export function crossCheck(px, cg) {
  * call when a relayer paid for it.
  */
 export async function recentActivity(n = 8) {
-  const post = (p, body) => fetch(`${CONFIG.txApi}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  const post = (p, body) => fetch(`${CONFIG.txApi}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) })
     .then((r) => { if (!r.ok) throw new Error(`FastNear ${r.status}`); return r.json(); });
   const { account_txs } = await post("/v0/account", { account_id: CONTRACT });
   const latest = account_txs.slice(0, n);
@@ -561,7 +570,7 @@ export async function usdcToProve(tokenId, { blocks = 45_000 } = {}) {
   for (const v of info) {
     const c = EVM_CHAINS.find((x) => x.chain.id === Number(v.chain_id));
     if (!c) continue;
-    const rpc = (method, params) => fetch(c.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })
+    const rpc = (method, params) => fetch(c.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(15_000) })
       .then((r) => r.json()).then((j) => { if (j.error) throw new Error(j.error.message); return j.result; });
     const [head, fin] = await Promise.all([rpc("eth_blockNumber", []).then((h) => parseInt(h)), rpc("eth_getBlockByNumber", ["finalized", false]).then((b) => parseInt(b.number))]);
     for (let b = Math.max(0, head - blocks); b <= head; b += 9_000) {

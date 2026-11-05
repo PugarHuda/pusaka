@@ -293,7 +293,7 @@ function Detail({ id, accountId }) {
               the amount above. They stop counting as at risk once that transaction lands on Bitcoin.
             </p>
           )}
-          {bal.error && <p className="error">mempool.space didn't answer, so the balance may be out of date.</p>}
+          {bal.error && <p className="error">Neither Bitcoin explorer (mempool.space, Blockstream) answered, so the balance may be out of date.</p>}
           {address ? (
             <p className="addr">
               <a href={`${EXPLORER}/address/${address}`} target="_blank" rel="noreferrer">{address}</a>
