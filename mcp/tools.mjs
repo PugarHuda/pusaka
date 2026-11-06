@@ -5,16 +5,16 @@
 //   PUSAKA_MAX_SPEND_NEAR=5   hard cap on NEAR this server will spend per session (default 5)
 //   PUSAKA_ALLOW_OUTFLOWS=1   needed for give / withdraw_* (off by default); PUSAKA_ALLOWED_RECIPIENTS=a,b limits where
 // Without an account it runs read-only (overview, inspect).
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { Account, FailoverRpcProvider, JsonRpcProvider, baseDecode, teraToGas } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, baseDecode, getTransactionLastResult, teraToGas } from "near-api-js";
 import {
   CONTRACT, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
   nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote,
-  MPC, btcFetch,
+  MPC, btcFetch, ckdEphemeral, ckdSecret, ckdKey, ckdAppId, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 
@@ -120,7 +120,7 @@ export async function inspect(token_id) {
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
-  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch"]);
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -561,7 +561,9 @@ reg("pusaka_audit", {
 reg("pusaka_contract_trust", {
   description: "Should an agent trust the Pusaka contract itself? Reads from NEAR: the deployed code's sha256 and the reproducible-build source it names (NEP-330), every access key on the contract account (none but one-use gift-link keys means nobody can sign as the contract), who can change the code (a Sputnik DAO council, its members and vote threshold), the timelock, and any upgrade pending with the time it becomes deployable.",
   inputSchema: {},
-}, tool(async () => {
+}, tool(() => contractTrust()));
+
+async function contractTrust() {
   const [acct, keys, meta, up] = await Promise.all([
     provider.viewAccount({ accountId: CONTRACT, blockQuery: { finality: "final" } }),
     provider.viewAccessKeyList({ accountId: CONTRACT, finalityQuery: { finality: "final" } }),
@@ -588,7 +590,7 @@ reg("pusaka_contract_trust", {
       pending: up.proposal ? { code_sha256: up.proposal.code_sha256, deployable_from: new Date(Number(up.proposal.applicable_from_ms)).toISOString() } : null },
     verify_yourself: "rebuild with the source and image above and compare code_sha256; or run `node scripts/verify.mjs` in the repo",
   };
-}));
+}
 
 const short = (e) => {
   const n = (y) => toNear(y);
@@ -701,6 +703,114 @@ reg("pusaka_gift_preview", {
   return { open: true, from: gift.from, token_id: gift.token_id, verified_sats: Number(i.verified_sats), btc_address: btcAddress(i.btc_pubkey),
     next: "pusaka_claim_gift with the same link; it costs you nothing" };
 }));
+
+// ---------- market scanner, portfolio, and the sealed letter (NEAR MPC confidential key derivation) ----------
+
+reg("pusaka_deals", {
+  description: "Scan every Pusaka for sale for Bitcoin cheaper than it really sells for: each listing's price now (Dutch auctions fall over time) against a live, solver-signed NEAR Intents quote for selling the verified BTC inside into USDC. A negative discount means the NFT costs less than its BTC's exit value. Sorted best deal first.",
+  inputSchema: { max_price_near: z.number().positive().optional() },
+}, tool(async ({ max_price_near }) => {
+  const px = await prices();
+  const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
+  const rows = (await Promise.all(toks.map(async (t) => {
+    const i = await view("token_info", { token_id: t.token_id });
+    if (!i.listing || !i.price_now) return null;
+    const price = toNear(i.price_now), sats = Number(i.verified_sats);
+    if (max_price_near && price > max_price_near) return null;
+    const row = { token_id: t.token_id, seller: i.listing.seller, price_now_near: price, price_usd: +(price * px.nearUsd).toFixed(2), verified_sats: sats,
+      btc_value_usd: +((sats / 1e8) * px.btcUsd).toFixed(2), falls_to_near: toNear(i.listing.floor), auction_ends: new Date(Number(i.listing.end_ms)).toISOString() };
+    if (sats && i.btc_pubkey) {
+      const q = await exitQuote(sats, evmAddress(i.btc_pubkey)).catch((e) => ({ error: e.message }));
+      if (q.usdc) Object.assign(row, { exit_usdc: q.usdc, exit_seconds: q.seconds, discount_to_exit: +(row.price_usd / q.usdc - 1).toFixed(3) });
+      else row.exit_quote_error = q.error;
+    }
+    row.discount_to_btc = row.btc_value_usd ? +(row.price_usd / row.btc_value_usd - 1).toFixed(3) : null;
+    return row;
+  }))).filter(Boolean).sort((a, b) => (a.discount_to_exit ?? a.discount_to_btc ?? 9) - (b.discount_to_exit ?? b.discount_to_btc ?? 9));
+  return { prices: { btc_usd: px.btcUsd, near_usd: px.nearUsd, cross_checked: px.crossChecked }, listings: rows,
+    best: rows[0] ? `#${rows[0].token_id} at ${rows[0].price_now_near} NEAR; buy with pusaka_buy and a max_price_near` : "nothing for sale",
+    note: "exit quotes are dry runs on NEAR Intents mainnet liquidity; testnet BTC has no market price" };
+}));
+
+reg("pusaka_portfolio", {
+  description: "Everything one NEAR account has in Pusaka: the Pusakas it holds and the Bitcoin proven inside them (sats and USD), loans it owes and loans it funded, standing offers it escrowed, and Pusakas that name it as heir. Defaults to this agent's account.",
+  inputSchema: { account_id: z.string().optional() },
+}, tool(async ({ account_id = ACCOUNT_ID }) => {
+  if (!account_id) throw new Error("Give an account_id (this server has no account).");
+  const px = await prices().catch(() => null);
+  const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
+  const infos = await Promise.all(toks.map((t) => view("token_info", { token_id: t.token_id })));
+  const held = infos.filter((i) => i.token.owner_id === account_id);
+  const sats = held.reduce((a, i) => a + Number(i.verified_sats), 0);
+  const heirOf = (await Promise.all(infos.map(async (i) => ({ id: i.token.token_id, h: await view("heir_of", { token_id: i.token.token_id }).catch(() => null) }))))
+    .filter((x) => x.h?.heir === account_id).map((x) => ({ token_id: x.id, claimable_from: new Date(Number(x.h.claimable_from_ms)).toISOString() }));
+  const loan = (i) => ({ token_id: i.token.token_id, principal_near: toNear(i.loan.principal), repay_near: toNear(i.loan.repay), due: i.loan.due_ms ? new Date(Number(i.loan.due_ms)).toISOString() : null });
+  const offers = (await openOffers().catch(() => [])).filter((o) => o.offer.lender === account_id);
+  return {
+    account_id,
+    pusaka: held.map((i) => ({ token_id: i.token.token_id, verified_sats: Number(i.verified_sats), for_sale_near: i.price_now ? toNear(i.price_now) : null,
+      loan: i.loan ? (i.loan.lender ? "collateral for a funded loan" : "loan requested") : null })),
+    total_verified_sats: sats, total_btc_usd: px ? +((sats / 1e8) * px.btcUsd).toFixed(2) : null,
+    borrowing: infos.filter((i) => i.loan?.lender && i.loan.borrower === account_id).map(loan),
+    lending: infos.filter((i) => i.loan?.lender === account_id).map(loan),
+    offers_escrowed: offers.map((o) => ({ offer_id: o.id, principal_near: toNear(o.offer.principal), for: o.offer.token_id ? `#${o.offer.token_id}` : `>= ${o.offer.min_verified_sats} sats` })),
+    heir_of: heirOf,
+  };
+}));
+
+/** A letter key from NEAR's MPC network (CKD, domain 2), requested by the contract for the owner and encrypted to a key only this process holds. */
+async function letterKey(token_id, write_nonce) {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const eph = ckdEphemeral();
+  const outcome = await account.callFunctionRaw({ contractId: CONTRACT, methodName: "letter_key", args: { token_id, app_public_key: eph.appPublicKey, ...(write_nonce && { write_nonce }) },
+    deposit: 1n, gas: teraToGas(100) });
+  const answer = getTransactionLastResult(outcome);
+  const extra = JSON.parse((await view("nft_token", { token_id })).metadata.extra ?? "{}");
+  const path = write_nonce ? `letter:${token_id}:${ACCOUNT_ID}:${write_nonce}` : extra.letter_path;
+  const mpcPk = await provider.callFunction({ contractId: MPC, method: "public_key", args: { domain_id: 2 }, blockQuery: { finality: "final" } });
+  // ckdSecret throws unless the MPC's answer verifies against its public key
+  return { key: ckdKey(ckdSecret(answer, eph.a, ckdAppId(CONTRACT, path), mpcPk), LETTER_PURPOSE), path, extra, tx: outcome.transaction.hash };
+}
+
+reg("pusaka_write_letter", {
+  description: "Seal a private letter into your Pusaka for whoever holds it next (a seed hint, a story, instructions for an heir). The key comes from NEAR's MPC network through the contract (confidential key derivation): no server, not even ours, ever sees it, and only the current holder can ask for it. The sealed text is stored on-chain with the NFT. Up to ~1,400 characters; costs 0.01 NEAR of storage.",
+  inputSchema: { token_id: z.string(), text: z.string().min(1).max(1400) },
+}, tool(async ({ token_id, text }) => {
+  const deposit = 10_000_000_000_000_000_000_000n;
+  spend(deposit, "letter");
+  const { key, path, tx } = await letterKey(token_id, Date.now().toString(36));
+  const sealed = await sealCkd(key, token_id, text);
+  await call("set_letter", { token_id, sealed, path }, { deposit });
+  return { token_id, sealed_chars: sealed.length, key_request_tx: tx, note: "only the holder of this Pusaka can read it: pusaka_read_letter" };
+}));
+
+reg("pusaka_read_letter", {
+  description: "Open the sealed letter inside a Pusaka you hold: the contract asks NEAR's MPC network for the letter's key on your behalf (refused to anyone who isn't the holder), and it is decrypted here, in this process.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const extra = JSON.parse((await view("nft_token", { token_id })).metadata.extra ?? "{}");
+  if (!extra.letter) return { token_id, letter: null, note: "this Pusaka carries no letter" };
+  if (!extra.letter.startsWith("ckd1:")) return { token_id, letter: null, note: "a holder-room letter (opened in the web app's holder room), not an MPC-sealed one" };
+  const { key, tx } = await letterKey(token_id);
+  return { token_id, letter: await openCkd(key, token_id, extra.letter), key_request_tx: tx };
+}));
+
+// ---------- MCP resources and prompts: the same live data as addressable context, and ready-made agent routines ----------
+
+server.registerResource("pusaka-contract", "pusaka://contract", { title: "The Pusaka contract: code, keys, governance", mimeType: "application/json" },
+  async (uri) => ({ contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await contractTrust(), null, 2) }] }));
+server.registerResource("pusaka-token", new ResourceTemplate("pusaka://token/{token_id}", {
+  list: async () => ({ resources: (await view("nft_tokens", { from_index: "0", limit: 100 })).map((t) => ({ uri: `pusaka://token/${t.token_id}`, name: `Pusaka #${t.token_id}`, mimeType: "application/json" })) }),
+}), { title: "One Pusaka: verified BTC, value, listing, loan", mimeType: "application/json" },
+  async (uri, { token_id }) => ({ contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await inspect(String(token_id)), (_, v) => (typeof v === "bigint" ? v.toString() : v), 2) }] }));
+
+const ask = (text) => ({ messages: [{ role: "user", content: { type: "text", text } }] });
+server.registerPrompt("due_diligence", { title: "Due diligence on a Pusaka", argsSchema: { token_id: z.string() } }, ({ token_id }) => ask(
+  `Do due diligence on Pusaka #${token_id} before any money moves. 1) pusaka_contract_trust: is anyone able to sign as the contract or change its code without a vote and a timelock? 2) pusaka_audit ${token_id}: are the reserves real on Bitcoin? 3) pusaka_inspect ${token_id}: value, exit quote, listing premium, loan terms. 4) pusaka_history ${token_id} and, if it has a loan, pusaka_credit_record for the borrower. Finish with a one-paragraph verdict and the single biggest risk.`));
+server.registerPrompt("lender_round", { title: "A lender's round", argsSchema: { max_ltv: z.string().optional() } }, ({ max_ltv = "0.5" }) => ask(
+  `Run a lender's round on Pusaka. 1) pusaka_loan_watch: claim any overdue collateral you are owed (pusaka_claim_collateral). 2) pusaka_overview and pusaka_loan_offers: find loan requests; for each, pusaka_audit the collateral and pusaka_credit_record the borrower. 3) Fund only requests with audited reserves, no defaults, and LTV under ${max_ltv} (pusaka_fund_loan with max_ltv ${max_ltv}). Report what you did and why.`));
+server.registerPrompt("buy_btc_below_exit", { title: "Buy Bitcoin below its exit value", argsSchema: { budget_near: z.string() } }, ({ budget_near }) => ask(
+  `Find Bitcoin selling below what it is worth. 1) pusaka_deals with max_price_near ${budget_near}. 2) For the best one with a negative discount_to_exit, pusaka_audit it. 3) If the audit passes, pusaka_buy it with max_price_near ${budget_near}. Explain the discount you captured, or why you bought nothing.`));
 
 reg("pusaka_mint", {
   description: "Mint a new Pusaka. Returns its id and native Bitcoin address.",
