@@ -32,6 +32,8 @@ pub struct Gift {
     pub from: AccountId,
     /// set while a new account is being created for it, so the key can't claim twice meanwhile
     pub claiming: bool,
+    /// set once this contract's own AddKey succeeded: only then is the key ours to use and to delete
+    pub active: bool,
 }
 
 fn key_slot(pk: &PublicKey) -> String {
@@ -57,12 +59,18 @@ impl Pusaka {
         let slot = key_slot(&public_key);
         require!(!env::storage_has_key(slot.as_bytes()), "that key is already a gift");
         let from = env::predecessor_account_id();
-        raw_put(&slot, &Gift { token_id: token_id.clone(), from: from.clone(), claiming: false });
+        raw_put(&slot, &Gift { token_id: token_id.clone(), from: from.clone(), claiming: false, active: false });
         raw_put(&token_slot(&token_id), &String::from(&public_key));
         emit_metadata_update(&token_id); // locked: the live art shows it
         env::log_str(&format!("pusaka #{token_id}: gifted by {from} as a claim link"));
         Promise::new(env::current_account_id())
-            .add_access_key_allowance(public_key, Allowance::limited(GIFT_ALLOWANCE).unwrap(), env::current_account_id(), CLAIM_METHODS)
+            .add_access_key_allowance(public_key.clone(), Allowance::limited(GIFT_ALLOWANCE).unwrap(), env::current_account_id(), CLAIM_METHODS)
+            .then(Promise::new(env::current_account_id()).function_call(
+                "on_gift_key",
+                json!({ "public_key": public_key }).to_string().into_bytes(),
+                NearToken::from_yoctonear(0),
+                Gas::from_tgas(10),
+            ))
             .detach();
         refund(from, env::attached_deposit().saturating_sub(GIFT_DEPOSIT));
     }
@@ -105,6 +113,23 @@ impl Pusaka {
             ))
     }
 
+    /// The AddKey's outcome. A key that already existed (AddKey fails) is never ours: the gift is void, nothing
+    /// is ever deleted for it, and the giver gets the deposit back.
+    #[private]
+    pub fn on_gift_key(&mut self, public_key: PublicKey) -> bool {
+        let Some(mut g) = raw_get::<Gift>(&key_slot(&public_key)) else { return false };
+        if env::promise_result_checked(0, 0).is_ok() {
+            g.active = true;
+            raw_put(&key_slot(&public_key), &g);
+            return true;
+        }
+        env::storage_remove(key_slot(&public_key).as_bytes());
+        env::storage_remove(token_slot(&g.token_id).as_bytes());
+        emit_metadata_update(&g.token_id);
+        refund(g.from, GIFT_DEPOSIT);
+        false
+    }
+
     /// The registrar's answer: on success the new account gets the Pusaka; otherwise the link stays claimable
     /// (the registrar refunds the deposit) and can be retried with another name.
     #[private]
@@ -144,6 +169,7 @@ impl Pusaka {
         require!(env::predecessor_account_id() == env::current_account_id(), "sign with the gift link's key");
         let pk = env::signer_account_pk();
         let g: Gift = raw_get(&key_slot(&pk)).unwrap_or_else(|| env::panic_str("NoGift: this key opens no gift"));
+        require!(g.active, "the link's key isn't confirmed yet");
         require!(!g.claiming, "a claim is in flight");
         require!(self.owner_of(&g.token_id) == g.from, "the giver no longer holds it");
         (pk, g)
@@ -162,10 +188,12 @@ impl Pusaka {
     /// Removes the gift's records and deletes its key from the contract account.
     pub(crate) fn end_gift(&mut self, token_id: &str) {
         let Some(pk) = raw_get::<String>(&token_slot(token_id)) else { return };
+        let active = raw_get::<Gift>(&format!("gk:{pk}")).is_some_and(|g| g.active);
         env::storage_remove(token_slot(token_id).as_bytes());
         env::storage_remove(format!("gk:{pk}").as_bytes());
         emit_metadata_update(token_id);
-        if let Ok(key) = pk.parse::<PublicKey>() {
+        // only a key this contract added itself (confirmed in on_gift_key) is ever deleted
+        if let (true, Ok(key)) = (active, pk.parse::<PublicKey>()) {
             Promise::new(env::current_account_id()).delete_key(key).detach();
         }
     }

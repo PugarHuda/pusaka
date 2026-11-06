@@ -2324,6 +2324,8 @@ fn gifted() -> Pusaka {
     let mut c = setup();
     ctx("alice.testnet", gift::GIFT_DEPOSIT, vec![]);
     c.gift("1".into(), gift_pk());
+    as_contract(vec![PromiseResult::Successful(vec![])]); // the AddKey went through
+    assert!(c.on_gift_key(gift_pk()));
     c
 }
 
@@ -2333,7 +2335,9 @@ fn receipt_actions(to: &str) -> Vec<near_sdk::mock::MockAction> {
 
 #[test]
 fn g1_a_gift_adds_a_claim_only_key_and_locks_the_pusaka() {
-    let mut c = gifted();
+    let mut c = setup();
+    ctx("alice.testnet", gift::GIFT_DEPOSIT, vec![]);
+    c.gift("1".into(), gift_pk());
     let adds = receipt_actions("pusaka.testnet").into_iter().any(|a| matches!(a,
         near_sdk::mock::MockAction::AddKeyWithFunctionCall { public_key, receiver_id, method_names, .. }
             if public_key.to_string() == GIFT_PK && receiver_id.as_str() == "pusaka.testnet"
@@ -2422,4 +2426,28 @@ fn g6_a_gift_must_carry_its_deposit() {
     let mut c = setup();
     ctx("alice.testnet", NearToken::from_millinear(100), vec![]);
     c.gift("1".into(), gift_pk());
+}
+
+#[test]
+fn g7_a_key_the_contract_did_not_add_is_never_deleted() {
+    // someone "gifts" with a key that already exists on the account: AddKey fails, the gift is void
+    let mut c = setup();
+    ctx("alice.testnet", gift::GIFT_DEPOSIT, vec![]);
+    c.gift("1".into(), gift_pk());
+    as_contract(vec![PromiseResult::Failed]);
+    assert!(!c.on_gift_key(gift_pk()));
+    assert!(c.gift_of("1".into()).is_none(), "void");
+    assert_eq!(paid_to("alice.testnet"), gift::GIFT_DEPOSIT.as_yoctonear(), "deposit back");
+    assert!(!receipt_actions("pusaka.testnet").iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeleteKey { .. })), "nothing deleted");
+    withdraw(&mut c, "alice.testnet", &[0]); // unlocked
+}
+
+#[test]
+#[should_panic(expected = "isn't confirmed")]
+fn g7_an_unconfirmed_key_cannot_claim() {
+    let mut c = setup();
+    ctx("alice.testnet", gift::GIFT_DEPOSIT, vec![]);
+    c.gift("1".into(), gift_pk());
+    as_link(GIFT_PK);
+    c.claim(acc("bob.testnet"));
 }
