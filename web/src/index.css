@@ -220,6 +220,9 @@ button.secondary:hover:not(:disabled) { background: rgba(20, 33, 61, 0.06); }
 .activity { margin: 2rem 0 0; max-width: var(--measure); }
 .activity h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
 .activity ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.3rem; font-size: 0.95rem; }
+.offers { margin: 2rem 0 0; max-width: var(--measure); }
+.offers h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+.offers ul { padding-left: 1.1rem; display: grid; gap: 0.4rem; }
 
 /* multi-chain balances, holder room, per-NFT ledger */
 textarea, select { font: inherit; color: inherit; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.6rem; }

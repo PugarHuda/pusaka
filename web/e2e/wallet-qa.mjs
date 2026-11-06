@@ -7,7 +7,7 @@
 //   node wallet-qa.mjs <profileDir> claim                             reconnect as the heir and claim, once due
 //   node wallet-qa.mjs <profileDir> judge <buyId> <lendId>            the README's try-it path: Buy one, Lend on another
 //   node wallet-qa.mjs <profileDir> offer <account> <id>              post a standing loan offer through the form, then cancel it
-//   node wallet-qa.mjs <profileDir> refinance <account> <id>          as the borrower, refinance the loan with the first offer shown
+//   node wallet-qa.mjs <profileDir> accept|refinance <account> <id>   as the holder, take the first loan offer shown (gas-free) or refinance with it
 import fs from "node:fs";
 import { chromium } from "playwright";
 const [profile, step, keyFile, arg2] = process.argv.slice(2);
@@ -241,13 +241,13 @@ try {
     console.log("listed:", (await mine.first().innerText()).replace(/\s+/g, " "));
     await sign("cancel offer", () => mine.first().getByRole("button", { name: "Cancel my offer" }).click());
   }
-  if (step === "refinance") { // as the borrower keyFile, refinance the funded loan on token arg2 with the first offer shown
+  if (step === "accept" || step === "refinance") { // as holder keyFile, take (or refinance with) the first loan offer shown on token arg2
     const id = arg2;
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
     await p.waitForTimeout(6000);
     await switchTo(keyFile);
     console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
-    const offer = p.locator("p").filter({ has: p.getByRole("button", { name: "Refinance with this offer" }) }).first();
+    const offer = p.locator("p").filter({ has: p.getByRole("button", { name: /^(Accept offer|Refinance with this offer)$/ }) }).first();
     await offer.waitFor({ timeout: 40_000 });
     console.log("offer:", (await offer.innerText()).replace(/\s+/g, " "));
     const wp = ctx.waitForEvent("page", { timeout: 20_000 });
@@ -258,7 +258,7 @@ try {
     await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
     const status = p.locator("section.actions").getByRole("status");
     for (let i = 0; i < 90 && !(await status.count()); i++) await p.waitForTimeout(1000);
-    console.log(`refinance #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    console.log(`${step} #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
   if (step === "judge") {
     const [buyId, lendId] = [keyFile, arg2];

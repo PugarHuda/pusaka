@@ -40,7 +40,7 @@ export const yocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 1
 export const near = (y) => (Number(BigInt(y) / 10n ** 18n) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 });
 
 /** Calls Pusaka allows through the relayer (no deposit, nothing that moves money). */
-const GASLESS = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance"]);
+const GASLESS = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance", "accept_loan_offer"]);
 
 /**
  * NEP-366: if the wallet can sign delegate actions, the user signs and Pusaka's relayer pays

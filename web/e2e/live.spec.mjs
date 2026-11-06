@@ -269,3 +269,11 @@ test("keyboard: a skip link jumps to the content, and a new page takes the focus
   await page.evaluate(() => { location.hash = "#/pusaka/1"; });
   await expect(page.locator("main")).toBeFocused(); // a screen reader hears the new page, not the old link
 });
+
+test("home lists the standing loan offers, their yearly rate, and which Pusakas could take them", async ({ page }) => {
+  await page.goto("/");
+  const book = page.getByRole("region", { name: "Loan offers" });
+  await expect(book.getByRole("listitem").first()).toContainText(/lends [\d.]+ NEAR, repay [\d.]+ within .*% a year/, { timeout: 30_000 });
+  await expect(book).toContainText("pusaka-seller.testnet"); // restock.mjs keeps one open
+  await expect(book.getByRole("link", { name: /^#\d+$/ }).first()).toBeVisible();
+});

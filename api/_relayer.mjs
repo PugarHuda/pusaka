@@ -10,7 +10,7 @@ import {
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
-export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance"];
+export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance", "accept_loan_offer"];
 const MAX_TGAS = 100n;
 /** list/cancel/loan-request ping-pong is free for the attacker; one relayed state change per token per minute caps it. */
 export const RELAY_COOLDOWN_MS = 60_000;
@@ -82,6 +82,26 @@ export async function verifyDelegate(sd) {
   if (!block || BigInt(d.maxBlockHeight) < BigInt(block.header.height)) throw fail(410, "this delegate expired; sign it again");
 }
 
+const offerById = async (id) => {
+  if (!/^\d{1,19}$/.test(String(id))) return null;
+  const r = await provider.callFunction({ contractId: CONTRACT, method: "loan_offers", args: { from: String(id), limit: "1" } });
+  return r?.offers?.find((x) => x.id === String(id))?.offer ?? null;
+};
+
+/**
+ * A BTC holder with no NEAR can take a loan gas-free: the offer's principal is already escrowed and each
+ * offer can be taken once, so this can't be farmed. Mirrors the contract's checks so the relayer never pays
+ * for a doomed call; a refinance is relayed only when the offer alone pays off the current loan (no deposit).
+ */
+export function acceptWouldSucceed(info, offer, who, args) {
+  if (!info || !offer || offer.lender === who || info.listing || info.pending) return false;
+  if (args.expected_sign_epoch !== info.sign_epoch) return false;
+  if (info.loan && !(info.loan.lender && info.loan.borrower === who && BigInt(info.loan.repay) <= BigInt(offer.principal))) return false;
+  return offer.token_id != null
+    ? offer.token_id === String(args.token_id) && offer.sign_epoch === info.sign_epoch
+    : Number(info.verified_sats) >= Number(offer.min_verified_sats);
+}
+
 export async function relay(b64) {
   const sd = checkDelegate(b64);
   await verifyDelegate(sd);
@@ -114,6 +134,7 @@ export async function relay(b64) {
     const h = await provider.callFunction({ contractId: CONTRACT, method: "heir_of", args: { token_id: String(args.token_id) } });
     allowed = h?.heir === who && Number(h.claimable_from_ms) <= Date.now();
   }
+  if (fc.methodName === "accept_loan_offer") allowed = allowed && acceptWouldSucceed(info, await offerById(args.offer_id), who, args);
   if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
   // the same signed delegate posted N times in parallel would pass every check above N times
   const key = `${who}:${sd.delegateAction.nonce}`;

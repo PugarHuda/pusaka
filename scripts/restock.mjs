@@ -2,6 +2,8 @@
 // SALE Pusakas listed and LOAN Pusakas asking for a loan, each backed by verified BTC. Missing stock is minted and
 // funded from a reserve Pusaka's own BTC (a real withdrawal), proven through the light client, then listed.
 //   node restock.mjs [--sale 3] [--loan 3] [--reserve 1]
+// It also keeps one standing loan offer from LENDER open, for any Pusaka with >= 10,000 verified sats: a judge who
+// buys one can borrow against it at once, gas-free.
 // Re-run until it says "stock full": funding needs one Bitcoin confirmation plus the light client catching up.
 import { parseNearAmount } from "near-api-js";
 import {
@@ -16,6 +18,11 @@ const provable = async (t) => (await utxos(btcAddress(t.btc_pubkey))).filter((u)
   && !t.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout));
 const PRICE = parseNearAmount("0.5"), LOAN_TERMS = { principal: PRICE, repay: parseNearAmount("0.501"), duration_ms: String(3 * 86_400_000) };
 const me = account(DEMO);
+const LENDER = "pusaka-seller.testnet", OFFER = { principal: parseNearAmount("0.05"), repay: parseNearAmount("0.0501"), duration_ms: String(3 * 86_400_000) };
+if (!(await view("loan_offers", { from: "0", limit: "100" })).offers.some((o) => o.offer.lender === LENDER)) {
+  const id = await call(account(LENDER), "offer_loan", { token_id: null, min_verified_sats: String(SATS), ...OFFER }, { deposit: BigInt(OFFER.principal) + BigInt(parseNearAmount("0.01")) });
+  console.log(`standing offer ${id}: ${LENDER} lends 0.05 NEAR to any Pusaka with >= ${SATS} verified sats`);
+}
 const prove = async (t) => {
   const lc = await lightClientHeight();
   for (const u of await provable(t)) {

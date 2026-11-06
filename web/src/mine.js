@@ -34,5 +34,6 @@ export async function loadMine(accountId) {
     loans: infos.filter((i) => i.loan && (i.loan.borrower === accountId || i.loan.lender === accountId)).sort(num),
     heirOf: infos.flatMap((info, k) => (heirs[k].status === "fulfilled" && heirs[k].value?.heir === accountId ? [{ info, heir: heirs[k].value }] : [])),
     others,
+    infos,
   };
 }

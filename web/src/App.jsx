@@ -171,7 +171,7 @@ export default function App() {
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
-        : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
+        : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home accountId={accountId} />}</main>
       <footer>
         <p>
           Contract <a href={`${NEAR_EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
@@ -184,7 +184,7 @@ export default function App() {
 
 // ---------- home ----------
 
-function Home() {
+function Home({ accountId }) {
   const [tokens, setTokens] = useState(null);
   const [error, setError] = useState("");
   const px = usePrices();
@@ -233,6 +233,8 @@ function Home() {
       </section>
 
       <Activity />
+
+      <OfferBook infos={tokens?.map((t) => t.info)} accountId={accountId} />
 
       <section className="gallery" aria-label="All Pusaka">
         {error && <p className="error">{error}</p>}
@@ -314,11 +316,51 @@ function Mine({ accountId }) {
           note={!i.loan.lender ? stateOf(i, now) : `${i.loan.lender === accountId ? `You lent ${near(i.loan.principal)} NEAR to ${i.loan.borrower}` : `You borrowed ${near(i.loan.principal)} NEAR from ${i.loan.lender}`}. ${stateOf(i, now)}`} />)}</ul>
           : <p className="muted">No loans. You haven't borrowed against a Pusaka or lent against one.</p>}
 
+        <OfferBook infos={m.infos} accountId={accountId} mineOnly />
+
         <h2>You are the heir</h2>
         {m.heirOf.length ? <ul>{m.heirOf.map(({ info, heir }) => <MineRow key={info.token.token_id} info={info} now={now}
           note={now >= Number(heir.claimable_from_ms) ? `Claimable now from ${info.token.owner_id}` : `Claimable from ${when(heir.claimable_from_ms)} if ${info.token.owner_id} stays silent`} />)}</ul>
           : <p className="muted">No Pusaka names you as its heir.</p>}
       </>}
+    </section>
+  );
+}
+
+/** Standing loan offers: who lends what, at what yearly rate, and which Pusakas could take each one now. */
+function OfferBook({ infos, accountId, mineOnly }) {
+  const [offers, setOffers] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = () => allOffers().then(setOffers, () => setOffers([]));
+  useEffect(() => { load(); }, []);
+  const shown = (offers ?? []).filter(({ offer: o }) => !mineOnly || o.lender === accountId);
+  if (!mineOnly && !shown.length) return null;
+  const apr = (o) => (Number(o.repay) / Number(o.principal) - 1) * 365 * DAY_MS / Number(o.duration_ms);
+  // a listed one can take it once bought (the demo path: buy, then borrow); one with a loan request can't
+  const takers = (o) => (infos ?? []).filter((i) => !i.loan && Number(i.verified_sats) >= Number(o.min_verified_sats));
+  const cancel = async (oid) => {
+    setBusy(oid); setMsg("");
+    try { await call("cancel_loan_offer", { offer_id: oid }); setMsg("Offer cancelled. Your NEAR is on its way back."); await load(); }
+    catch (e) { setMsg(e.message); } finally { setBusy(""); }
+  };
+  return (
+    <section className="offers" aria-label={mineOnly ? "Your loan offers" : "Loan offers"}>
+      <h2>{mineOnly ? "Your loan offers" : "Loan offers"}</h2>
+      {!mineOnly && <p className="muted">Lenders' NEAR, already escrowed in the contract. A holder takes one in a single transaction, gas-free.</p>}
+      {offers === null ? <p className="muted">Reading offers…</p> : !shown.length
+        ? <p className="muted">No standing offers from you. Offer one from any Pusaka's page; the NEAR stays in the contract until it's taken or you cancel.</p>
+        : <ul>{shown.map(({ id, offer: o }) => {
+          const t = o.token_id ? [] : takers(o);
+          return <li key={id}>
+            {o.lender} lends <strong>{near(o.principal)} NEAR</strong>, repay {near(o.repay)} within {days(o.duration_ms)} ({(apr(o) * 100).toFixed(1)}% a year){" "}
+            {o.token_id ? <>for <a href={`#/pusaka/${o.token_id}`}>Pusaka #{o.token_id}</a></>
+              : <>to any Pusaka with {btc(Number(o.min_verified_sats))} BTC verified{t.length > 0 && <>: {t.slice(0, 6).map((i, k) =>
+                <span key={i.token.token_id}>{k ? ", " : ""}<a href={`#/pusaka/${i.token.token_id}`}>#{i.token.token_id}</a>{i.listing && " (for sale)"}</span>)}{t.length > 6 && ` and ${t.length - 6} more`} qualify</>}</>}.
+            {o.lender === accountId && <> <button className="ghost" disabled={!!busy} onClick={() => cancel(id)}>{busy === id ? "Cancelling…" : "Cancel"}</button></>}
+          </li>;
+        })}</ul>}
+      {msg && <p role="status">{msg}</p>}
     </section>
   );
 }
@@ -1362,7 +1404,9 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
         {o.token_id ? " (for this Pusaka)" : ` (any Pusaka with ${btc(Number(o.min_verified_sats))} BTC verified)`}.
         {funded && <> Pays off the {near(owed)} NEAR owed to {loan.lender}{short ? `; you add ${near(short)} NEAR` : `; ${near(left)} NEAR comes to you`}.</>}{" "}
         {isOwner && (!funded || borrower) && btn(`accept-${oid}`, funded ? "Refinance with this offer" : "Accept offer", "Accepting…", async () => {
-          await call("accept_loan_offer", { token_id: id, offer_id: oid, expected_sign_epoch: info.sign_epoch }, short ? { deposit: short } : undefined);
+          const args = { token_id: id, offer_id: oid, expected_sign_epoch: info.sign_epoch };
+          // no top-up: the relayer pays the gas, so a BTC holder with no NEAR at all can borrow
+          if (short) await call("accept_loan_offer", args, { deposit: short }); else await callGasless("accept_loan_offer", args);
           return funded ? `Refinanced: ${loan.lender} is paid off, ${o.lender} is your lender now. Repay ${near(o.repay)} NEAR within ${days(o.duration_ms)}.`
             : `Loan taken: ${near(o.principal)} NEAR is on its way to you. The Pusaka is collateral until you repay.`;
         })}
