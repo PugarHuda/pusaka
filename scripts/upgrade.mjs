@@ -7,7 +7,7 @@
 // Keys come from ../.keys; the admin is read from the contract.
 import crypto from "node:crypto";
 import fs from "node:fs";
-import { actions, teraToGas } from "near-api-js";
+import { PublicKey, actions, teraToGas } from "near-api-js";
 import { account, call, view, provider, CONTRACT } from "./lib.mjs";
 
 const [cmd, a1, a2] = process.argv.slice(2);
@@ -41,7 +41,7 @@ if (cmd === "status") {
   if (!st?.admin) throw new Error("set an upgrade admin (and test an apply) before deleting the keys");
   const ks = await keys();
   if (!ks.length) { console.log("already keyless"); process.exit(0); }
-  const r = await account(CONTRACT).signAndSendTransaction({ receiverId: CONTRACT, actions: ks.map((k) => actions.deleteKey(k.public_key)) });
+  const r = await account(CONTRACT).signAndSendTransaction({ receiverId: CONTRACT, actions: ks.map((k) => actions.deleteKey(PublicKey.from(k.public_key))) });
   console.log(`deleted ${ks.length} key(s): tx ${r.transaction.hash}; keys left: ${(await keys()).length}`);
 } else {
   console.log("usage: node upgrade.mjs status | set-admin <admin> | propose <wasm> [migrate] | apply <wasm> [account] | lock");
