@@ -289,3 +289,14 @@ test("the first paint doesn't wait for the app bundle, and the hero never flashe
   await page.goto("/#/pusaka/4"); // a fresh load straight onto a token page, still with no bundle
   await expect(page.locator("#shell-hero")).toHaveCount(0);
 });
+
+test("For AI agents lists the live MCP endpoint's tools, prompts and resources, and asks it about the contract", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "For AI agents" }).click();
+  await expect(page).toHaveTitle("For AI agents — Pusaka");
+  await expect(page.getByRole("heading", { name: /^\d+ tools on this endpoint$/ })).toBeVisible({ timeout: 30_000 });
+  for (const t of ["pusaka_audit", "pusaka_contract_trust", "pusaka_deals", "due_diligence", "pusaka://token/{token_id}"]) await expect(page.getByText(t, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("pusaka_buy", { exact: true })).toHaveCount(0); // nothing that signs is remote
+  await expect(page.getByText(/nobody can sign as the contract/)).toBeVisible();
+  await expect(page.getByText(/claude mcp add --transport http pusaka https?:\/\//)).toBeVisible();
+});

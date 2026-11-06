@@ -126,6 +126,7 @@ function useRoute() {
   }, []);
   if (/^#?\/?$/.test(hash)) return null; // home
   if (/^#\/mine\/?$/.test(hash)) return "mine";
+  if (/^#\/agents\/?$/.test(hash)) return "agents";
   const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
   if (gift) return `gift:${gift[1]}`;
   const m = hash.match(/^#\/pusaka\/(\d{1,30})\/?$/);
@@ -138,7 +139,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -161,6 +162,7 @@ export default function App() {
       <header className="bar">
         <a href="#/" className="wordmark">Pusaka</a>
         <span className="net">{NETWORK === "mainnet" ? "Mainnet" : "Testnet demo"}</span>
+        <a href="#/agents" className="nav-link">For AI agents</a>
         {accountId ? (
           <div className="who">
             <a href="#/mine" className="nav-link">Your Pusakas</a>
@@ -175,6 +177,7 @@ export default function App() {
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
+        : tokenId === "agents" ? <Agents />
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home accountId={accountId} />}</main>
       <footer>
@@ -1121,6 +1124,40 @@ function GiftClaim({ secret, accountId }) {
         <p className="gift-link"><code>{newKey.key}</code> <CopyButton text={newKey.key} label="Copy key" what="private key" /></p>
         <p><a href={`#/pusaka/${tokenId}`}>See your Pusaka</a></p>
       </div>}
+    </section>
+  );
+}
+
+// ---------- #/agents: the MCP server, listed live from the deployed endpoint ----------
+
+const MCP_URL = `${location.origin}/api/mcp`;
+const mcp = (method, params) => fetch("/api/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params && { params }) }) })
+  .then((r) => r.json()).then((j) => { if (j.error) throw new Error(j.error.message); return j.result; });
+
+function Agents() {
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    Promise.all([mcp("tools/list"), mcp("prompts/list"), mcp("resources/templates/list"), mcp("tools/call", { name: "pusaka_contract_trust", arguments: {} })])
+      .then(([t, p, r, c]) => setD({ tools: t.tools, prompts: p.prompts, templates: r.resourceTemplates, trust: JSON.parse(c.content[0].text) }), (e) => setD({ error: e.message }));
+  }, []);
+  const add = `claude mcp add --transport http pusaka ${MCP_URL}`;
+  return (
+    <section className="mine">
+      <h1>For AI agents</h1>
+      <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
+      <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo adds 30 more tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
+        <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
+        <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>
+        <h2>{d.tools.length} tools on this endpoint</h2>
+        <ul>{d.tools.map((t) => <li key={t.name}><code>{t.name}</code><span className="muted">{t.description.split(/(?<=\.)\s/)[0]}</span></li>)}</ul>
+        <h2>Prompts</h2>
+        <ul>{d.prompts.map((p) => <li key={p.name}><code>{p.name}</code><span className="muted">{p.title}</span></li>)}</ul>
+        <h2>Resources</h2>
+        <ul><li><code>pusaka://contract</code></li>{d.templates.map((r) => <li key={r.uriTemplate}><code>{r.uriTemplate}</code><span className="muted">{r.title}</span></li>)}</ul>
+      </>}
     </section>
   );
 }
