@@ -10,11 +10,13 @@ import {
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
+import Hills from "./Hills.jsx";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
 import { loadInfos, loadMine } from "./mine.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
+const satsLabel = (sats) => `${Number(sats).toLocaleString("en-US")} sats`;
 const eth6 = (wei) => Number(formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 6 });
 const usd = (x) => x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: x < 100 ? 2 : 0 });
 const pct = (x) => `${(x * 100).toLocaleString(undefined, { maximumFractionDigits: x < 0.1 ? 1 : 0 })}%`;
@@ -156,7 +158,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <div className="sheet">
       {/* not href="#main": the hash is the router */}
       <a className="skip" href="#/" onClick={(e) => { e.preventDefault(); document.querySelector("main")?.focus(); }}>Skip to content</a>
       <header className="bar">
@@ -186,7 +188,96 @@ export default function App() {
           Signatures (<code>{MPC}</code>). Built at NEAR HACKATHON.
         </p>
       </footer>
-    </>
+    </div>
+  );
+}
+
+// ---------- home: three landscapes, each carrying a live reading from the contract ----------
+
+function Spark({ points, w = 104, h = 40 }) {
+  if (points.length < 2) return null;
+  const max = Math.max(...points), min = Math.min(...points), span = max - min || 1;
+  const xy = points.map((p, i) => [(i / (points.length - 1)) * w, 4 + (1 - (p - min) / span) * (h - 8)]);
+  const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  return (
+    <svg className="spark" viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <defs><linearGradient id="spk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#b48cf0" stopOpacity="0.55" /><stop offset="1" stopColor="#b48cf0" stopOpacity="0" /></linearGradient></defs>
+      <path d={`${line} L${w} ${h} L0 ${h} Z`} fill="url(#spk)" />
+      <path d={line} fill="none" stroke="#9a6fe6" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function Ring({ share }) {
+  const c = 2 * Math.PI * 34;
+  return (
+    <svg className="ring" viewBox="0 0 80 80" aria-hidden="true">
+      <circle cx="40" cy="40" r="34" className="ring-track" />
+      <circle cx="40" cy="40" r="34" className="ring-fill" strokeDasharray={`${(share * c).toFixed(1)} ${c.toFixed(1)}`} transform="rotate(-90 40 40)" />
+    </svg>
+  );
+}
+
+/** A Dutch auction's price over its run, from the listing's own terms (the same line price_at follows on-chain). */
+function auctionCurve(l) {
+  const p = Number(BigInt(l.price) / 10n ** 18n), f = Number(BigInt(l.floor) / 10n ** 18n);
+  if (!(Number(l.end_ms) > Number(l.start_ms)) || p === f) return [p, p];
+  return Array.from({ length: 16 }, (_, i) => p - ((p - f) * i) / 15);
+}
+
+function Scenes({ tokens, px, sats }) {
+  const infos = tokens?.map((t) => t.info) ?? [];
+  const holding = infos.filter((i) => Number(i.verified_sats) > 0);
+  const busy = (i) => !!i.listing || !!i.loan;
+  const forSale = infos.filter((i) => i.listing && i.price_now).sort((a, b) => (BigInt(a.price_now) < BigInt(b.price_now) ? -1 : 1));
+  const best = forSale[0];
+  const ready = tokens?.length > 0;
+  const curve = best && auctionCurve(best.listing);
+  return (
+    <section className="scenes" aria-label="Live from the contract">
+      <figure className="scene">
+        <Hills seed={3} width={400} height={360} />
+        <div className="widget">
+          <div className="widget-head"><span>Bitcoin proven on NEAR</span><span className="chip chip-lav">Light client</span></div>
+          <div className="cells">
+            <div><small>Verified</small><b>{ready ? satsLabel(sats) : "…"}</b></div>
+            <div><small>{px ? "Worth" : "In BTC"}</small><b>{!ready ? "…" : px ? usd((sats / 1e8) * px.btcUsd) : (sats / 1e8).toFixed(5)}</b></div>
+          </div>
+          <p className="bar-ok">{ready ? `${holding.length} Pusaka hold proven Bitcoin` : "Reading the contract…"}</p>
+        </div>
+      </figure>
+      <figure className="scene scene-main">
+        <Hills seed={11} width={520} height={460} />
+        <div className="widget widget-wide">
+          <div className="widget-left">
+            <div className="widget-head"><span>Pusaka</span><span className="chip chip-live">Live</span></div>
+            <div className="ring-box"><Ring share={ready ? holding.length / infos.length : 0} /><b>{ready ? pct(holding.length / infos.length) : "…"}</b></div>
+            <small className="muted">hold Bitcoin</small>
+          </div>
+          <div className="widget-right">
+            <div className="tiles">{infos.map((i) => (
+              <a key={i.token.token_id} href={`#/pusaka/${i.token.token_id}`} aria-label={`Pusaka #${i.token.token_id}: ${stateOf(i, Date.now())}`}
+                title={`Pusaka #${i.token.token_id}: ${stateOf(i, Date.now())}`}
+                className={`tile ${busy(i) ? "tile-busy" : Number(i.verified_sats) > 0 ? "tile-full" : ""}`}><span /></a>
+            ))}</div>
+            <p className="legend"><span><i className="tile-busy" /> for sale or lent</span> <span><i className="tile-full" /> holds Bitcoin</span> <span><i /> empty</span></p>
+          </div>
+        </div>
+      </figure>
+      <figure className="scene">
+        <Hills seed={5} width={400} height={360} />
+        <div className="widget">
+          <div className="widget-head"><span>{best ? `Pusaka #${best.token.token_id} for sale` : "For sale"}</span>{best && (curve.length > 2 ? <Spark points={curve} /> : <span className="chip chip-leaf">Fixed price</span>)}</div>
+          {best ? <>
+            {curve.length > 2 && <span className="chip chip-lav">Dutch auction, falling to {near(best.listing.floor)} NEAR</span>}
+            <div className="cells cells-line">
+              <div><small>Price now</small><b>{near(best.price_now)} NEAR</b></div>
+              <div><small>Bitcoin inside</small><b>{px ? usd((Number(best.verified_sats) / 1e8) * px.btcUsd) : satsLabel(best.verified_sats)}</b></div>
+            </div>
+          </> : <p className="muted">{ready ? "Nothing listed right now." : "…"}</p>}
+        </div>
+      </figure>
+    </section>
   );
 }
 
@@ -211,6 +302,7 @@ function Home({ accountId }) {
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
   }, []);
 
+  const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
   return (
     <>
       <section className="hero">
@@ -220,31 +312,46 @@ function Home({ accountId }) {
           transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep. Every deposit is
           proven on NEAR by its Bitcoin light client, not reported by us.
         </p>
+        <p className="cta-row">
+          <a className="pill" href="#pusakas" onClick={(e) => { e.preventDefault(); document.getElementById("pusakas")?.scrollIntoView({ behavior: "smooth" }); }}>See every Pusaka</a>
+          <a className="pill pill-soft" href="#/agents">Connect an AI agent</a>
+        </p>
       </section>
 
-      {tokens?.length > 0 && (() => {
-        const sats = tokens.reduce((a, t) => a + Number(t.info.verified_sats), 0);
-        return (
-          <p className="reserves">
-            <strong>{btc(sats)} BTC</strong> verified on NEAR across {tokens.length} Pusaka
-            {px && <> (about {usd(sats / 1e8 * px.btcUsd)})</>}. Every satoshi is proven by NEAR's Bitcoin light client,
-            not reported by us.
-          </p>
-        );
-      })()}
+      <Scenes tokens={tokens} px={px} sats={sats} />
 
-      <section className="lifecycle" aria-label="How a Pusaka changes hands">
-        <ol>
-          <li><strong>Fill it.</strong> Send BTC to the Pusaka's address from any Bitcoin wallet.</li>
-          <li><strong>Sell it.</strong> List it for NEAR. While listed, nobody can withdraw.</li>
-          <li><strong>Own it.</strong> The buyer is now the only one who can move that BTC.</li>
-        </ol>
+      {tokens?.length > 0 && (
+        <p className="reserves">
+          <strong>{btc(sats)} BTC</strong> verified on NEAR across {tokens.length} Pusaka
+          {px && <> (about {usd(sats / 1e8 * px.btcUsd)})</>}. Every satoshi is proven by NEAR's Bitcoin light client,
+          not reported by us.
+        </p>
+      )}
+
+      <section className="feature" aria-label="How a Pusaka changes hands">
+        <div className="feature-card">
+          <div className="feature-copy">
+            <span className="chip">How it changes hands</span>
+            <h2>Sell the NFT, and the Bitcoin goes with it.</h2>
+            <p className="muted">The Bitcoin address belongs to the token, not to a person. NEAR's MPC network signs for it only when
+              the contract says the current holder asked, so the moment a Pusaka changes hands, so does every satoshi inside.</p>
+            {tokens?.[0] && <a className="pill" href={`#/pusaka/${tokens.find((t) => t.info.listing)?.id ?? tokens[0].id}`}>Open a Pusaka for sale</a>}
+          </div>
+          <div className="feature-panel lifecycle">
+            <ol>
+              <li><strong>Fill it.</strong> Send BTC to the Pusaka's address from any Bitcoin wallet.</li>
+              <li><strong>Sell it.</strong> List it for NEAR. While listed, nobody can withdraw.</li>
+              <li><strong>Own it.</strong> The buyer is now the only one who can move that BTC.</li>
+            </ol>
+          </div>
+        </div>
       </section>
 
       <Activity />
 
       <OfferBook infos={tokens?.map((t) => t.info)} accountId={accountId} />
 
+      <h2 className="section-title" id="pusakas">Every Pusaka</h2>
       <section className="gallery" aria-label="All Pusaka">
         {error && <p className="error">{error}</p>}
         {!tokens && !error && <p className="muted">Reading the contract…</p>}
@@ -260,6 +367,14 @@ function Home({ accountId }) {
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
         ))}
+      </section>
+
+      <section className="closing">
+        <h2>Hand your Bitcoin down<br />like an heirloom.</h2>
+        <p className="muted">Name an heir on any Pusaka you hold. If you stay silent for as long as you choose, they can claim it,
+          with everything inside. One check-in, gas-free, restarts the clock.</p>
+        <a className="pill" href="#/mine">Name an heir</a>
+        <Hills seed={7} width={1200} height={260} className="panorama" flowers={1.6} />
       </section>
     </>
   );
