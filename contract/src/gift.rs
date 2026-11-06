@@ -80,6 +80,7 @@ impl Pusaka {
         self.assert_owner(&token_id);
         let pk: String = raw_get(&token_slot(&token_id)).expect("NotGifted");
         let g: Gift = raw_get(&format!("gk:{pk}")).expect("NotGifted");
+        require!(g.active, "the link's key isn't confirmed yet; try again in a moment");
         require!(!g.claiming, "a claim is in flight");
         self.end_gift(&token_id);
         refund(g.from, GIFT_DEPOSIT.saturating_sub(GIFT_ALLOWANCE));
@@ -117,8 +118,15 @@ impl Pusaka {
     /// is ever deleted for it, and the giver gets the deposit back.
     #[private]
     pub fn on_gift_key(&mut self, public_key: PublicKey) -> bool {
-        let Some(mut g) = raw_get::<Gift>(&key_slot(&public_key)) else { return false };
-        if env::promise_result_checked(0, 0).is_ok() {
+        let added = env::promise_result_checked(0, 0).is_ok();
+        let Some(mut g) = raw_get::<Gift>(&key_slot(&public_key)) else {
+            // the gift ended before this callback: a key we just added ourselves must not outlive it
+            if added {
+                Promise::new(env::current_account_id()).delete_key(public_key).detach();
+            }
+            return false;
+        };
+        if added {
             g.active = true;
             raw_put(&key_slot(&public_key), &g);
             return true;

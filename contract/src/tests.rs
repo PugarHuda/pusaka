@@ -2451,3 +2451,23 @@ fn g7_an_unconfirmed_key_cannot_claim() {
     as_link(GIFT_PK);
     c.claim(acc("bob.testnet"));
 }
+
+#[test]
+#[should_panic(expected = "isn't confirmed")]
+fn g8_no_cancel_before_the_key_is_confirmed() {
+    let mut c = setup();
+    ctx("alice.testnet", gift::GIFT_DEPOSIT, vec![]);
+    c.gift("1".into(), gift_pk());
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.cancel_gift("1".into());
+}
+
+#[test]
+fn g8_a_key_confirmed_after_its_gift_ended_is_deleted() {
+    let mut c = gifted();
+    as_link(GIFT_PK);
+    c.claim(acc("bob.testnet")); // gift over
+    as_contract(vec![PromiseResult::Successful(vec![])]); // a late confirmation for the same key
+    assert!(!c.on_gift_key(gift_pk()));
+    assert!(receipt_actions("pusaka.testnet").iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeleteKey { public_key, .. } if public_key.to_string() == GIFT_PK)));
+}
