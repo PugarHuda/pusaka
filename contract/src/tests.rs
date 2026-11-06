@@ -2260,7 +2260,7 @@ fn up9_the_admin_hands_upgrades_to_a_dao() {
 /// SocialDB `set` calls the contract made in the current call, as their JSON args.
 fn social_sets() -> Vec<serde_json::Value> {
     near_sdk::test_utils::get_created_receipts().iter()
-        .filter(|r| r.receiver_id.as_str() == "v1.social08.testnet")
+        .filter(|r| r.receiver_id.as_str() == SOCIAL_DB)
         .flat_map(|r| r.actions.iter())
         .filter_map(|a| match a {
             near_sdk::mock::MockAction::FunctionCallWeight { method_name, args, .. } if method_name == b"set" => serde_json::from_slice(args).ok(),
@@ -2290,4 +2290,30 @@ fn sn2_listing_notifies_nobody() {
     ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
     c.list("1".into(), NearToken::from_near(5), None, None);
     assert!(social_sets().is_empty());
+}
+
+#[test]
+fn sn3_a_transfer_call_returned_in_the_callback_notifies_nobody() {
+    // nft_resolve_transfer runs on a fixed gas budget and must always unlock the token
+    let mut c = setup();
+    transfer_call(&mut c);
+    assert!(!resolve(&mut c, Some(true)));
+    assert!(social_sets().is_empty());
+    withdraw(&mut c, "alice.testnet", &[0]); // and the token is unlocked
+}
+
+#[test]
+fn x9_a_transfer_call_whose_callback_never_lands_unlocks_after_the_timeout() {
+    let mut c = setup();
+    transfer_call(&mut c); // the receiver holds it; nft_resolve_transfer never runs
+    let holder = owner(&c);
+    let at = |height: u64| {
+        let ctx = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(holder.clone())
+            .block_height(height).prepaid_gas(Gas::from_tgas(300)).build();
+        testing_env!(ctx, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    };
+    at(PENDING_TIMEOUT_BLOCKS - 1);
+    assert!(c.token_info("1".into()).unwrap().pending, "still in flight");
+    at(PENDING_TIMEOUT_BLOCKS + 1);
+    assert!(!c.token_info("1".into()).unwrap().pending, "lapsed: the holder isn't frozen forever");
 }
