@@ -1250,11 +1250,11 @@ function OwnerForms({ t, busy, run, status, market }) {
       <form onSubmit={sell} className="stack">
         <h2>Sell</h2>
         <label>Price
-          <span className="row"><input type="number" min="0.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required /> NEAR</span>
+          <span className="row"><input type="number" min="0.01" step="any" value={price} onChange={(e) => setPrice(e.target.value)} required /> NEAR</span>
         </label>
         <label>Lower it over time to (optional)
           <span className="row">
-            <input type="number" min="0.01" step="0.01" max={price} value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="no auction" /> NEAR over
+            <input type="number" min="0.01" step="any" max={price} value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="no auction" /> NEAR over
             <input type="number" min="0.1" step="0.1" value={hours} onChange={(e) => setHours(e.target.value)} disabled={floor === ""} /> h
           </span>
         </label>
@@ -1273,10 +1273,10 @@ function OwnerForms({ t, busy, run, status, market }) {
       <form onSubmit={borrow} className="stack">
         <h2>Borrow against it</h2>
         <label>Borrow
-          <span className="row"><input type="number" min="0.01" step="0.01" value={principal} onChange={(e) => setPrincipal(e.target.value)} required /> NEAR</span>
+          <span className="row"><input type="number" min="0.01" step="any" value={principal} onChange={(e) => setPrincipal(e.target.value)} required /> NEAR</span>
         </label>
         <label>Repay
-          <span className="row"><input type="number" min={principal} step="0.01" value={repay} onChange={(e) => setRepay(e.target.value)} required /> NEAR within
+          <span className="row"><input type="number" min={principal} step="any" value={repay} onChange={(e) => setRepay(e.target.value)} required /> NEAR within
             <input type="number" min="0.001" step="any" value={loanDays} onChange={(e) => setLoanDays(e.target.value)} required /> days</span>
         </label>
         {Number(t.info.verified_sats) === 0 && <p className="warn">This Pusaka has no BTC verified on NEAR, so lenders will see no collateral.</p>}
@@ -1378,8 +1378,8 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
     return "Offer posted. Your NEAR waits in the contract until the owner accepts or you cancel.";
   }, <>
     <h2>{funded ? "Offer to refinance" : "Offer a loan"}</h2>
-    <label>Lend <span className="row"><input type="number" min="0.01" step="0.01" value={a} onChange={(e) => setA(e.target.value)} required /> NEAR, repay
-      <input type="number" min={a} step="0.01" value={b} onChange={(e) => setB(e.target.value)} required /> NEAR within
+    <label>Lend <span className="row"><input type="number" min="0.01" step="any" value={a} onChange={(e) => setA(e.target.value)} required /> NEAR, repay
+      <input type="number" min={a} step="any" value={b} onChange={(e) => setB(e.target.value)} required /> NEAR within
       <input type="number" min="0.001" step="any" value={c} onChange={(e) => setC(e.target.value)} required /> days</span></label>
     <button disabled={!!busy}>{busy === "offer" ? "Offering…" : "Offer a loan"}</button>
     <p className="muted">The NEAR is held by the contract. {funded
@@ -1408,7 +1408,7 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
       return "Extension offered. The borrower can take it before the due date.";
     }, <>
       <label>Propose extension <span className="row">+<input type="number" min="0.001" step="any" value={a} onChange={(e) => setA(e.target.value)} required /> days for
-        <input type="number" min="0" step="0.01" value={b} onChange={(e) => setB(e.target.value)} placeholder="0" /> NEAR</span></label>
+        <input type="number" min="0" step="any" value={b} onChange={(e) => setB(e.target.value)} placeholder="0" /> NEAR</span></label>
       <button disabled={!!busy}>{busy === "propose" ? "Proposing…" : "Propose extension"}</button>
     </>)}
   </>;

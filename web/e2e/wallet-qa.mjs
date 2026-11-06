@@ -6,6 +6,7 @@
 //   node wallet-qa.mjs <profileDir> add-form <.keys/heir.json>        add the heir (pusaka-seller)
 //   node wallet-qa.mjs <profileDir> claim                             reconnect as the heir and claim, once due
 //   node wallet-qa.mjs <profileDir> judge <buyId> <lendId>            the README's try-it path: Buy one, Lend on another
+//   node wallet-qa.mjs <profileDir> offer <account> <id>              post a standing loan offer through the form, then cancel it
 import fs from "node:fs";
 import { chromium } from "playwright";
 const [profile, step, keyFile, arg2] = process.argv.slice(2);
@@ -170,7 +171,7 @@ try {
     const w = await pop;
     await w.waitForLoadState(); await w.waitForTimeout(4000);
     await w.screenshot({ path: `${profile}-repay-connect.png` });
-    console.log("connect popup:", (await w.getByRole("button").allInnerTexts()).join(" / ").replace(/s+/g, " ").slice(0, 300));
+    console.log("connect popup:", (await w.getByRole("button").allInnerTexts()).join(" / ").replace(/\s+/g, " ").slice(0, 300));
     await w.getByText("Selected Account").click(); await w.waitForTimeout(1000); // open the account dropdown
     await w.getByText(who, { exact: true }).last().click();
     await w.waitForTimeout(1000);
@@ -189,6 +190,49 @@ try {
     console.log(`repay #${id} -> [${(await actions.getByRole("status").allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     await p.waitForTimeout(3000);
     console.log("after:", (await actions.innerText()).replace(/\s+/g, " ").slice(0, 200));
+  }
+  if (step === "offer") { // as account keyFile, post a standing loan offer on token arg2 through the form, then cancel it
+    const [who, id] = [keyFile, arg2];
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
+    await p.waitForTimeout(5000);
+    if (!(await p.locator("header").innerText()).includes(who)) {
+      const acct = p.getByTitle("Disconnect wallet");
+      if (await acct.count()) { await acct.click(); await p.waitForTimeout(2000); }
+      await p.getByRole("button", { name: /connect/i }).first().click();
+      await p.waitForTimeout(3000);
+      await p.getByText("Intear Wallet", { exact: true }).click();
+      await p.waitForTimeout(2000);
+      const pop = ctx.waitForEvent("page", { timeout: 30_000 });
+      for (const fr of p.frames()) { const b = fr.getByText("Web", { exact: true }); if (await b.count()) { await b.first().click(); break; } }
+      const w = await pop;
+      await w.waitForLoadState(); await w.waitForTimeout(4000);
+      await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
+      await w.getByText(who, { exact: true }).last().click();
+      await w.waitForTimeout(1000);
+      await w.getByRole("button", { name: "Connect", exact: true }).click();
+      await p.waitForTimeout(6000);
+    }
+    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    const sign = async (label, click) => {
+      const wp = ctx.waitForEvent("page", { timeout: 20_000 });
+      const t0 = Date.now();
+      await click();
+      const w = await wp; await w.waitForLoadState(); await w.waitForTimeout(4000);
+      console.log(`  [${label}] wallet: ${(await w.innerText("body")).replace(/\s+/g, " ").slice(0, 220)}`);
+      await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+      const status = p.locator("section.actions").getByRole("status");
+      for (let i = 0; i < 90 && !(await status.count()); i++) await p.waitForTimeout(1000);
+      console.log(`${label} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    };
+    const form = p.locator("form").filter({ has: p.getByRole("heading", { name: /^Offer (a loan|to refinance)$/ }) });
+    await form.waitFor({ timeout: 40_000 });
+    const [lend, repay, days] = await form.locator("input").all();
+    await lend.fill("0.01"); await repay.fill("0.0101"); await days.fill("1");
+    await sign(`offer on #${id}`, () => form.getByRole("button", { name: "Offer a loan" }).click());
+    await p.reload(); await p.waitForTimeout(6000);
+    const mine = p.locator("p").filter({ hasText: who }).filter({ has: p.getByRole("button", { name: "Cancel my offer" }) });
+    console.log("listed:", (await mine.first().innerText()).replace(/\s+/g, " "));
+    await sign("cancel offer", () => mine.first().getByRole("button", { name: "Cancel my offer" }).click());
   }
   if (step === "judge") {
     const [buyId, lendId] = [keyFile, arg2];
