@@ -21,6 +21,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- not render-blocking: the page paints in the fallback serif/sans first, then swaps -->
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <!-- the theme before first paint, so a dark-mode visitor never sees a white flash -->
+    <script>document.documentElement.dataset.theme = localStorage.getItem("pusaka:theme") ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");</script>
   </head>
   <body>
     <!-- Painted before any JS: the home page's header and hero, so the first paint doesn't wait for the app bundle.

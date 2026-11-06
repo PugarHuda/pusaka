@@ -101,6 +101,8 @@ export function Bell({ accountId }) {
     return () => { live = false; clearInterval(t); };
   }, [accountId]);
   const unread = items?.filter((x) => x.at > seen).length ?? 0;
+  const [perm, setPerm] = useState(() => (typeof Notification === "undefined" ? "unsupported" : Notification.permission));
+  useBrowserAlerts(items, seen);
   return (
     <details className="bell" onToggle={(e) => { if (e.currentTarget.open && items?.length) { localStorage.setItem(key, String(items[0].at)); setTimeout(() => setSeen(items[0].at), 4000); } }}>
       <summary aria-label={unread ? `${unread} new notifications` : "Notifications"}>
@@ -108,7 +110,10 @@ export function Bell({ accountId }) {
         {unread > 0 && <b>{unread}</b>}
       </summary>
       <div className="bell-panel">
-        <p className="bell-title">Notifications</p>
+        <p className="bell-title">Notifications
+          {perm === "default" && <button type="button" className="link" onClick={() => Notification.requestPermission().then(setPerm)}>Alert me in this browser</button>}
+          {perm === "granted" && <span className="muted"> · browser alerts on</span>}
+        </p>
         {!items ? <p className="muted">Reading the contract…</p> : !items.length ? <p className="muted">Nothing yet. Sales, transfers, loans and heirs that involve {accountId} show up here.</p> : (
           <ul>{items.map((x) => (
             <li key={`${x.id}:${x.at}:${x.text}`} className={x.at > seen ? "is-new" : ""}>
@@ -215,4 +220,97 @@ export function CommandPalette({ accountId }) {
       </div>
     </div>
   );
+}
+
+// ---------- theme, celebration, watchlist, browser alerts, 3D tilt ----------
+
+export function ThemeToggle() {
+  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
+  const flip = () => {
+    const next = dark ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("pusaka:theme", next);
+    setDark(!dark);
+  };
+  return (
+    <button type="button" className="theme-toggle" onClick={flip} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} title={dark ? "Light mode" : "Dark mode"}>
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">{dark
+        ? <path fill="currentColor" d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0-5 1.2 3h-2.4L12 2Zm0 20-1.2-3h2.4L12 22ZM2 12l3-1.2v2.4L2 12Zm20 0-3 1.2v-2.4L22 12ZM4.9 4.9l3 1.3-1.7 1.7-1.3-3Zm14.2 14.2-3-1.3 1.7-1.7 1.3 3Zm0-14.2-1.3 3-1.7-1.7 3-1.3ZM4.9 19.1l1.3-3 1.7 1.7-3 1.3Z" />
+        : <path fill="currentColor" d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1Z" />}</svg>
+    </button>
+  );
+}
+
+/** A short burst of Bitcoin-orange and lavender when something lands (a purchase, a claim, an inheritance). */
+export function celebrate() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const box = document.createElement("div");
+  box.className = "confetti";
+  box.setAttribute("aria-hidden", "true");
+  const colors = ["#f7931a", "#ffd77a", "#b48cf0", "#a9c98b", "#57bcee"];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement("i");
+    p.style.setProperty("--x", `${(Math.random() - 0.5) * 120}vw`);
+    p.style.setProperty("--y", `${60 + Math.random() * 50}vh`);
+    p.style.setProperty("--r", `${Math.random() * 720 - 360}deg`);
+    p.style.background = colors[i % colors.length];
+    p.style.animationDelay = `${Math.random() * 0.15}s`;
+    if (i % 3 === 0) p.style.borderRadius = "50%";
+    box.appendChild(p);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 2200);
+}
+
+/** Pusakas you're keeping an eye on, kept in this browser only. */
+const WATCH_KEY = "pusaka:watch";
+export const watched = () => new Set(JSON.parse(localStorage.getItem(WATCH_KEY) ?? "[]"));
+export function useWatch(id) {
+  const [on, setOn] = useState(() => watched().has(String(id)));
+  const toggle = (e) => {
+    e?.preventDefault(); e?.stopPropagation();
+    const w = watched();
+    if (w.has(String(id))) w.delete(String(id)); else w.add(String(id));
+    localStorage.setItem(WATCH_KEY, JSON.stringify([...w]));
+    setOn(w.has(String(id)));
+    dispatchEvent(new Event("pusaka:watch"));
+  };
+  return [on, toggle];
+}
+export function WatchStar({ id }) {
+  const [on, toggle] = useWatch(id);
+  return (
+    <button type="button" className={`star${on ? " is-on" : ""}`} onClick={toggle} aria-pressed={on} aria-label={on ? `Stop watching Pusaka #${id}` : `Watch Pusaka #${id}`} title={on ? "Watching" : "Watch"}>
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill={on ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+    </button>
+  );
+}
+
+/** Browser alerts for new notifications while Pusaka is open in a tab (the Notification API; no server keeps your address). */
+export function useBrowserAlerts(items, seen) {
+  const shown = useMemo(() => new Set(), []);
+  useEffect(() => {
+    if (!items || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    for (const x of items) {
+      const k = `${x.id}:${x.at}:${x.text}`;
+      if (x.at > seen && !shown.has(k) && Date.now() - x.at < 10 * 60_000) {
+        shown.add(k);
+        new Notification("Pusaka", { body: x.text, icon: "/icon-192.png", tag: k });
+      }
+    }
+  }, [items, seen, shown]);
+}
+
+/** A gentle 3D tilt that follows the pointer: the vessel turns in the light. */
+export function Tilt({ children, className = "" }) {
+  const onMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+    e.currentTarget.style.setProperty("--rx", `${(-y * 16).toFixed(2)}deg`);
+    e.currentTarget.style.setProperty("--ry", `${(x * 16).toFixed(2)}deg`);
+    e.currentTarget.style.setProperty("--gx", `${((x + 0.5) * 100).toFixed(0)}%`);
+    e.currentTarget.style.setProperty("--gy", `${((y + 0.5) * 100).toFixed(0)}%`);
+  };
+  const reset = (e) => { for (const k of ["--rx", "--ry"]) e.currentTarget.style.setProperty(k, "0deg"); };
+  return <div className={`tilt ${className}`} onPointerMove={onMove} onPointerLeave={reset}>{children}<span className="tilt-glare" aria-hidden="true" /></div>;
 }

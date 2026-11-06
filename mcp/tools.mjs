@@ -467,7 +467,11 @@ reg("pusaka_set_guardians", {
 }, tool(async ({ token_id, guardians, threshold }) => {
   const list = [...new Set(guardians.map((g) => g.trim().toLowerCase()).filter(Boolean))];
   for (const g of list) if (!(await accountExists(g))) throw new Error(`${g} doesn't exist on NEAR ${NETWORK}.`);
-  if (list.length) await confirm(`The agent wants to make ${list.join(", ")} guardians of Pusaka #${token_id}'s will: ${threshold} of them could release it to the heir after your silence.`);
+  // who controls the will is as strong as naming the heir: same opt-in, and always the person's explicit yes
+  const what = list.length
+    ? `make ${list.join(", ")} guardians of Pusaka #${token_id}'s will: ${threshold} of them could release it to the heir after your silence`
+    : `remove every guardian from Pusaka #${token_id}'s will: the heir could then claim alone after your silence`;
+  await outflow(list[0] ?? "guardians", what);
   await call("set_guardians", { token_id, guardians: list, threshold: list.length ? threshold : 0 }, { deposit: 10_000_000_000_000_000_000_000n });
   return { token_id, guardians: await view("guardians_of", { token_id }) };
 }));

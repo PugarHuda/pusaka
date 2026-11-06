@@ -11,7 +11,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
-import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette } from "./extras.jsx";
+import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, celebrate, watched, WatchStar, Tilt } from "./extras.jsx";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
@@ -175,6 +175,7 @@ export default function App() {
           {accountId && <a href="#/mine" className={`nav-link${tokenId === "mine" ? " is-here" : ""}`}>Your Pusakas</a>}
           <a href="#/agents" className={`nav-link${tokenId === "agents" ? " is-here" : ""}`}>For AI agents</a>
         </nav>
+        <ThemeToggle />
         {accountId ? (
           <div className="who">
             <Bell accountId={accountId} />
@@ -419,6 +420,7 @@ const FILTERS = {
   lent: ["Lent against", (i) => !!i.loan?.lender],
   btc: ["Holds Bitcoin", (i) => Number(i.verified_sats) > 0],
   empty: ["Empty", (i) => !Number(i.verified_sats)],
+  watch: ["Watching", (i) => watched().has(i.token.token_id)],
 };
 const SORTS = {
   new: ["Newest", (a, b) => Number(b.id) - Number(a.id)],
@@ -430,6 +432,8 @@ function Market({ accountId }) {
   const { tokens: all, error } = useTokens();
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("new");
+  const [, bump] = useState(0);
+  useEffect(() => { const f = () => bump((n) => n + 1); addEventListener("pusaka:watch", f); return () => removeEventListener("pusaka:watch", f); }, []);
   const tokens = all;
   const shown = all?.filter((t) => FILTERS[filter][1](t.info)).sort(SORTS[sort][1]);
   const px = usePrices();
@@ -466,7 +470,9 @@ function Market({ accountId }) {
         {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
         {shown?.length === 0 && <p className="muted">No Pusaka match this filter.</p>}
         {shown?.map((t) => (
-          <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
+          <div key={t.id} className="piece-wrap">
+          <WatchStar id={t.id} />
+          <a href={`#/pusaka/${t.id}`} className="piece">
             <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
             <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
@@ -475,6 +481,7 @@ function Market({ accountId }) {
             {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
+          </div>
         ))}
       </section>
       <div className="market-side">
@@ -665,9 +672,9 @@ function Detail({ id, accountId }) {
   return (
     <article className="detail">
       <div className="detail-face">
-        <Vessel id={id} info={info} locked={locked} />
+        <Tilt><Vessel id={id} info={info} locked={locked} /></Tilt>
         <h1>Pusaka #{id}</h1>
-        <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong></p>
+        <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong> <WatchStar id={id} /></p>
         <ShareLinks id={id} btcText={`${btc(Number(info.verified_sats))} BTC`} />
       </div>
 
@@ -1092,7 +1099,7 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
   async function run(what, fn) {
     setBusy(true); setMsg(null);
     // refresh first, so the message never shows next to the old owner or the old date
-    try { const r = await fn(); await Promise.all([load(), onDone()]); setMsg({ ok: true, text: `${what}${r?.gasless ? " (gas paid by Pusaka's relayer)" : ""}.` }); }
+    try { const r = await fn(); await Promise.all([load(), onDone()]); setMsg({ ok: true, text: `${what}${r?.gasless ? " (gas paid by Pusaka's relayer)" : ""}.` }); if (what === "It's yours now") celebrate(); }
     catch (err) { setMsg({ ok: false, text: err.message }); }
     finally { setBusy(false); }
   }
@@ -1355,7 +1362,7 @@ function GiftClaim({ secret, accountId }) {
   const claim = (label, fn) => async (e) => {
     e?.preventDefault();
     setBusy(label); setMsg(null);
-    try { setMsg({ ok: true, text: await fn() }); setG(null); }
+    try { setMsg({ ok: true, text: await fn() }); setG(null); celebrate(); }
     catch (err) { setMsg({ ok: false, text: String(err.message ?? err).slice(0, 300) }); }
     finally { setBusy(""); }
   };
@@ -1490,7 +1497,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
 
   async function run(label, fn) {
     setBusy(label); setMsg(null);
-    try { setMsg({ ok: true, text: await fn() }); await onDone(); }
+    try { setMsg({ ok: true, text: await fn() }); if (["buy", "claim", "fund", "accept-offer"].includes(label)) celebrate(); await onDone(); }
     catch (e) { setMsg({ ok: false, text: e.message }); }
     finally { setBusy(""); }
   }

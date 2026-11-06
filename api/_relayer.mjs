@@ -168,6 +168,11 @@ export async function relay(b64) {
       guardiansOf(args.token_id),
     ]);
     allowed = !!h && !!g && g.guardians.includes(who) && !g.approvals.includes(who) && Number(h.claimable_from_ms) <= Date.now();
+    // one relayed approval per guardian per token per 10 minutes, reserved before sending: parallel delegates with
+    // different nonces would all pass the check above before the first lands, and each failed one costs the relayer
+    const k = `approve:${args.token_id}:${who}`;
+    if (allowed && Date.now() - (lastRelay.get(k) ?? 0) < 10 * 60_000) throw tooSoon("this guardian's approval was just relayed; it lands in a few seconds");
+    if (allowed) lastRelay.set(k, Date.now());
   }
   if (fc.methodName === "accept_loan_offer") allowed = allowed && acceptWouldSucceed(info, await offerById(args.offer_id), who, args);
   if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
