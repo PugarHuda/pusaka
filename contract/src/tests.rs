@@ -699,18 +699,28 @@ fn n2_image_follows_verified_btc_and_lock_state() {
     let mut c = setup();
     let empty = svg_of(&c);
     assert!(empty.starts_with("<svg") && empty.ends_with("</svg>"));
-    assert!(empty.contains("stroke-dasharray=\"0.0 578.0\""), "ring empty with no verified BTC");
-    assert!(!empty.contains("#8e2c2c"), "no seal when unlocked");
+    assert!(empty.contains("data-fill=\"0\"") && !empty.contains("url(#l)"), "an empty vessel with no verified BTC");
+    assert!(!empty.contains("id=\"seal\""), "no seal when unlocked");
 
     proven(&mut c, b"true", 0, 1_000_000); // ~0.01 BTC verified
     let full = svg_of(&c);
-    assert!(full.contains("stroke-dasharray=\"578.0 578.0\""), "ring full at ~2^20 sats");
+    assert!(full.contains("data-fill=\"1000\"") && full.contains("url(#l)"), "the vessel full at ~2^20 sats");
 
     ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
     c.list("1".into(), NearToken::from_near(5), None, None);
-    assert!(svg_of(&c).contains("#8e2c2c"), "seal while listed");
+    assert!(svg_of(&c).contains("id=\"seal\""), "seal while listed");
     let desc = c.nft_token("1".into()).unwrap().metadata.unwrap().description.unwrap();
     assert!(desc.contains("0.01000000 BTC verified") && desc.contains("Locked"), "{desc}");
+}
+
+#[test]
+fn n2b_vessel_fill_scale() {
+    use crate::art::fill_milli;
+    assert_eq!(fill_milli(0), 0);
+    assert_eq!(fill_milli(1), 120, "any proven deposit shows");
+    assert_eq!(fill_milli(10_000), 700);
+    assert_eq!(fill_milli(1_000_000), 1000);
+    assert_eq!(fill_milli(u64::MAX - 1), 1000);
 }
 
 #[test]

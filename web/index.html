@@ -25,12 +25,11 @@
   <body>
     <!-- Painted before any JS: the home page's header and hero, so the first paint doesn't wait for the app bundle.
          React replaces it on mount; on other routes the hero is dropped at once so it never flashes. -->
-    <div id="root"><div class="sheet"><header class="bar"><a href="#/" class="wordmark">Pusaka</a></header><main><section class="hero" id="shell-hero">
+    <div id="root"><div class="sheet"><header class="bar"><a href="#/" class="wordmark">Pusaka</a></header><main><div class="fold" id="shell-hero"><section class="hero">
       <h1>NFTs that hold real Bitcoin.</h1>
-      <p class="lede">Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR
-        transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep. Every deposit is
-        proven on NEAR by its Bitcoin light client, not reported by us.</p>
-    </section></main></div></div>
+      <p class="lede">Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR transaction:
+        no bridge, no custodian, no key left with the seller.</p>
+    </section></div></main></div></div>
     <script>if (!/^#?\/?$/.test(location.hash)) document.getElementById("shell-hero").remove();</script>
     <script type="module" src="/src/main.jsx"></script>
   </body>

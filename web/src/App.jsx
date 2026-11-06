@@ -10,7 +10,7 @@ import {
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
-import Hills from "./Hills.jsx";
+import Field from "./Field.jsx";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
 import { loadInfos, loadMine } from "./mine.js";
@@ -233,10 +233,13 @@ function Scenes({ tokens, px, sats }) {
   const best = forSale[0];
   const ready = tokens?.length > 0;
   const curve = best && auctionCurve(best.listing);
+  // the vessels in the backdrops are real Pusakas, fullest first
+  const v = [...infos].sort((a, b) => Number(b.verified_sats) - Number(a.verified_sats));
+  const empty = infos.filter((i) => !Number(i.verified_sats));
   return (
     <section className="scenes" aria-label="Live from the contract">
       <figure className="scene">
-        <Hills seed={3} width={400} height={360} />
+        <Field mesh="sky" spots={[{ info: v[1], x: -8, y: -10, size: 46 }, { info: v[2], x: 68, y: 60, size: 40 }, { info: empty[0], x: 74, y: -6, size: 22, blur: true }]} />
         <div className="widget">
           <div className="widget-head"><span>Bitcoin proven on NEAR</span><span className="chip chip-lav">Light client</span></div>
           <div className="cells">
@@ -247,7 +250,7 @@ function Scenes({ tokens, px, sats }) {
         </div>
       </figure>
       <figure className="scene scene-main">
-        <Hills seed={11} width={520} height={460} />
+        <Field mesh="dawn" spots={[{ info: v[0], x: 31, y: -20, size: 38 }, { info: v[3], x: -9, y: 60, size: 33 }, { info: v[4], x: 79, y: 64, size: 29 }, { info: empty[1], x: 86, y: 2, size: 15, blur: true }, { info: empty[2], x: 3, y: 4, size: 12, blur: true }]} />
         <div className="widget widget-wide">
           <div className="widget-left">
             <div className="widget-head"><span>Pusaka</span><span className="chip chip-live">Live</span></div>
@@ -265,7 +268,7 @@ function Scenes({ tokens, px, sats }) {
         </div>
       </figure>
       <figure className="scene">
-        <Hills seed={5} width={400} height={360} />
+        <Field mesh="mint" spots={[{ info: best ?? v[5], x: 56, y: -16, size: 52 }, { info: v[6], x: -10, y: 66, size: 36 }]} />
         <div className="widget">
           <div className="widget-head"><span>{best ? `Pusaka #${best.token.token_id} for sale` : "For sale"}</span>{best && (curve.length > 2 ? <Spark points={curve} /> : <span className="chip chip-leaf">Fixed price</span>)}</div>
           {best ? <>
@@ -305,12 +308,12 @@ function Home({ accountId }) {
   const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
   return (
     <>
+      <div className="fold">
       <section className="hero">
         <h1>NFTs that hold real Bitcoin.</h1>
         <p className="lede">
-          Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR
-          transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep. Every deposit is
-          proven on NEAR by its Bitcoin light client, not reported by us.
+          Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR transaction:
+          no bridge, no custodian, no key left with the seller.
         </p>
         <p className="cta-row">
           <a className="pill" href="#pusakas" onClick={(e) => { e.preventDefault(); document.getElementById("pusakas")?.scrollIntoView({ behavior: "smooth" }); }}>See every Pusaka</a>
@@ -319,6 +322,7 @@ function Home({ accountId }) {
       </section>
 
       <Scenes tokens={tokens} px={px} sats={sats} />
+      </div>
 
       {tokens?.length > 0 && (
         <p className="reserves">
@@ -374,7 +378,15 @@ function Home({ accountId }) {
         <p className="muted">Name an heir on any Pusaka you hold. If you stay silent for as long as you choose, they can claim it,
           with everything inside. One check-in, gas-free, restarts the clock.</p>
         <a className="pill" href="#/mine">Name an heir</a>
-        <Hills seed={7} width={1200} height={260} className="panorama" flowers={1.6} />
+        {tokens?.length > 0 && (
+          <div className="shelf" aria-label="Every Pusaka, as the vessel it is">
+            {[...tokens].sort((a, b) => Number(a.id) - Number(b.id)).map((t) => (
+              <a key={t.id} href={`#/pusaka/${t.id}`} title={`Pusaka #${t.id}: ${stateOf(t.info, Date.now())}`}>
+                <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} size={72} label={`Pusaka #${t.id}`} />
+              </a>
+            ))}
+          </div>
+        )}
       </section>
     </>
   );

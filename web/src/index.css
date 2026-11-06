@@ -65,7 +65,7 @@ body::after {
 body { overflow-x: hidden; padding-bottom: 0; }
 #root { position: relative; z-index: 1; }
 .sheet {
-  max-width: 1320px;
+  max-width: 1600px;
   margin: 0 auto;
   background: var(--paper);
   border-radius: var(--r-sheet);
@@ -165,15 +165,24 @@ footer p { max-width: var(--measure); margin: 0; }
 
 /* ---------- home: hero ---------- */
 
-.hero { padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem); max-width: 960px; margin: 0 auto; text-align: center; }
+/* the first screen: headline and the three live cards fill the viewport below the header */
+.fold {
+  min-height: calc(100vh - 2 * clamp(10px, 3.2vw, 56px) - 5.4rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: clamp(1.5rem, 3vh, 2.5rem);
+  padding-bottom: clamp(1rem, 2vh, 2rem);
+}
+.hero { padding: clamp(1rem, 3vh, 2.5rem) 0 0; max-width: 1180px; margin: 0 auto; text-align: center; }
 .hero h1 {
-  font: 400 clamp(2.8rem, 7vw, 5.6rem)/1 var(--serif);
+  font: 400 clamp(2.6rem, min(5.8vw, 9vh), 5.4rem)/1 var(--serif);
   letter-spacing: -0.035em;
   font-optical-sizing: auto;
   margin: 0 0 1.4rem;
 }
-.lede { font-size: clamp(1rem, 1.4vw, 1.12rem); max-width: 60ch; margin: 0 auto; color: var(--ink-soft); }
-.cta-row { display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; margin: 2rem 0 0; }
+.lede { font-size: clamp(1rem, 1.4vw, 1.12rem); max-width: 68ch; margin: 0 auto; color: var(--ink-soft); }
+.cta-row { display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; margin: 1.6rem 0 0; }
 
 /* the one orchestrated moment: the headline comes into focus, then the three landscapes rise */
 @media (prefers-reduced-motion: no-preference) {
@@ -199,14 +208,20 @@ footer p { max-width: var(--measure); margin: 0; }
   position: relative;
   margin: 0;
   aspect-ratio: 10 / 9.4;
+  max-height: max(270px, min(46vh, calc(100vh - 480px)));
+  width: 100%;
   border-radius: var(--r-card);
   overflow: hidden;
   display: grid;
   place-items: center;
   box-shadow: 0 18px 40px -24px rgba(40, 70, 40, 0.5);
 }
-.scene-main { aspect-ratio: 10 / 8.6; }
-.scene > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.scene-main { aspect-ratio: 10 / 8.6; max-height: max(300px, min(54vh, calc(100vh - 440px))); }
+.field { position: absolute; inset: 0; overflow: hidden; }
+.field::after { content: ""; position: absolute; inset: 0; background: radial-gradient(80% 70% at 50% 50%, rgba(255, 255, 255, 0.35), transparent 70%); }
+.field-orb { position: absolute; aspect-ratio: 1; filter: drop-shadow(0 18px 22px rgba(60, 50, 120, 0.22)); }
+.field-orb svg { display: block; width: 100%; height: 100%; }
+.field-orb-far { filter: blur(2.5px) saturate(0.9); opacity: 0.75; }
 .widget {
   position: relative;
   width: min(84%, 300px);
@@ -322,8 +337,8 @@ footer p { max-width: var(--measure); margin: 0; }
   transition: background 0.2s ease;
 }
 .piece:hover { background: #ebebe8; color: inherit; }
-.piece .emblem { margin-bottom: 0.6rem; transition: transform 0.3s ease; }
-.piece:hover .emblem { transform: rotate(-8deg); }
+.piece .emblem { margin-bottom: 0.6rem; transition: transform 0.3s ease; filter: drop-shadow(0 14px 16px rgba(60, 50, 120, 0.18)); }
+.piece:hover .emblem { transform: translateY(-4px); }
 .piece-name { font-weight: 600; }
 .piece-btc { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 0.92rem; }
 .piece-price { color: var(--lav-ink); font-size: 0.86rem; }
@@ -334,7 +349,20 @@ footer p { max-width: var(--measure); margin: 0; }
 .closing { text-align: center; margin: clamp(4rem, 8vw, 6rem) 0 0; display: flex; flex-direction: column; align-items: center; gap: 1.2rem; }
 .closing h2 { font: 400 clamp(2.2rem, 5vw, 3.8rem)/1.02 var(--serif); letter-spacing: -0.02em; margin: 0; }
 .closing p { margin: 0; max-width: 56ch; }
-.panorama { width: 100%; height: auto; aspect-ratio: 1200 / 260; border-radius: var(--r-card); margin-top: 1.8rem; display: block; }
+.shelf {
+  width: 100%;
+  margin-top: 2rem;
+  border-radius: var(--r-card);
+  padding: clamp(1.4rem, 3vw, 2.4rem);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(0.6rem, 1.4vw, 1.1rem);
+  background: radial-gradient(50% 80% at 10% 0%, #a9d6f6 0%, transparent 70%), radial-gradient(50% 80% at 90% 10%, #d6c4fa 0%, transparent 70%), radial-gradient(60% 90% at 50% 110%, #f8dcb0 0%, transparent 70%), #eef3f8;
+}
+.shelf a { display: block; border-radius: 50%; transition: transform 0.25s ease; filter: drop-shadow(0 10px 12px rgba(60, 50, 120, 0.2)); }
+.shelf a:hover { transform: translateY(-4px); }
+.shelf svg { display: block; width: clamp(48px, 6vw, 72px); height: auto; }
 
 /* ---------- activity and offers ---------- */
 
@@ -342,17 +370,6 @@ footer p { max-width: var(--measure); margin: 0; }
 .activity h2, .offers h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 0.7rem; }
 .activity ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem; font-size: 0.92rem; }
 .offers ul { padding-left: 1.1rem; display: grid; gap: 0.4rem; margin: 0; }
-
-/* ---------- emblem (the NFT's own art keeps its colours) ---------- */
-
-.em-face { fill: var(--emblem-ink); }
-.em-track { fill: none; stroke: #2a3757; stroke-width: 5; }
-.em-fill { fill: none; stroke: var(--brass); stroke-width: 5; stroke-linecap: round; transition: stroke-dasharray 0.8s ease; }
-.em-petal { fill: none; stroke: var(--brass-pale); stroke-width: 1.4; opacity: 0.9; }
-.em-dot { fill: var(--brass); opacity: 0.75; }
-.em-core { fill: var(--brass); }
-.em-pip { fill: var(--emblem-ink); }
-.em-seal { fill: #8e2c2c; stroke: var(--panel); stroke-width: 3; }
 
 /* ---------- detail ---------- */
 
@@ -364,8 +381,8 @@ footer p { max-width: var(--measure); margin: 0; }
   align-items: start;
 }
 .detail > * { min-width: 0; } /* let long addresses and inputs shrink instead of widening the grid */
-.detail-face { position: sticky; top: 2rem; text-align: center; background: var(--panel); border-radius: var(--r-card); padding: 2rem 1.4rem; }
-.detail-face .emblem { width: 100%; height: auto; max-width: 300px; }
+.detail-face { position: sticky; top: 2rem; text-align: center; background: radial-gradient(70% 60% at 20% 0%, #cfe6fa 0%, transparent 70%), radial-gradient(60% 60% at 100% 30%, #e6dafb 0%, transparent 70%), var(--panel); border-radius: var(--r-card); padding: 2rem 1.4rem; }
+.detail-face .emblem { width: 100%; height: auto; max-width: 300px; filter: drop-shadow(0 22px 26px rgba(60, 50, 120, 0.25)); }
 .detail-face h1 { font: 400 2.8rem/1.05 var(--serif); letter-spacing: -0.02em; margin: 1rem 0 0.3rem; }
 .detail-face p { margin: 0; overflow-wrap: anywhere; }
 .detail-body { max-width: var(--measure); }
@@ -432,7 +449,8 @@ footer p { max-width: var(--measure); margin: 0; }
 
 @media (max-width: 900px) {
   .scenes { grid-template-columns: 1fr; }
-  .scene, .scene-main { aspect-ratio: 4 / 3; }
+  .scene, .scene-main { aspect-ratio: 4 / 3; max-height: none; }
+  .fold { min-height: 0; }
   .feature-card { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
