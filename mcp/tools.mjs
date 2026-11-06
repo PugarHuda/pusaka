@@ -471,7 +471,10 @@ reg("pusaka_set_guardians", {
   const what = list.length
     ? `make ${list.join(", ")} guardians of Pusaka #${token_id}'s will: ${threshold} of them could release it to the heir after your silence`
     : `remove every guardian from Pusaka #${token_id}'s will: the heir could then claim alone after your silence`;
-  await outflow(list[0] ?? "guardians", what);
+  // the same opt-in as outflows, every guardian against the allowlist, then one question for the whole list
+  if (process.env.PUSAKA_ALLOW_OUTFLOWS !== "1") throw new Error("Outflows are off: set PUSAKA_ALLOW_OUTFLOWS=1 to let this agent change who controls a Pusaka's will.");
+  for (const g of list) if (ALLOWED.length && !ALLOWED.includes(g)) throw new Error(`${g} isn't in PUSAKA_ALLOWED_RECIPIENTS.`);
+  await confirm(`The agent wants to ${what}.`);
   await call("set_guardians", { token_id, guardians: list, threshold: list.length ? threshold : 0 }, { deposit: 10_000_000_000_000_000_000_000n });
   return { token_id, guardians: await view("guardians_of", { token_id }) };
 }));
