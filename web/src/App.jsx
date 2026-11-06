@@ -22,7 +22,8 @@ let pricePromise;
 function usePrices() {
   const [p, setP] = useState(null);
   useEffect(() => {
-    pricePromise ??= prices().catch(() => null);
+    // one retry, and a failure isn't kept: the next page to ask tries again
+    pricePromise ??= prices().catch(() => new Promise((r) => setTimeout(r, 2000)).then(prices)).catch(() => (pricePromise = null));
     pricePromise.then(setP);
   }, []);
   return p;
