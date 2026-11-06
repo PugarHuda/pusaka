@@ -7,13 +7,14 @@
 // Without an account it runs read-only (overview, inspect).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { Account, FailoverRpcProvider, JsonRpcProvider, teraToGas } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, baseDecode, teraToGas } from "near-api-js";
 import {
   CONTRACT, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
   nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote,
+  MPC, btcFetch,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 
@@ -118,7 +119,8 @@ export async function inspect(token_id) {
 }
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
-export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers"]);
+export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -520,6 +522,184 @@ reg("pusaka_withdraw_nbtc", {
   if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
   const hash = await broadcastNear(await finalizeNear(signed));
   return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, from: acct };
+}));
+
+// ---------- due diligence an agent can run before trusting Pusaka with money: all read live, nothing signed ----------
+
+reg("pusaka_audit", {
+  description: "Independent proof-of-reserves audit of one Pusaka, without trusting the contract's own numbers: asks NEAR's MPC signer which Bitcoin key it derives for this contract and token (must equal the token's key), recomputes verified_sats from the proven deposits minus everything ever signed away, and looks every proven deposit up on Bitcoin itself (confirmed, paying this address, the right amount, and whether it is still unspent). Returns a verdict and each check.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const info = await view("token_info", { token_id });
+  if (!info?.btc_pubkey) throw new Error(`Pusaka #${token_id} has no Bitcoin key yet`);
+  const checks = [];
+  const check = (pass, what, detail) => checks.push({ pass, what, ...(detail !== undefined && { detail }) });
+  const mpcKey = await provider.callFunction({ contractId: MPC, method: "derived_public_key", args: { path: info.btc_path, predecessor: CONTRACT, domain_id: 0 }, blockQuery: { finality: "final" } });
+  const raw = baseDecode(mpcKey.split(":")[1]);
+  const compressed = (raw[63] % 2 ? "03" : "02") + Buffer.from(raw.slice(0, 32)).toString("hex");
+  check(compressed === info.btc_pubkey, `the Bitcoin key is NEAR MPC's derivation for ${CONTRACT}, path ${info.btc_path}: only this contract can get it to sign`, `signer ${MPC}`);
+  const signed = new Set(info.signed_outpoints.map((o) => `${o.txid}:${o.vout}`));
+  const sum = info.proven_utxos.filter((u) => !signed.has(`${u.txid}:${u.vout}`)).reduce((a, u) => a + Number(u.value), 0);
+  check(sum === Number(info.verified_sats), "verified_sats = proven deposits minus everything ever signed away", { recomputed: sum, contract_says: Number(info.verified_sats) });
+  const addr = btcAddress(info.btc_pubkey);
+  const lc = await lightClientHeight();
+  const deposits = await Promise.all(info.proven_utxos.map(async (u) => {
+    const tx = await btcFetch(`/tx/${u.txid}`).then((r) => r.json()).catch(() => null);
+    const out = tx?.vout?.[u.vout];
+    const spent = await btcFetch(`/tx/${u.txid}/outspend/${u.vout}`).then((r) => r.json()).catch(() => null);
+    const isSigned = signed.has(`${u.txid}:${u.vout}`);
+    return { outpoint: `${u.txid}:${u.vout}`, sats: Number(u.value), on_bitcoin: !!out && out.scriptpubkey_address === addr && out.value === Number(u.value) && !!tx.status?.confirmed && tx.status.block_height <= lc,
+      signed_away: isSigned, unspent: spent ? !spent.spent : null,
+      // a deposit spent on Bitcoin that the contract never signed for would mean the key leaked: impossible unless MPC is broken
+      anomaly: spent?.spent && !isSigned ? "spent on Bitcoin without the contract signing it" : undefined };
+  }));
+  check(deposits.every((d) => d.on_bitcoin), `every proven deposit is on Bitcoin, confirmed by block ${lc} (NEAR's light client height), paying ${addr}`);
+  check(!deposits.some((d) => d.anomaly), "no counted deposit was spent without the contract signing it");
+  return { token_id, verdict: checks.every((c) => c.pass) ? "reserves verified" : "FAILED: do not rely on this Pusaka", btc_address: addr, verified_sats: Number(info.verified_sats), checks, deposits };
+}));
+
+reg("pusaka_contract_trust", {
+  description: "Should an agent trust the Pusaka contract itself? Reads from NEAR: the deployed code's sha256 and the reproducible-build source it names (NEP-330), every access key on the contract account (none but one-use gift-link keys means nobody can sign as the contract), who can change the code (a Sputnik DAO council, its members and vote threshold), the timelock, and any upgrade pending with the time it becomes deployable.",
+  inputSchema: {},
+}, tool(async () => {
+  const [acct, keys, meta, up] = await Promise.all([
+    provider.viewAccount({ accountId: CONTRACT, blockQuery: { finality: "final" } }),
+    provider.viewAccessKeyList({ accountId: CONTRACT, finalityQuery: { finality: "final" } }),
+    view("contract_source_metadata"), view("upgrade_status"),
+  ]);
+  const CLAIM = ["claim", "create_account_and_claim"];
+  const giftKey = (k) => { const fc = k.access_key.permission?.FunctionCall; return fc?.receiver_id === CONTRACT && fc.method_names.length > 0 && fc.method_names.every((m) => CLAIM.includes(m)); };
+  const other = keys.keys.filter((k) => !giftKey(k));
+  let governance = { admin: up.admin, renounced: !!up.renounced };
+  if (up.admin && /\.(sputnikv2\.testnet|sputnik-dao\.near)$/.test(up.admin)) {
+    const policy = await provider.callFunction({ contractId: up.admin, method: "get_policy", args: {}, blockQuery: { finality: "final" } });
+    const council = policy.roles.find((r) => r.kind?.Group);
+    const vp = council?.vote_policy?.call ?? policy.default_vote_policy;
+    governance = { ...governance, kind: "Sputnik DAO", council: council?.kind.Group, threshold: vp?.threshold,
+      note: "a code change needs a council proposal and this many approvals, then the contract's own timelock" };
+  }
+  return {
+    contract: CONTRACT, network: NETWORK,
+    code_sha256: Buffer.from(baseDecode(acct.code_hash)).toString("hex"),
+    source: meta.build_info?.source_code_snapshot, build_image: meta.build_info?.build_environment, standards: meta.standards?.map((s) => `${s.standard} ${s.version}`),
+    keys: { total: keys.keys.length, open_gift_links: keys.keys.length - other.length, other: other.map((k) => k.access_key.permission === "FullAccess" ? "FullAccess" : k.access_key.permission),
+      verdict: other.length ? "someone holds a key that can act as the contract" : "nobody can sign as the contract: it only does what its code says" },
+    upgrades: up.renounced ? { final: true } : { governance, timelock_minutes: Number(up.delay_ms) / 60_000,
+      pending: up.proposal ? { code_sha256: up.proposal.code_sha256, deployable_from: new Date(Number(up.proposal.applicable_from_ms)).toISOString() } : null },
+    verify_yourself: "rebuild with the source and image above and compare code_sha256; or run `node scripts/verify.mjs` in the repo",
+  };
+}));
+
+const short = (e) => {
+  const n = (y) => toNear(y);
+  switch (e.kind) {
+    case "Mint": return `minted by ${e.owner}`;
+    case "Listed": return `listed for ${n(e.price)} NEAR`;
+    case "Sale": return `sold by ${e.from} to ${e.to} for ${n(e.price)} NEAR`;
+    case "Transfer": return `transferred ${e.from} → ${e.to}`;
+    case "Inherited": return `inherited by ${e.to} from silent holder ${e.from}`;
+    case "LoanRequested": return `loan asked: ${n(e.principal)} NEAR, repay ${n(e.repay)} in ${Number(e.duration_ms) / 86_400_000} d`;
+    case "LoanFunded": return `loan funded by ${e.lender}`;
+    case "LoanOfferAccepted": return `took ${e.lender}'s standing offer #${e.offer_id}`;
+    case "LoanRepaid": return `loan repaid to ${e.lender} (${n(e.amount)} NEAR)`;
+    case "LoanDefaulted": return `loan defaulted: ${e.lender} took the Pusaka`;
+    case "Withdraw": return `${e.amount_sat} sats withdrawn on Bitcoin`;
+    default: return e.kind;
+  }
+};
+
+/** Walks a token's on-chain history, tracking who held it, so each loan is pinned on the borrower of the day. */
+function walk(info) {
+  let owner = null;
+  const loans = [];
+  for (const { at_ms, event: e } of info.history) {
+    if (e.kind === "Mint") owner = e.owner;
+    if (["Sale", "Transfer", "Inherited"].includes(e.kind)) owner = e.to;
+    let open = loans.findLast((l) => l.outcome === "open");
+    if (e.kind === "LoanFunded" || e.kind === "LoanOfferAccepted") {
+      // a new offer taken while a loan is open is a refinance: the new lender paid the old one in full
+      if (open) Object.assign(open, { outcome: "refinanced", at_ms: Number(at_ms) });
+      loans.push(open = { borrower: owner, lender: e.lender, from_ms: Number(at_ms), outcome: "open" });
+    }
+    if (e.kind === "LoanRefinanced" && open) open.lender = e.to;
+    if (e.kind === "LoanRepaid" && open) Object.assign(open, { outcome: "repaid", at_ms: Number(at_ms) });
+    if (e.kind === "LoanDefaulted" && open) { Object.assign(open, { outcome: "defaulted", at_ms: Number(at_ms) }); owner = e.lender; }
+  }
+  return loans;
+}
+
+reg("pusaka_history", {
+  description: "Provenance of one Pusaka from the contract's own on-chain record: every mint, listing, sale and price, transfer, inheritance, loan (funded, repaid, defaulted, refinanced, extended) and withdrawal, oldest first, plus the chain of holders and the sale prices it has fetched.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const info = await view("token_info", { token_id });
+  if (!info) throw new Error(`No Pusaka #${token_id}`);
+  const holders = [];
+  for (const { event: e } of info.history) {
+    const to = e.kind === "Mint" ? e.owner : ["Sale", "Transfer", "Inherited"].includes(e.kind) ? e.to : e.kind === "LoanDefaulted" ? e.lender : null;
+    if (to && holders.at(-1) !== to) holders.push(to);
+  }
+  return {
+    token_id, owner: info.token.owner_id, holders,
+    sales_near: info.history.filter((h) => h.event.kind === "Sale").map((h) => toNear(h.event.price)),
+    loans: walk(info),
+    timeline: info.history.map((h) => ({ at: new Date(Number(h.at_ms)).toISOString(), what: short(h.event), event: h.event })),
+    note: "the contract keeps the latest 32 events per token; older ones are in its transaction logs",
+  };
+}));
+
+reg("pusaka_credit_record", {
+  description: "A borrower's on-chain credit record across every Pusaka: loans taken, repaid, defaulted (the lender took the collateral) and still open, read from the contract's history, not from anything the borrower says. Use it before funding a loan request or making an offer.",
+  inputSchema: { account_id: z.string() },
+}, tool(async ({ account_id }) => {
+  const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
+  const loans = (await Promise.all(toks.map(async (t) => walk(await view("token_info", { token_id: t.token_id })).map((l) => ({ token_id: t.token_id, ...l })))))
+    .flat().filter((l) => l.borrower === account_id);
+  const count = (o) => loans.filter((l) => l.outcome === o).length;
+  const honoured = count("repaid") + count("refinanced"), closed = honoured + count("defaulted");
+  return { account_id, loans_taken: loans.length, repaid: count("repaid"), refinanced: count("refinanced"), defaulted: count("defaulted"), open: count("open"),
+    repayment_rate: closed ? honoured / closed : null, loans,
+    note: "every Pusaka loan is fully collateralised by proven BTC, so a default costs the lender nothing it didn't agree to; this shows whether the borrower honours terms" };
+}));
+
+reg("pusaka_loan_watch", {
+  description: "Watch every funded Pusaka loan at once: due date, hours left, loan-to-value at live BTC/NEAR prices, and what this agent can do next on each (repay as borrower, claim the collateral as lender once overdue, or a lender's pending extension to accept). Built for an agent that lends or borrows on a schedule.",
+  inputSchema: {},
+}, tool(async () => {
+  const px = await prices().catch(() => null);
+  const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
+  const now = Date.now();
+  const rows = (await Promise.all(toks.map(async (t) => {
+    const i = await view("token_info", { token_id: t.token_id });
+    const l = i.loan;
+    if (!l?.lender) return null;
+    const due = Number(l.due_ms), sats = Number(i.verified_sats);
+    const row = { token_id: t.token_id, borrower: l.borrower, lender: l.lender, repay_near: toNear(l.repay), due: new Date(due).toISOString(),
+      hours_left: +((due - now) / 3_600_000).toFixed(1), overdue: now > due, verified_sats: sats };
+    if (px) row.ltv_now = +loanStats(l, sats, px).ltv.toFixed(3);
+    const ext = await view("loan_extension", { token_id: t.token_id }).catch(() => null);
+    if (ext) row.extension_proposed = ext;
+    row.your_move = ACCOUNT_ID === l.borrower ? (now > due ? "overdue: repay now with pusaka_repay_loan before the lender claims" : ext ? "a lender's extension awaits: pusaka_accept_extension" : "repay with pusaka_repay_loan or pusaka_repay_partial before due")
+      : ACCOUNT_ID === l.lender ? (now > due ? "overdue: pusaka_claim_collateral takes the Pusaka and its BTC" : "wait; you may offer more time with pusaka_propose_extension")
+      : null;
+    return row;
+  }))).filter(Boolean).sort((a, b) => a.hours_left - b.hours_left);
+  return { agent: ACCOUNT_ID ?? "read-only", prices: px && { btc_usd: px.btcUsd, near_usd: px.nearUsd }, funded_loans: rows,
+    yours: rows.filter((r) => r.your_move).length };
+}));
+
+reg("pusaka_gift_preview", {
+  description: "Open a Pusaka gift link without claiming it: who sent it, which Pusaka, and the Bitcoin proven inside, so an agent can check a link is real and still open before claiming. Runs locally; the link never leaves this process.",
+  inputSchema: { link: z.string() },
+}, tool(async ({ link }) => {
+  const secret = link.trim().split("#/gift/")[1];
+  if (!/^ed25519:[1-9A-HJ-NP-Za-km-z]{40,100}$/.test(secret ?? "")) throw new Error("not a Pusaka gift link");
+  const { KeyPair } = await import("near-api-js");
+  const gift = await view("gift_for_key", { public_key: KeyPair.fromString(secret).getPublicKey().toString() });
+  if (!gift) return { open: false, note: "this link opens no gift: already claimed or cancelled" };
+  const i = await view("token_info", { token_id: gift.token_id });
+  return { open: true, from: gift.from, token_id: gift.token_id, verified_sats: Number(i.verified_sats), btc_address: btcAddress(i.btc_pubkey),
+    next: "pusaka_claim_gift with the same link; it costs you nothing" };
 }));
 
 reg("pusaka_mint", {

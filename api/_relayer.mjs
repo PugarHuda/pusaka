@@ -28,11 +28,25 @@ const tooSoon = (msg) => Object.assign(new Error(msg), { status: 429 });
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 
-export function relayerAccount() {
+let relayer;
+/**
+ * One relayer Account per instance, so concurrent requests share its nonce bookkeeping. RELAYER_PRIVATE_KEY may be a
+ * NEP-611 gas key (scripts/gas-key.mjs): it pays gas from its own balance, and near-api-js spreads transactions over
+ * its nonce lanes, so parallel relays don't queue behind one nonce. Each instance starts on a random lane so separate
+ * instances rarely pick the same one (a clash is retried by near-api-js on a fresh nonce).
+ */
+export async function relayerAccount() {
+  if (relayer) return relayer;
   const id = process.env.RELAYER_ACCOUNT_ID;
   const key = process.env.RELAYER_PRIVATE_KEY;
   if (!id || !key) throw Object.assign(new Error("relayer is not configured"), { status: 503 });
-  return new Account(id, provider, key);
+  const a = new Account(id, provider, key);
+  const pk = (await a.getSigner().getPublicKey());
+  const k = await provider.viewAccessKey({ accountId: id, publicKey: pk, finalityQuery: { finality: "final" } }).catch(() => null);
+  const lanes = Number(k?.permission?.GasKeyFullAccess?.num_nonces ?? 0);
+  // ponytail: seeds near-api-js's NonceManager state (unset lanes are fetched from chain on first use)
+  if (lanes > 1) a.nonceManager.states[pk.toString()] = { nonces: Array(lanes).fill(undefined), nextLane: Math.floor(Math.random() * lanes) };
+  return (relayer = a);
 }
 
 /** Decodes and checks a base64 borsh SignedDelegate; throws a 400 with the reason if it isn't allowed. */
@@ -151,7 +165,7 @@ export async function relay(b64) {
   if (THROTTLED.has(fc.methodName)) lastRelay.set(String(args.token_id), Date.now()); // reserve before awaiting
   let res;
   try {
-    res = await relayerAccount().signAndSendTransaction({
+    res = await (await relayerAccount()).signAndSendTransaction({
       receiverId: sd.delegateAction.senderId,
       actions: [actions.signedDelegate({ delegateAction: sd.delegateAction, signature: sd.signature })],
       waitUntil: "FINAL", // the app re-reads views at final; answering earlier shows the user stale state
@@ -182,7 +196,7 @@ export async function proveToken(tokenId, relayer) {
   // two proofs of the same token at once would both pay; the contract only dedupes in the callback
   if (Date.now() - (lastProve.get(String(tokenId)) ?? 0) < 30_000) throw tooSoon("a proof for this Pusaka was just sent; try again in a minute");
   lastProve.set(String(tokenId), Date.now());
-  relayer ??= relayerAccount();
+  relayer ??= await relayerAccount();
   const results = [];
   for (const u of todo) {
     const proof = await depositProof(u.txid, u.vout);

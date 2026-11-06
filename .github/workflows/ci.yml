@@ -54,4 +54,5 @@ jobs:
       - run: node scripts/receipt-monitor.mjs --hours 26  # covers the daily schedule with overlap; failed callback receipts / stale signing locks on testnet
       - run: node scripts/verify.mjs   # every README claim re-checked against NEAR, its MPC, its Bitcoin light client and Bitcoin
       - run: node mcp/remote-smoke.mjs
+      - run: node mcp/due-diligence.mjs 1   # an agent's read-only due diligence over MCP: contract trust, reserves audit, history, loans, credit
       - run: npm run smoke -w mcp   # local MCP server; guards refuse before signing (throwaway key)
