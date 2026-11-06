@@ -70,7 +70,8 @@ const BTC_PREFIX = `${NET.bech32}1`; // "tb1" on testnet, "bc1" on mainnet
 const EMPTY_BAL = { safe: 0, pending: 0, atRisk: 0, spendable: [] };
 /** The contract's own numbers only: enough to render the page while the chains answer. */
 async function loadTokenQuick(id) {
-  const info = await view("token_info", { token_id: id });
+  // one retry: a single slow RPC answer would otherwise leave the page waiting on every explorer's full load
+  const info = await view("token_info", { token_id: id }).catch(() => new Promise((r) => setTimeout(r, 1500)).then(() => view("token_info", { token_id: id })));
   if (!info) return null;
   return { id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: { ...EMPTY_BAL, loading: true }, eth: null, sol: null, nearAcct: null };
 }
@@ -1061,12 +1062,32 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
   const [after, setAfter] = useState("30");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
-  const load = useCallback(() => view("heir_of", { token_id: id })
-    .then((v) => setH(v && { ...v, due: Date.now() >= Number(v.claimable_from_ms) })).catch(() => setH(null)), [id]);
+  const [g, setG] = useState(null);
+  const [guards, setGuards] = useState("");
+  const [threshold, setThreshold] = useState("2");
+  const load = useCallback(() => Promise.all([
+    view("heir_of", { token_id: id }).then((v) => setH(v && { ...v, due: Date.now() >= Number(v.claimable_from_ms) })).catch(() => setH(null)),
+    view("guardians_of", { token_id: id }).then(setG, () => setG(null)),
+  ]), [id]);
   useEffect(() => { load(); }, [load, owner]);
   if (h === undefined) return null;
   const due = h?.due;
   const isHeir = h && accountId === h.heir;
+  const isGuardian = !!g && g.guardians.includes(accountId);
+  const now = Date.now();
+  // with guardians the heir waits for their quorum's waiting period, or for the backstop if they never answer
+  const claimable = due && (!g || (g.release_at_ms && Number(g.release_at_ms) <= now) || Number(g.backstop_from_ms) <= now);
+  function guard(e) {
+    e.preventDefault();
+    const list = [...new Set(guards.split(/[\s,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+    const t = Number(threshold);
+    if (!list.length || list.length > 5) return setMsg({ ok: false, text: "Name 1 to 5 guardians, separated by commas." });
+    if (!(t >= 1 && t <= list.length)) return setMsg({ ok: false, text: `The approvals needed must be between 1 and ${list.length}.` });
+    run(`Guardians named: ${t} of ${list.length} must approve`, async () => {
+      for (const a of list) if (!(await provider.viewAccount({ accountId: a, blockQuery: { finality: "final" } }).then(() => true, () => false))) throw new Error(`${a} doesn't exist on NEAR ${NETWORK}.`);
+      return call("set_guardians", { token_id: id, guardians: list, threshold: t }, { deposit: 10_000_000_000_000_000_000_000n });
+    });
+  }
 
   async function run(what, fn) {
     setBusy(true); setMsg(null);
@@ -1113,8 +1134,32 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
           <button disabled={busy}>{busy ? "Waiting for the wallet…" : "Name heir"}</button>
         </form>
       )}
-      {isHeir && (due
+      {h && g && (
+        <div className="guardians">
+          <p><strong>Guardians:</strong> {g.guardians.join(", ")}. {g.threshold} of {g.guardians.length} must agree the holder is gone before {h.heir} can
+            claim; then {owner} still has {days(g.release_wait_ms)} to show up and cancel it. Guardians can only release it to the named heir, never take it.</p>
+          <p className="muted">{g.release_at_ms ? `Quorum reached: the heir can claim from ${when(g.release_at_ms)}.`
+            : `Approvals for this silence: ${g.approvals.length} of ${g.threshold}${g.approvals.length ? ` (${g.approvals.join(", ")})` : ""}.`}
+            {" "}If the guardians never answer, the heir can claim alone from {when(g.backstop_from_ms)}.</p>
+        </div>
+      )}
+      {isGuardian && due && !g.approvals.includes(accountId) && (
+        <button disabled={busy} onClick={() => run("Release approved", () => callGasless("approve_release", { token_id: id }))}>Approve the release to {h.heir}</button>
+      )}
+      {isGuardian && !due && <p className="muted">You are a guardian of this will. You can approve a release only after {owner} has been silent until {when(h.claimable_from_ms)}.</p>}
+      {isOwner && h && (
+        <form onSubmit={guard} className="stack">
+          <label>{g ? "Change guardians" : "Guardians (optional)"} <input value={guards} onChange={(e) => setGuards(e.target.value)} placeholder="sister.testnet, notary.testnet, friend.testnet" spellCheck="false" autoCapitalize="none" required /></label>
+          <label>Approvals needed <span className="row"><input value={threshold} onChange={(e) => setThreshold(e.target.value.trim())} inputMode="numeric" required /> of them</span></label>
+          <span className="row">
+            <button disabled={busy}>{g ? "Update guardians" : "Name guardians"}</button>
+            {g && <button type="button" className="secondary" disabled={busy} onClick={() => run("Guardians removed", () => call("set_guardians", { token_id: id, guardians: [], threshold: 0 }))}>Remove guardians</button>}
+          </span>
+        </form>
+      )}
+      {isHeir && (claimable
         ? <button disabled={busy} onClick={() => run("It's yours now", () => callGasless("claim_inheritance", { token_id: id }))}>Claim inheritance</button>
+        : due && g ? <p className="muted">You are the heir. {owner} has been silent long enough; now {g.threshold} of the guardians must approve ({g.approvals.length} so far), then a waiting period runs. Or claim alone from {when(g.backstop_from_ms)}.</p>
         : <><p className="muted">You are the heir. You can claim from {when(h.claimable_from_ms)} if {owner} doesn't check in before then.</p>
           <Reminder uid={`claim-${id}-${h.claimable_from_ms}`} at={Number(h.claimable_from_ms)} alarmMin={0} label="Remind me when it opens"
             title={`Pusaka #${id} can be claimed`} details={`${owner} has been silent long enough: you can claim the Pusaka now, unless they check in first.`} /></>)}

@@ -87,6 +87,8 @@ export async function inspect(token_id) {
   };
   const heir = await view("heir_of", { token_id }).catch(() => null);
   if (heir) out.heir = { ...heir, note: "if the holder doesn't check in by claimable_from_ms, this account can claim the Pusaka; a sale clears it" };
+  const guardians = heir && await view("guardians_of", { token_id }).catch(() => null);
+  if (guardians) out.heir.guardians = { ...guardians, note: "the heir can claim only after threshold guardians approve and the waiting period passes, or alone after the backstop" };
   if (px) out.usd = { btc_inside: (verified / 1e8) * px.btcUsd, btc_usd: px.btcUsd, near_usd: px.nearUsd, source: px.crossChecked ? "mempool.space, Rhea; cross-checked with CoinGecko (mainnet prices)" : "mempool.space, Rhea (mainnet prices; second source unavailable)" };
   // What the BTC really sells for: a solver-signed NEAR Intents quote (dry run, nothing sent), not just a price feed.
   if (verified && info.btc_pubkey) out.exit_quote = await exitQuote(verified, evmAddress(info.btc_pubkey))
@@ -139,7 +141,7 @@ export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_
   "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
-const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc"]);
+const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -459,6 +461,29 @@ reg("pusaka_still_here", {
   return { token_id, heir: await view("heir_of", { token_id }) };
 }));
 
+reg("pusaka_set_guardians", {
+  description: "Add guardians to your Pusaka's will: once you have been silent for the heir's period, `threshold` of these accounts must approve before the heir can claim, and you still get a last waiting period (10 min testnet, 7 days mainnet) to cancel by doing anything. Guardians can only release it to the named heir, never take it. If they never answer, the heir can claim alone after 3 silences. An empty list removes them. Needs an heir first.",
+  inputSchema: { token_id: z.string(), guardians: z.array(z.string()).max(5), threshold: z.number().int().min(0).max(5) },
+}, tool(async ({ token_id, guardians, threshold }) => {
+  const list = [...new Set(guardians.map((g) => g.trim().toLowerCase()).filter(Boolean))];
+  for (const g of list) if (!(await accountExists(g))) throw new Error(`${g} doesn't exist on NEAR ${NETWORK}.`);
+  if (list.length) await confirm(`The agent wants to make ${list.join(", ")} guardians of Pusaka #${token_id}'s will: ${threshold} of them could release it to the heir after your silence.`);
+  await call("set_guardians", { token_id, guardians: list, threshold: list.length ? threshold : 0 }, { deposit: 10_000_000_000_000_000_000_000n });
+  return { token_id, guardians: await view("guardians_of", { token_id }) };
+}));
+
+reg("pusaka_approve_release", {
+  description: "As a named guardian, approve releasing a silent holder's Pusaka to their heir. Possible only after the holder's silence; at the quorum a last waiting period starts, during which any action of the holder voids every approval.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const [h, g] = await Promise.all([view("heir_of", { token_id }), view("guardians_of", { token_id })]);
+  if (!h || !g) throw new Error(`Pusaka #${token_id} has no will with guardians.`);
+  if (!g.guardians.includes(ACCOUNT_ID)) throw new Error(`${ACCOUNT_ID} isn't one of its guardians (${g.guardians.join(", ")}).`);
+  if (Date.now() < Number(h.claimable_from_ms)) throw new Error(`The holder was seen recently: guardians can approve from ${new Date(Number(h.claimable_from_ms)).toISOString()}.`);
+  await call("approve_release", { token_id });
+  return { token_id, guardians: await view("guardians_of", { token_id }) };
+}));
+
 reg("pusaka_claim_inheritance", {
   description: "Claim a Pusaka you were named heir of, once its holder has been silent past claimable_from_ms. Its open listing or loan request is withdrawn; a funded loan's lender comes first.",
   inputSchema: { token_id: z.string() },
@@ -466,6 +491,9 @@ reg("pusaka_claim_inheritance", {
   const h = await view("heir_of", { token_id });
   if (!h) throw new Error(`Pusaka #${token_id} has no heir.`);
   if (Date.now() < Number(h.claimable_from_ms)) throw new Error(`Not yet: claimable from ${new Date(Number(h.claimable_from_ms)).toISOString()}.`);
+  const g = await view("guardians_of", { token_id }).catch(() => null);
+  if (g && !(g.release_at_ms && Number(g.release_at_ms) <= Date.now()) && Number(g.backstop_from_ms) > Date.now())
+    throw new Error(`Guardians first: ${g.approvals.length} of ${g.threshold} approved${g.release_at_ms ? `, releasable from ${new Date(Number(g.release_at_ms)).toISOString()}` : ""}; or alone from ${new Date(Number(g.backstop_from_ms)).toISOString()}.`);
   await call("claim_inheritance", { token_id });
   return { inherited: token_id, owner: (await view("token_info", { token_id })).token.owner_id };
 }));

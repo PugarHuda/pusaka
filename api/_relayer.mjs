@@ -10,7 +10,7 @@ import {
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
-export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance", "accept_loan_offer"];
+export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance", "accept_loan_offer", "approve_release"];
 const MAX_TGAS = 100n;
 /** list/cancel/loan-request ping-pong is free for the attacker; one relayed state change per token per minute caps it. */
 export const RELAY_COOLDOWN_MS = 60_000;
@@ -124,6 +124,8 @@ export function acceptWouldSucceed(info, offer, who, args) {
     : Number(info.verified_sats) >= Number(offer.min_verified_sats);
 }
 
+const guardiansOf = (token_id) => provider.callFunction({ contractId: CONTRACT, method: "guardians_of", args: { token_id: String(token_id) } }).catch(() => null);
+
 export async function relay(b64) {
   const sd = checkDelegate(b64);
   await verifyDelegate(sd);
@@ -155,6 +157,17 @@ export async function relay(b64) {
     // only the named heir, and only once the holder's silence has run out
     const h = await provider.callFunction({ contractId: CONTRACT, method: "heir_of", args: { token_id: String(args.token_id) } });
     allowed = h?.heir === who && Number(h.claimable_from_ms) <= Date.now();
+    // with guardians: only once their quorum's waiting period is over, or the backstop has passed
+    const g = allowed && await guardiansOf(args.token_id);
+    if (g) allowed = (g.release_at_ms != null && Number(g.release_at_ms) <= Date.now()) || Number(g.backstop_from_ms) <= Date.now();
+  }
+  if (fc.methodName === "approve_release") {
+    // only a named guardian who hasn't approved yet, once the holder's silence has run out
+    const [h, g] = await Promise.all([
+      provider.callFunction({ contractId: CONTRACT, method: "heir_of", args: { token_id: String(args.token_id) } }),
+      guardiansOf(args.token_id),
+    ]);
+    allowed = !!h && !!g && g.guardians.includes(who) && !g.approvals.includes(who) && Number(h.claimable_from_ms) <= Date.now();
   }
   if (fc.methodName === "accept_loan_offer") allowed = allowed && acceptWouldSucceed(info, await offerById(args.offer_id), who, args);
   if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
