@@ -11,6 +11,8 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
+import { AuctionClock, BtcQr, Bell, GallerySkeleton } from "./extras.jsx";
+import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
 import { loadInfos, loadMine } from "./mine.js";
@@ -122,7 +124,9 @@ function useRoute() {
   const [hash, setHash] = useState(location.hash);
   useEffect(() => {
     // a new page: back to the top, and focus on it so a screen reader announces it instead of staying on the old link
-    const f = () => { setHash(location.hash); window.scrollTo(0, 0); document.querySelector("main")?.focus({ preventScroll: true }); };
+    const go = () => { setHash(location.hash); window.scrollTo(0, 0); document.querySelector("main")?.focus({ preventScroll: true }); };
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const f = () => (document.startViewTransition && !calm ? document.startViewTransition(() => flushSync(go)) : go());
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
@@ -172,6 +176,7 @@ export default function App() {
         </nav>
         {accountId ? (
           <div className="who">
+            <Bell accountId={accountId} />
             <button className="ghost" onClick={mint} disabled={!!minting && minting.endsWith("…")}>Mint a Pusaka</button>
             <button className="ghost" onClick={() => connector.disconnect()} title="Disconnect wallet">{accountId}</button>
           </div>
@@ -393,8 +398,26 @@ function Vessel({ id, info, locked }) {
 }
 
 /** The market: every Pusaka with its state, standing loan offers, and the latest on-chain activity. */
+const FILTERS = {
+  all: ["All", () => true],
+  sale: ["For sale", (i) => !!i.listing || Object.keys(i.token.approved_account_ids ?? {}).length > 0],
+  borrow: ["Asking to borrow", (i) => !!i.loan && !i.loan.lender],
+  lent: ["Lent against", (i) => !!i.loan?.lender],
+  btc: ["Holds Bitcoin", (i) => Number(i.verified_sats) > 0],
+  empty: ["Empty", (i) => !Number(i.verified_sats)],
+};
+const SORTS = {
+  new: ["Newest", (a, b) => Number(b.id) - Number(a.id)],
+  btc: ["Most Bitcoin", (a, b) => Number(b.info.verified_sats) - Number(a.info.verified_sats)],
+  cheap: ["Cheapest for sale", (a, b) => (a.info.price_now ? Number(BigInt(a.info.price_now) / 10n ** 18n) : Infinity) - (b.info.price_now ? Number(BigInt(b.info.price_now) / 10n ** 18n) : Infinity)],
+};
+
 function Market({ accountId }) {
-  const { tokens, error } = useTokens();
+  const { tokens: all, error } = useTokens();
+  const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("new");
+  const tokens = all;
+  const shown = all?.filter((t) => FILTERS[filter][1](t.info)).sort(SORTS[sort][1]);
   const px = usePrices();
   const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
   const count = (f) => tokens?.filter((t) => f(t.info)).length ?? 0;
@@ -407,17 +430,28 @@ function Market({ accountId }) {
           <dl className="market-stats">
             <div><dt>Pusaka</dt><dd>{tokens.length}</dd></div>
             <div><dt>Bitcoin proven</dt><dd>{(sats / 1e8).toFixed(5)} BTC{px && <small> {usd((sats / 1e8) * px.btcUsd)}</small>}</dd></div>
-            <div><dt>For sale</dt><dd>{count((i) => i.listing)}</dd></div>
+            <div><dt>For sale</dt><dd>{count(FILTERS.sale[1])}</dd></div>
             <div><dt>Asking to borrow</dt><dd>{count((i) => i.loan && !i.loan.lender)}</dd></div>
           </dl>
         )}
       </header>
+      <div className="market-tools" role="toolbar" aria-label="Filter and sort">
+        <div className="chips">{Object.entries(FILTERS).map(([k, [label, f]]) => (
+          <button key={k} type="button" className={`chip-btn${filter === k ? " is-on" : ""}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>
+            {label}{all && <span>{all.filter((t) => f(t.info)).length}</span>}
+          </button>
+        ))}</div>
+        <label className="sort">Sort <select value={sort} onChange={(e) => setSort(e.target.value)}>
+          {Object.entries(SORTS).map(([k, [label]]) => <option key={k} value={k}>{label}</option>)}
+        </select></label>
+      </div>
 
       <section className="gallery" aria-label="All Pusaka">
         {error && <p className="error">{error}</p>}
-        {!tokens && !error && <p className="muted">Reading the contract…</p>}
+        {!tokens && !error && <GallerySkeleton />}
         {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
-        {tokens?.map((t) => (
+        {shown?.length === 0 && <p className="muted">No Pusaka match this filter.</p>}
+        {shown?.map((t) => (
           <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
             <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
@@ -642,13 +676,14 @@ function Detail({ id, accountId }) {
             </p>
           )}
           {bal.error && <p className="error">Neither Bitcoin explorer (mempool.space, Blockstream) answered, so the balance may be out of date.</p>}
-          {address ? (
+          {address ? (<>
             <p className="addr">
               <a href={`${EXPLORER}/address/${address}`} target="_blank" rel="noreferrer">{address}</a>
               <CopyButton text={address} what="Bitcoin address" />
               <a className="link-btn" href={`bitcoin:${address}?label=${encodeURIComponent(`Pusaka #${id}`)}`}>Open in a Bitcoin wallet</a>
             </p>
-          ) : (
+            <BtcQr address={address} label={`Pusaka #${id}`} />
+          </>) : (
             <p className="muted">The Bitcoin key is still being derived by the NEAR MPC network.</p>
           )}
           <p className="badge-line">
@@ -1500,8 +1535,8 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
         })()}
         <p className="muted">
           You get {btc(Number(info.verified_sats))} BTC (verified on NEAR). The NEAR goes to {info.listing.seller}.
-          {falling && <> Price falls to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}.</>}
         </p>
+        {falling && <AuctionClock listing={info.listing} />}
         <LoanMarket t={t} accountId={accountId} isOwner={isOwner} busy={busy} run={run} />
         {status}
       </section>
@@ -1513,6 +1548,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
       <p>Listed at <strong>{near(info.price_now ?? info.listing.price)} NEAR</strong>
         {info.listing.floor !== info.listing.price && <>, falling to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}</>}.
         Withdrawals are locked while it's for sale.</p>
+      <AuctionClock listing={info.listing} />
       {act("cancel", "Cancel listing", "Cancelling…", async () => {
         await callGasless("cancel_listing", { token_id: id });
         return "Listing cancelled. You can withdraw again.";
