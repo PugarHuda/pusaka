@@ -4,7 +4,7 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    - cron: "0 */6 * * *" # e2e also watches the live deployment
+    - cron: "0 3 * * *" # e2e also watches the live deployment, daily (Actions minutes are capped while the repo is private)
 
 jobs:
   contract:
