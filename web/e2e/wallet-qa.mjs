@@ -7,6 +7,7 @@
 //   node wallet-qa.mjs <profileDir> claim                             reconnect as the heir and claim, once due
 //   node wallet-qa.mjs <profileDir> judge <buyId> <lendId>            the README's try-it path: Buy one, Lend on another
 //   node wallet-qa.mjs <profileDir> offer <account> <id>              post a standing loan offer through the form, then cancel it
+//   node wallet-qa.mjs <profileDir> refinance <account> <id>          as the borrower, refinance the loan with the first offer shown
 import fs from "node:fs";
 import { chromium } from "playwright";
 const [profile, step, keyFile, arg2] = process.argv.slice(2);
@@ -23,6 +24,26 @@ if (process.env.QA_PROXY_BTC) await ctx.route((u) => ["mempool.space", "blockstr
     await route.fulfill({ status: res.status, headers: { "access-control-allow-origin": "*", "content-type": res.headers.get("content-type") ?? "text/plain" }, body: Buffer.from(await res.arrayBuffer()) });
   } catch { await route.abort(); }
 });
+// Connect the app as `who` (an account already imported into Intear), unless it already is.
+const switchTo = async (who) => {
+  if (!(await p.locator("header").innerText()).includes(who)) {
+    const acct = p.getByTitle("Disconnect wallet");
+    if (await acct.count()) { await acct.click(); await p.waitForTimeout(2000); }
+    await p.getByRole("button", { name: /connect/i }).first().click();
+    await p.waitForTimeout(3000);
+    await p.getByText("Intear Wallet", { exact: true }).click();
+    await p.waitForTimeout(2000);
+    const pop = ctx.waitForEvent("page", { timeout: 30_000 });
+    for (const fr of p.frames()) { const b = fr.getByText("Web", { exact: true }); if (await b.count()) { await b.first().click(); break; } }
+    const w = await pop;
+    await w.waitForLoadState(); await w.waitForTimeout(4000);
+    await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
+    await w.getByText(who, { exact: true }).last().click();
+    await w.waitForTimeout(1000);
+    await w.getByRole("button", { name: "Connect", exact: true }).click();
+    await p.waitForTimeout(6000);
+  }
+};
 try {
   if (step === "import-form") {
     await p.goto("https://wallet.intear.tech/");
@@ -195,23 +216,7 @@ try {
     const [who, id] = [keyFile, arg2];
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
     await p.waitForTimeout(5000);
-    if (!(await p.locator("header").innerText()).includes(who)) {
-      const acct = p.getByTitle("Disconnect wallet");
-      if (await acct.count()) { await acct.click(); await p.waitForTimeout(2000); }
-      await p.getByRole("button", { name: /connect/i }).first().click();
-      await p.waitForTimeout(3000);
-      await p.getByText("Intear Wallet", { exact: true }).click();
-      await p.waitForTimeout(2000);
-      const pop = ctx.waitForEvent("page", { timeout: 30_000 });
-      for (const fr of p.frames()) { const b = fr.getByText("Web", { exact: true }); if (await b.count()) { await b.first().click(); break; } }
-      const w = await pop;
-      await w.waitForLoadState(); await w.waitForTimeout(4000);
-      await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
-      await w.getByText(who, { exact: true }).last().click();
-      await w.waitForTimeout(1000);
-      await w.getByRole("button", { name: "Connect", exact: true }).click();
-      await p.waitForTimeout(6000);
-    }
+    await switchTo(who);
     console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
     const sign = async (label, click) => {
       const wp = ctx.waitForEvent("page", { timeout: 20_000 });
@@ -228,11 +233,32 @@ try {
     await form.waitFor({ timeout: 40_000 });
     const [lend, repay, days] = await form.locator("input").all();
     await lend.fill("0.01"); await repay.fill("0.0101"); await days.fill("1");
+    const invalid = await form.evaluate((f) => [...f.elements].map((e) => e.validationMessage).filter(Boolean));
+    if (invalid.length) throw new Error(`form refuses: ${invalid.join("; ")}`);
     await sign(`offer on #${id}`, () => form.getByRole("button", { name: "Offer a loan" }).click());
     await p.reload(); await p.waitForTimeout(6000);
     const mine = p.locator("p").filter({ hasText: who }).filter({ has: p.getByRole("button", { name: "Cancel my offer" }) });
     console.log("listed:", (await mine.first().innerText()).replace(/\s+/g, " "));
     await sign("cancel offer", () => mine.first().getByRole("button", { name: "Cancel my offer" }).click());
+  }
+  if (step === "refinance") { // as the borrower keyFile, refinance the funded loan on token arg2 with the first offer shown
+    const id = arg2;
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
+    await p.waitForTimeout(6000);
+    await switchTo(keyFile);
+    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    const offer = p.locator("p").filter({ has: p.getByRole("button", { name: "Refinance with this offer" }) }).first();
+    await offer.waitFor({ timeout: 40_000 });
+    console.log("offer:", (await offer.innerText()).replace(/\s+/g, " "));
+    const wp = ctx.waitForEvent("page", { timeout: 20_000 });
+    const t0 = Date.now();
+    await offer.getByRole("button").click();
+    const w = await wp; await w.waitForLoadState(); await w.waitForTimeout(4000);
+    console.log(`  wallet: ${(await w.innerText("body")).replace(/\s+/g, " ").slice(-260)}`);
+    await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+    const status = p.locator("section.actions").getByRole("status");
+    for (let i = 0; i < 90 && !(await status.count()); i++) await p.waitForTimeout(1000);
+    console.log(`refinance #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
   if (step === "judge") {
     const [buyId, lendId] = [keyFile, arg2];
