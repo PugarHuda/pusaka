@@ -2521,3 +2521,116 @@ fn g8_a_key_confirmed_after_its_gift_ended_is_deleted() {
     assert!(!c.on_gift_key(gift_pk()));
     assert!(receipt_actions("pusaka.testnet").iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeleteKey { public_key, .. } if public_key.to_string() == GIFT_PK)));
 }
+
+// ---------- guardians: a quorum must approve the release, the holder can still cancel ----------
+
+const WAIT: u64 = crate::RELEASE_WAIT_MS;
+
+fn with_guardians() -> Pusaka {
+    let mut c = with_heir();
+    at("alice.testnet", PAY, 0);
+    c.set_guardians("1".into(), vec![acc("g1.testnet"), acc("g2.testnet"), acc("g3.testnet")], 2);
+    c
+}
+
+#[test]
+#[should_panic(expected = "name an heir first")]
+fn gd1_guardians_need_an_heir() {
+    let mut c = setup();
+    at("alice.testnet", PAY, 0);
+    c.set_guardians("1".into(), vec![acc("g1.testnet")], 1);
+}
+
+#[test]
+#[should_panic(expected = "a guardian can't be the holder or the heir")]
+fn gd2_the_heir_cant_guard_their_own_claim() {
+    let mut c = with_heir();
+    at("alice.testnet", PAY, 0);
+    c.set_guardians("1".into(), vec![acc("carol.testnet")], 1);
+}
+
+#[test]
+#[should_panic(expected = "the guardians must approve the release first (0 of 2 so far)")]
+fn gd3_with_guardians_silence_alone_is_not_enough() {
+    let mut c = with_guardians();
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+#[should_panic(expected = "guardians can approve from")]
+fn gd4_guardians_cant_approve_while_the_holder_is_around() {
+    let mut c = with_guardians();
+    at("g1.testnet", NearToken::from_yoctonear(0), SILENCE - 1);
+    c.approve_release("1".into());
+}
+
+#[test]
+#[should_panic(expected = "only a named guardian can approve")]
+fn gd5_strangers_cant_approve() {
+    let mut c = with_guardians();
+    at("mallory.testnet", NearToken::from_yoctonear(0), SILENCE);
+    c.approve_release("1".into());
+}
+
+#[test]
+fn gd6_quorum_then_the_waiting_period_then_the_heir() {
+    let mut c = with_guardians();
+    at("g1.testnet", NearToken::from_yoctonear(0), SILENCE);
+    c.approve_release("1".into());
+    assert!(c.guardians_of("1".into()).unwrap()["release_at_ms"].is_null(), "1 of 2: no release yet");
+    at("g3.testnet", NearToken::from_yoctonear(0), SILENCE + 5);
+    c.approve_release("1".into());
+    assert_eq!(c.guardians_of("1".into()).unwrap()["release_at_ms"], (SILENCE + 5 + WAIT).to_string());
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE + 5 + WAIT);
+    c.claim_inheritance("1".into());
+    assert_eq!(owner(&c), acc("carol.testnet"));
+    assert!(c.guardians_of("1".into()).is_none(), "the will is used up");
+}
+
+#[test]
+#[should_panic(expected = "the guardians must approve the release first")]
+fn gd7_claim_inside_the_waiting_period_is_refused() {
+    let mut c = with_guardians();
+    for g in ["g1.testnet", "g2.testnet"] {
+        at(g, NearToken::from_yoctonear(0), SILENCE);
+        c.approve_release("1".into());
+    }
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE + WAIT - 1);
+    c.claim_inheritance("1".into());
+}
+
+#[test]
+fn gd8_the_holder_showing_up_voids_every_approval() {
+    let mut c = with_guardians();
+    for g in ["g1.testnet", "g2.testnet"] {
+        at(g, NearToken::from_yoctonear(0), SILENCE);
+        c.approve_release("1".into());
+    }
+    at("alice.testnet", NearToken::from_yoctonear(0), SILENCE + 60_000); // alive, inside the waiting period
+    c.still_here("1".into());
+    let g = c.guardians_of("1".into()).unwrap();
+    assert_eq!(g["approvals"].as_array().unwrap().len(), 0);
+    assert!(g["release_at_ms"].is_null());
+    // the heir can't use the old quorum; a new silence needs new approvals
+    at("carol.testnet", NearToken::from_yoctonear(0), SILENCE + WAIT + 1);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.claim_inheritance("1".into())));
+    assert!(r.is_err());
+}
+
+#[test]
+fn gd9_backstop_when_the_guardians_never_answer() {
+    let mut c = with_guardians();
+    at("carol.testnet", NearToken::from_yoctonear(0), 3 * SILENCE);
+    c.claim_inheritance("1".into());
+    assert_eq!(owner(&c), acc("carol.testnet"));
+}
+
+#[test]
+fn gd10_a_new_holder_starts_with_no_guardians() {
+    let mut c = with_guardians();
+    at("alice.testnet", NearToken::from_yoctonear(1), 1);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    assert!(c.guardians_of("1".into()).is_none());
+    assert!(c.heir_of("1".into()).is_none());
+}

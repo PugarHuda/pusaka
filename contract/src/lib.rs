@@ -53,6 +53,17 @@ const HEIR_MIN_MS: u64 = 10 * 60 * 1000;
 const HEIR_MIN_MS: u64 = 30 * 24 * 3600 * 1000;
 /// key + owner + heir (64-byte account ids at most) + two u64
 const HEIR_BYTES: u64 = 200;
+/// Guardians: up to 5 named, up to 5 approvals, the owner, a threshold and two u64.
+const MAX_GUARDIANS: usize = 5;
+const GUARDIAN_BYTES: u64 = 800;
+/// Once the guardians' quorum approves a release, the holder still has this long to show up and cancel it.
+#[cfg(not(feature = "mainnet"))]
+const RELEASE_WAIT_MS: u64 = 10 * 60 * 1000;
+#[cfg(feature = "mainnet")]
+const RELEASE_WAIT_MS: u64 = 7 * 24 * 3600 * 1000;
+/// If the guardians never reach a quorum (lost keys, gone silent themselves), the heir may claim alone after
+/// this many silences in total: the will still executes, just later.
+const BACKSTOP_SILENCES: u64 = 3;
 /// Proven, unspent deposits kept per token (withdrawing consolidates them).
 const MAX_PROVEN: usize = 64;
 /// After a signature for a token, outside markets can't be approved for this long. A buyer
@@ -218,6 +229,10 @@ pub enum Event {
     LoanPartRepaid { amount: NearToken, remaining: NearToken },
     ExtensionProposed { extra_ms: U64, fee: NearToken },
     LoanExtended { due_ms: U64, fee: NearToken },
+    /// The holder named guardians who must approve a release to the heir (empty: removed).
+    GuardiansSet { guardians: Vec<AccountId>, threshold: u8 },
+    /// A guardian approved releasing the Pusaka to the heir; at the quorum the holder's last waiting period starts.
+    ReleaseApproved { guardian: AccountId, approvals: u8, release_at_ms: U64 },
 }
 
 #[near(serializers = [json, borsh])]
@@ -853,6 +868,75 @@ impl Pusaka {
         self.log(&token_id, Event::StillHere);
     }
 
+    /// Name guardians for your will: once you have been silent for the heir's `after_ms`, `threshold` of them must
+    /// approve before the heir can claim, and then you still have a last waiting period to cancel by showing up.
+    /// They can only release the Pusaka to the heir you named, never take it. An empty list removes them.
+    #[payable]
+    pub fn set_guardians(&mut self, token_id: TokenId, guardians: Vec<AccountId>, threshold: u8) {
+        self.assert_owner(&token_id);
+        let owner = env::predecessor_account_id();
+        let h: Heir = raw_get(&heir_key(&token_id)).expect("name an heir first");
+        let key = guardians_key(&token_id);
+        if guardians.is_empty() {
+            env::storage_remove(key.as_bytes());
+        } else {
+            require!(guardians.len() <= MAX_GUARDIANS, format!("at most {MAX_GUARDIANS} guardians"));
+            require!(threshold >= 1 && (threshold as usize) <= guardians.len(), "threshold must be between 1 and the number of guardians");
+            for (i, g) in guardians.iter().enumerate() {
+                require!(*g != owner && *g != h.heir, "a guardian can't be the holder or the heir");
+                require!(!guardians[..i].contains(g), "each guardian once");
+            }
+            if !env::storage_has_key(key.as_bytes()) { charge_storage(GUARDIAN_BYTES, 0); }
+            raw_put(&key, &Guardians { owner, members: guardians.clone(), threshold, approvals: vec![], for_seen_ms: 0, release_at_ms: 0 });
+        }
+        self.log(&token_id, Event::GuardiansSet { guardians, threshold });
+    }
+
+    /// A guardian agrees the holder is gone: possible only once the holder has been silent for the heir's
+    /// `after_ms`. At `threshold` approvals the release is scheduled `RELEASE_WAIT_MS` later; anything the holder
+    /// signs before then (or `still_here`) voids every approval.
+    pub fn approve_release(&mut self, token_id: TokenId) {
+        let h: Heir = raw_get(&heir_key(&token_id)).expect("no heir set");
+        require!(h.owner == self.owner_of(&token_id), "the heir was named by an earlier holder");
+        let key = guardians_key(&token_id);
+        let mut g: Guardians = raw_get(&key).expect("no guardians");
+        let me = env::predecessor_account_id();
+        require!(g.members.contains(&me), "only a named guardian can approve");
+        let now = env::block_timestamp_ms();
+        let due = h.last_seen_ms.saturating_add(h.after_ms);
+        require!(now >= due, format!("the holder was seen recently; guardians can approve from {due} ms"));
+        if g.for_seen_ms != h.last_seen_ms {
+            // a new silence: approvals given before the holder last showed up don't carry over
+            g.approvals.clear();
+            g.release_at_ms = 0;
+            g.for_seen_ms = h.last_seen_ms;
+        }
+        require!(!g.approvals.contains(&me), "already approved");
+        g.approvals.push(me.clone());
+        if g.release_at_ms == 0 && g.approvals.len() >= g.threshold as usize {
+            g.release_at_ms = now.saturating_add(RELEASE_WAIT_MS);
+        }
+        let (approvals, release_at_ms) = (g.approvals.len() as u8, U64(g.release_at_ms));
+        raw_put(&key, &g);
+        self.log(&token_id, Event::ReleaseApproved { guardian: me, approvals, release_at_ms });
+    }
+
+    /// The current holder's guardians: who, how many must approve, the approvals that still count, and when the
+    /// heir can claim (after the quorum's waiting period, or alone after the backstop).
+    pub fn guardians_of(&self, token_id: TokenId) -> Option<Value> {
+        let h: Heir = raw_get(&heir_key(&token_id))?;
+        let g: Guardians = raw_get(&guardians_key(&token_id))?;
+        if self.tokens.owner_by_id.get(&token_id).as_ref() != Some(&g.owner) { return None; }
+        let live = g.for_seen_ms == h.last_seen_ms;
+        Some(json!({
+            "guardians": g.members, "threshold": g.threshold,
+            "approvals": if live { g.approvals.clone() } else { vec![] },
+            "release_at_ms": if live && g.release_at_ms > 0 { Some(U64(g.release_at_ms)) } else { None },
+            "release_wait_ms": U64(RELEASE_WAIT_MS),
+            "backstop_from_ms": U64(h.last_seen_ms.saturating_add(h.after_ms.saturating_mul(BACKSTOP_SILENCES))),
+        }))
+    }
+
     /// The heir takes the Pusaka after the holder's silence. Waits for a funded loan (the
     /// lender's claim comes first) and anything in flight; an open listing or loan request of
     /// the silent holder is withdrawn.
@@ -863,7 +947,15 @@ impl Pusaka {
         require!(h.owner == owner, "the heir was named by an earlier holder");
         require!(env::predecessor_account_id() == h.heir, "only the named heir can claim");
         let due = h.last_seen_ms.saturating_add(h.after_ms);
-        require!(env::block_timestamp_ms() >= due, format!("the holder was seen recently; claimable from {due} ms"));
+        let now = env::block_timestamp_ms();
+        require!(now >= due, format!("the holder was seen recently; claimable from {due} ms"));
+        if let Some(g) = raw_get::<Guardians>(&guardians_key(&token_id)).filter(|g| g.owner == owner) {
+            let backstop = h.last_seen_ms.saturating_add(h.after_ms.saturating_mul(BACKSTOP_SILENCES));
+            let released = g.for_seen_ms == h.last_seen_ms && g.release_at_ms > 0 && now >= g.release_at_ms;
+            require!(released || now >= backstop, format!(
+                "the guardians must approve the release first ({} of {} so far), or wait for the backstop at {backstop} ms",
+                if g.for_seen_ms == h.last_seen_ms { g.approvals.len() } else { 0 }, g.threshold));
+        }
         require!(self.btc_keys.contains_key(&token_id), "KeyNotReady");
         require!(!self.pending.contains_key(&token_id), "SignPending");
         if let Some(l) = self.loans.get(&token_id) {
@@ -881,7 +973,8 @@ impl Pusaka {
         self.log(&token_id, Event::Inherited { from: owner, to: h.heir });
     }
 
-    /// The current holder's heir, if any: { heir, after_ms, last_seen_ms, claimable_from_ms }.
+    /// The current holder's heir, if any: { heir, after_ms, last_seen_ms, claimable_from_ms } (with guardians, see
+    /// guardians_of for when the heir can actually claim).
     pub fn heir_of(&self, token_id: TokenId) -> Option<Value> {
         let h: Heir = raw_get(&heir_key(&token_id))?;
         (self.tokens.owner_by_id.get(&token_id).as_ref() == Some(&h.owner)).then(|| json!({
@@ -1657,9 +1750,26 @@ fn in_transfer_call(token_id: &str) -> bool {
     env::storage_has_key(transfer_call_key(token_id).as_bytes())
 }
 
-/// Any change of holder ends the old holder's will: a buyer never inherits someone else's heir.
+/// Any change of holder ends the old holder's will: a buyer never inherits someone else's heir or guardians.
 fn clear_heir(token_id: &str) {
     env::storage_remove(heir_key(token_id).as_bytes());
+    env::storage_remove(guardians_key(token_id).as_bytes());
+}
+
+/// Guardians named by `owner`: `threshold` of them must approve before the heir can claim. Approvals count only
+/// for the silence they were given in (`for_seen_ms` = the holder's last_seen then): any sign of life voids them.
+#[near(serializers = [borsh])]
+pub struct Guardians {
+    pub owner: AccountId,
+    pub members: Vec<AccountId>,
+    pub threshold: u8,
+    pub approvals: Vec<AccountId>,
+    pub for_seen_ms: u64,
+    pub release_at_ms: u64,
+}
+
+fn guardians_key(token_id: &str) -> String {
+    format!("gd:{token_id}")
 }
 
 fn refund(to: AccountId, amount: NearToken) {
