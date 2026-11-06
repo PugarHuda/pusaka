@@ -28,16 +28,18 @@ const { tools } = await client.listTools();
 console.log("tools:", tools.map((t) => t.name).join(", "));
 await show("pusaka_overview");
 await show("pusaka_inspect", { token_id: "1" });
+// either refusal stops the agent before it signs: LTV above the cap, or no second price source to check it against
+const LTV_REFUSED = /Loan-to-value .* is above|could not be cross-checked/;
 const refused = (r, why) => { if (!r.isError || !why.test(r.content[0].text)) throw new Error(`expected a refusal matching ${why}`); };
 // Guard: #1 asks for a loan at well under 2% LTV; an agent capped at 0.1% must refuse.
-refused(await show("pusaka_fund_loan", { token_id: "1", max_ltv: 0.001 }), /Loan-to-value .* is above/);
+refused(await show("pusaka_fund_loan", { token_id: "1", max_ltv: 0.001 }), LTV_REFUSED);
 // Guard: price cap. #4 is listed at 0.5 NEAR; an agent capped at 0.1 must refuse.
 refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above your max/);
 // Guard: outflows (give, withdraw_*) are off unless the operator opts in.
 refused(await show("pusaka_give", { token_id: "4", to: "pusaka-seller.testnet" }), /Outflows are off/);
 await show("pusaka_loan_offers");
 // Guard: a token offer above the LTV cap is refused before anything is escrowed.
-refused(await show("pusaka_offer_loan", { token_id: "1", principal_near: 1, repay_near: 1.01, days: 1, max_ltv: 0.0001 }), /Loan-to-value .* is above/);
+refused(await show("pusaka_offer_loan", { token_id: "1", principal_near: 1, repay_near: 1.01, days: 1, max_ltv: 0.0001 }), LTV_REFUSED);
 if (fs.existsSync(keyFile)) {
   // Live: escrow a 0.01 NEAR standing offer for any Pusaka with >= 10,000 verified sats, see it listed, take it back.
   const r = await show("pusaka_offer_loan", { min_verified_sats: 10000, principal_near: 0.01, repay_near: 0.0101, days: 1 });

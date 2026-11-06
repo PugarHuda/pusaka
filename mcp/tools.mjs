@@ -126,7 +126,7 @@ export function createServer({ readOnly = false } = {}) {
 
 
 reg("pusaka_overview", {
-  description: "List every Pusaka: owner, BTC verified on NEAR, current sale price, and loan status.",
+  description: "List every Pusaka: owner, BTC verified on NEAR, current sale price, and loan status; plus how many standing loan offers are open and how much NEAR they escrow.",
   inputSchema: {},
 }, tool(async () => {
   const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
@@ -136,7 +136,10 @@ reg("pusaka_overview", {
       for_sale_near: i.price_now ? toNear(i.price_now) : null,
       loan: i.loan ? (i.loan.lender ? "funded" : `asking ${toNear(i.loan.principal)} NEAR`) : null };
   }));
-  return { contract: CONTRACT, network: NETWORK, agent: ACCOUNT_ID ?? "read-only", spend_cap_near: toNear(CAP), spent_near: toNear(spent), pusaka: rows.sort((a, b) => Number(a.token_id) - Number(b.token_id)) };
+  const offers = await openOffers().catch(() => []);
+  return { contract: CONTRACT, network: NETWORK, agent: ACCOUNT_ID ?? "read-only", spend_cap_near: toNear(CAP), spent_near: toNear(spent),
+    open_loan_offers: { count: offers.length, escrowed_near: offers.reduce((a, o) => a + toNear(o.offer.principal), 0), see: "pusaka_loan_offers" },
+    pusaka: rows.sort((a, b) => Number(a.token_id) - Number(b.token_id)) };
 }));
 
 reg("pusaka_inspect", {
