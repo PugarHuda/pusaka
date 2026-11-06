@@ -247,3 +247,5 @@ textarea:focus, select:focus { border-color: var(--ink); outline: none; }
 .mine li a { font-weight: 700; }
 .mine-btc { font-variant-numeric: tabular-nums; }
 .reminder { font-size: 0.9rem; margin: 0.3rem 0 0; }
+.gift-link code { word-break: break-all; font-size: 0.85rem; }
+.gift { max-width: var(--measure); }

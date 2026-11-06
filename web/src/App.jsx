@@ -8,6 +8,7 @@ import {
   ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE, exitQuote,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
+import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
@@ -125,6 +126,8 @@ function useRoute() {
   }, []);
   if (/^#?\/?$/.test(hash)) return null; // home
   if (/^#\/mine\/?$/.test(hash)) return "mine";
+  const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
+  if (gift) return `gift:${gift[1]}`;
   const m = hash.match(/^#\/pusaka\/(\d{1,30})\/?$/);
   return m ? String(BigInt(m[1])) : "bad"; // "007" is #7; "1abc", "-1" and "#/x" aren't pages
 }
@@ -135,7 +138,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -172,6 +175,7 @@ export default function App() {
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
+        : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home accountId={accountId} />}</main>
       <footer>
         <p>
@@ -1027,6 +1031,100 @@ function Ledger({ history }) {
   );
 }
 
+// ---------- gift links: the contract's NEP-452 linkdrop ----------
+
+const GIFT_DEPOSIT = 170_000_000_000_000_000_000_000n; // 0.17 NEAR: claim-key allowance, the recipient's first NEAR, storage
+
+/** The owner turns the Pusaka into a one-use link; whoever opens it gets the NFT and the Bitcoin it controls. */
+function GiftLink({ id, busy, run }) {
+  const [open, setOpen] = useState(undefined);
+  const [link, setLink] = useState("");
+  useEffect(() => { view("gift_of", { token_id: id }).then(setOpen, () => setOpen(null)); }, [id, link]);
+  if (open === undefined) return null;
+  if (open) return <div className="stack">
+    <h2>Gift link open</h2>
+    <p>This Pusaka is waiting for whoever opens its gift link{link ? "" : " (only you had the link)"}. Until then it can't be sold, lent against or withdrawn from.</p>
+    {link && <p className="gift-link"><code>{link}</code> <CopyButton text={link} label="Copy link" what="gift link" /></p>}
+    <button type="button" className="secondary" disabled={!!busy} onClick={() => run("cancel-gift", async () => {
+      await call("cancel_gift", { token_id: id }); setLink(""); return "Gift cancelled. The Pusaka is yours to use again.";
+    })}>{busy === "cancel-gift" ? "Cancelling…" : "Cancel gift"}</button>
+  </div>;
+  return <div className="stack">
+    <h2>Gift it as a link</h2>
+    <p className="muted">Send this Pusaka, with its Bitcoin, to someone who has no NEAR account yet: they open the link and claim it, and a new account is made for them. A NEAR linkdrop (NEP-452) built into the contract. Costs 0.17 NEAR; 0.05 of it becomes their first NEAR.</p>
+    <button type="button" disabled={!!busy} onClick={() => run("gift", async () => {
+      const kp = KeyPair.fromRandom("ed25519");
+      await call("gift", { token_id: id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
+      setLink(`${location.origin}/#/gift/${kp.toString()}`);
+      return "Gift link made. Anyone with it can claim this Pusaka: send it privately.";
+    })}>{busy === "gift" ? "Making the link…" : "Make a gift link"}</button>
+  </div>;
+}
+
+/** #/gift/<key>: the recipient's page. Claiming is signed with the link's own key, so it needs no wallet and no NEAR. */
+function GiftClaim({ secret, accountId }) {
+  const [g, setG] = useState(undefined);
+  const [info, setInfo] = useState(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [newKey, setNewKey] = useState(null);
+  const [tokenId, setTokenId] = useState("");
+  const pk = KeyPair.fromString(secret).getPublicKey().toString();
+  useEffect(() => {
+    view("gift_for_key", { public_key: pk }).then(async (x) => {
+      setG(x);
+      if (x) { setTokenId(x.token_id); setInfo(await view("token_info", { token_id: x.token_id })); }
+    }, () => setG(null));
+  }, [pk]);
+  const linkAccount = () => new Account(CONTRACT, provider, secret);
+  const claim = (label, fn) => async (e) => {
+    e?.preventDefault();
+    setBusy(label); setMsg(null);
+    try { setMsg({ ok: true, text: await fn() }); setG(null); }
+    catch (err) { setMsg({ ok: false, text: String(err.message ?? err).slice(0, 300) }); }
+    finally { setBusy(""); }
+  };
+  const suffix = NETWORK === "mainnet" ? ".near" : ".testnet";
+  if (g === undefined) return <section><h1>A Pusaka for you</h1><p className="muted">Opening the gift…</p></section>;
+  return (
+    <section className="gift">
+      <h1>A Pusaka for you</h1>
+      {!g && !msg && <p className="error">This link opens no gift: it was already claimed or the giver cancelled it.</p>}
+      {g && <>
+        <p><strong>{g.from}</strong> sent you <a href={`#/pusaka/${g.token_id}`}>Pusaka #{g.token_id}</a>{info && <>, an NFT that controls its own Bitcoin
+          address holding <strong>{btc(Number(info.verified_sats))} BTC</strong> proven on NEAR</>}. Claim it and the NFT, with everything it holds, is yours.</p>
+        {accountId && <button disabled={!!busy} onClick={claim("mine", async () => {
+          await linkAccount().callFunction({ contractId: CONTRACT, methodName: "claim", args: { account_id: accountId }, gas: 100_000_000_000_000n });
+          return `It's yours: Pusaka #${g.token_id} is now held by ${accountId}.`;
+        })}>{busy === "mine" ? "Claiming…" : `Claim into ${accountId}`}</button>}
+        <form className="stack" onSubmit={claim("new", async () => {
+          const kp = KeyPair.fromRandom("ed25519");
+          const id = `${name.trim().toLowerCase()}${suffix}`;
+          await linkAccount().callFunction({ contractId: CONTRACT, methodName: "create_account_and_claim",
+            args: { new_account_id: id, new_public_key: kp.getPublicKey().toString() }, gas: 100_000_000_000_000n });
+          const owner = (await view("token_info", { token_id: g.token_id })).token.owner_id;
+          if (owner !== id) throw new Error(`${id} couldn't be created (taken?). The link still works: try another name.`);
+          setNewKey({ id, key: kp.toString() });
+          return `Created ${id} and gave it Pusaka #${g.token_id}.`;
+        })}>
+          <h2>{accountId ? "Or claim it as a new account" : "Claim it: no wallet needed"}</h2>
+          <label>Pick a name <span className="row"><input value={name} onChange={(e) => setName(e.target.value)} pattern="[a-z0-9][a-z0-9_\-]{1,40}" required spellCheck="false" autoCapitalize="none" placeholder="ana" />{suffix}</span></label>
+          <button disabled={!!busy}>{busy === "new" ? "Creating your account…" : "Create my account and claim"}</button>
+          <p className="muted">The account is created on NEAR {NETWORK} with 0.05 NEAR to start. Its key is made in this browser and shown once below.</p>
+        </form>
+      </>}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+      {newKey && <div className="stack">
+        <h2>Save your key now</h2>
+        <p>This private key is the only way into <strong>{newKey.id}</strong>. Import it into a NEAR wallet (Meteor, Intear or MyNearWallet: import an account with a private key). It isn't stored anywhere else.</p>
+        <p className="gift-link"><code>{newKey.key}</code> <CopyButton text={newKey.key} label="Copy key" what="private key" /></p>
+        <p><a href={`#/pusaka/${tokenId}`}>See your Pusaka</a></p>
+      </div>}
+    </section>
+  );
+}
+
 function CopyButton({ text, label = "Copy", what = "address" }) {
   const [done, setDone] = useState(false);
   return (
@@ -1310,6 +1408,7 @@ function OwnerForms({ t, busy, run, status, market }) {
   return (
     <section className="actions">
       {market}
+      <GiftLink id={id} busy={busy} run={run} />
       <form onSubmit={sell} className="stack">
         <h2>Sell</h2>
         <label>Price

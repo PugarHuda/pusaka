@@ -41,7 +41,12 @@ ok(meta.build_info?.build_environment?.startsWith("sourcescan/cargo-near"), "NEP
 // 2. Nobody holds a key to the contract account: code changes only through the public timelock.
 const keys = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: CONTRACT })).keys;
 const up = await view("upgrade_status").catch(() => ({}));
-ok(keys.length === 0, "the contract account has no access key", keys.length ? `${keys.length} key(s): ${keys.map((k) => k.access_key.permission === "FullAccess" ? "FullAccess" : "FunctionCall").join(", ")}` : "no one can sign for it");
+// The only keys allowed are open gift links' keys: function-call only, on this contract, for the two claim methods.
+const CLAIM = ["claim", "create_account_and_claim"];
+const linkKey = (k) => { const fc = k.access_key.permission?.FunctionCall; return fc && fc.receiver_id === CONTRACT && fc.method_names.length && fc.method_names.every((m) => CLAIM.includes(m)); };
+const other = keys.filter((k) => !linkKey(k));
+ok(other.length === 0, "nobody holds a key to the contract account", other.length ? `${other.length} other key(s): ${other.map((k) => k.access_key.permission === "FullAccess" ? "FullAccess" : JSON.stringify(k.access_key.permission)).join(", ")}`
+  : keys.length ? `only ${keys.length} gift-link key(s), each limited to ${CLAIM.join("/")}` : "no key at all");
 ok(up.renounced || (up.admin && Number(up.delay_ms) >= 600_000), "new code only after a public announcement",
   up.renounced ? "upgrades renounced: final" : !up.admin ? "the deployed code has no timelock (upgrade_status missing or no admin)" : `admin ${up.admin} announces a sha256; deployable ${Number(up.delay_ms) / 60_000} min later${up.proposal ? `; pending ${up.proposal.code_sha256.slice(0, 12)}… from ${new Date(Number(up.proposal.applicable_from_ms)).toISOString()}` : ""}`);
 
