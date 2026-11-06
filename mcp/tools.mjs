@@ -85,6 +85,7 @@ export async function inspect(token_id) {
     out.loan = { borrower: l.borrower, lender: l.lender, principal_near: toNear(l.principal), repay_near: toNear(l.repay),
       duration_ms: l.duration_ms, due_ms: l.due_ms };
     if (px) Object.assign(out.loan, loanStats(l, verified, px));
+    if (l.lender) out.loan.extension_proposed = await view("loan_extension", { token_id }).catch(() => null);
     if (px && out.exit_quote?.usdc_on_base) out.loan.collateral_exit_covers = out.exit_quote.usdc_on_base / (toNear(l.principal) * px.nearUsd);
   }
   if (info.btc_pubkey) {
@@ -117,7 +118,7 @@ export async function inspect(token_id) {
 }
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
-export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect"]);
+export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -214,6 +215,113 @@ reg("pusaka_request_loan", {
   await call("request_loan", { token_id, principal: toYocto(principal_near).toString(), repay: toYocto(repay_near).toString(),
     duration_ms: String(Math.round(days * 86_400_000)) });
   return { requested: token_id, principal_near, repay_near, days };
+}));
+
+// --- loan market: standing offers (which also refinance a funded loan), partial repayment, extensions ---
+const STORAGE_PAD = 10_000_000_000_000_000_000_000n; // 0.01 NEAR; the contract refunds what storage didn't use
+
+/** Open offers, each with the tokens it can fund now and (for a token offer) its LTV at today's prices. */
+async function openOffers() {
+  const out = [];
+  for (let from = 0; ; from += 100) { // pages of 100 ids until next_id
+    const page = await view("loan_offers", { from: String(from), limit: "100" });
+    out.push(...page.offers);
+    if (from + 100 >= Number(page.next_id)) break;
+  }
+  return out;
+}
+
+reg("pusaka_loan_offers", {
+  description: "Standing loan offers from lenders: for one Pusaka, or for any Pusaka holding at least N verified sats. The principal is already escrowed in the contract, so the holder can take it instantly with pusaka_accept_loan_offer, also to refinance a funded loan into cheaper or longer terms.",
+  inputSchema: { token_id: z.string().optional() },
+}, tool(async ({ token_id }) => {
+  const px = await prices().catch(() => null);
+  const info = token_id && await view("token_info", { token_id });
+  const rows = [];
+  for (const { id, offer: o } of await openOffers()) {
+    if (token_id && o.token_id ? o.token_id !== token_id : token_id && Number(info.verified_sats) < Number(o.min_verified_sats)) continue;
+    const row = { offer_id: id, lender: o.lender, for: o.token_id ? `Pusaka #${o.token_id}` : `any Pusaka with >= ${o.min_verified_sats} verified sats`,
+      principal_near: toNear(o.principal), repay_near: toNear(o.repay), days: Number(o.duration_ms) / 86_400_000 };
+    const sats = Number((info ?? (o.token_id && await view("token_info", { token_id: o.token_id })))?.verified_sats ?? o.min_verified_sats);
+    if (px) Object.assign(row, loanStats(o, sats, px));
+    rows.push(row);
+  }
+  return { offers: rows };
+}));
+
+reg("pusaka_offer_loan", {
+  description: "As a lender, post a standing loan offer: escrow principal_near now for one Pusaka (token_id) or for any Pusaka with at least min_verified_sats of light-client-proven BTC. Its holder can accept at once; cancel anytime before. A token offer refuses if loan-to-value would exceed max_ltv (default 0.5) and is void if the Pusaka signs anything (a withdrawal) before acceptance.",
+  inputSchema: { token_id: z.string().optional(), min_verified_sats: z.number().int().positive().optional(), principal_near: z.number().positive(),
+    repay_near: z.number().positive(), days: z.number().positive(), max_ltv: z.number().positive().max(1).optional() },
+}, tool(async ({ token_id, min_verified_sats, principal_near, repay_near, days, max_ltv = 0.5 }) => {
+  if (!token_id === !min_verified_sats) throw new Error("Give exactly one of token_id, min_verified_sats.");
+  if (repay_near < principal_near) throw new Error("repay_near must be at least principal_near.");
+  const terms = { principal: toYocto(principal_near).toString(), repay: toYocto(repay_near).toString(), duration_ms: String(Math.round(days * 86_400_000)) };
+  const px = await prices();
+  if (!px.crossChecked) throw new Error("Prices could not be cross-checked against a second source; not lending on one source.");
+  const sats = token_id ? Number((await view("token_info", { token_id }))?.verified_sats ?? 0) : min_verified_sats;
+  const st = loanStats(terms, sats, px);
+  if (!(st.ltv <= max_ltv)) throw new Error(`Loan-to-value ${(st.ltv * 100).toFixed(1)}% is above ${max_ltv * 100}% (${sats} verified sats).`);
+  spend(BigInt(terms.principal) + STORAGE_PAD, "offer_loan");
+  const offer_id = await call("offer_loan", { token_id: token_id ?? null, min_verified_sats: min_verified_sats ? String(min_verified_sats) : null, ...terms },
+    { deposit: BigInt(terms.principal) + STORAGE_PAD });
+  return { offer_id, ...terms, ltv: st.ltv, apr: st.apr };
+}));
+
+reg("pusaka_cancel_loan_offer", {
+  description: "Take back your standing loan offer: the escrowed principal and its storage come back to you.",
+  inputSchema: { offer_id: z.string() },
+}, tool(async ({ offer_id }) => { await call("cancel_loan_offer", { offer_id }); return { cancelled: offer_id }; }));
+
+reg("pusaka_accept_loan_offer", {
+  description: "As the holder, take a standing loan offer on your Pusaka: the principal arrives at once and the Pusaka becomes collateral until you repay. If the Pusaka already backs a funded loan this refinances it: the offer's principal first pays the current lender in full (you attach any shortfall, capped by max_topup_near, default 0) and the rest comes to you. See pusaka_loan_offers.",
+  inputSchema: { token_id: z.string(), offer_id: z.string(), max_topup_near: z.number().min(0).optional() },
+}, tool(async ({ token_id, offer_id, max_topup_near = 0 }) => {
+  const info = await view("token_info", { token_id });
+  const o = (await openOffers()).find((x) => x.id === offer_id)?.offer;
+  if (!o) throw new Error(`No open offer ${offer_id}.`);
+  const old = info.loan?.lender ? info.loan : null;
+  const owed = old ? BigInt(old.repay) : 0n;
+  const topup = owed > BigInt(o.principal) ? owed - BigInt(o.principal) : 0n;
+  if (topup > toYocto(max_topup_near)) throw new Error(`The offer is ${toNear(topup)} NEAR short of the ${toNear(owed)} NEAR owed now; raise max_topup_near to add it.`);
+  if (topup) spend(topup, "accept_loan_offer");
+  await call("accept_loan_offer", { token_id, offer_id, expected_sign_epoch: info.sign_epoch }, { deposit: topup });
+  const l = (await view("token_info", { token_id })).loan;
+  return { token_id, lender: l.lender, ...(old && { paid_off: old.lender, paid_off_near: toNear(owed), topped_up_near: toNear(topup) }),
+    received_near: toNear(BigInt(o.principal) + topup - owed), repay_near: toNear(l.repay), due: new Date(Number(l.due_ms)).toISOString() };
+}));
+
+reg("pusaka_repay_partial", {
+  description: "As the borrower, pay part of your loan before it is due; it goes straight to the lender and lowers what you owe. Use pusaka_repay_loan to pay the rest and free the Pusaka.",
+  inputSchema: { token_id: z.string(), near: z.number().positive() },
+}, tool(async ({ token_id, near }) => {
+  const l = (await view("token_info", { token_id }))?.loan;
+  if (!l?.lender) throw new Error("No funded loan.");
+  const amount = toYocto(near);
+  if (amount >= BigInt(l.repay)) throw new Error(`That covers the whole ${toNear(l.repay)} NEAR: use pusaka_repay_loan.`);
+  spend(amount, "repay_partial");
+  await call("repay_partial", { token_id }, { deposit: amount });
+  return { token_id, paid_near: near, still_owed_near: toNear((await view("token_info", { token_id })).loan.repay) };
+}));
+
+reg("pusaka_propose_extension", {
+  description: "As the lender, offer the borrower more time: move the due date by `days` if they pay `fee_near` (0 for free). The borrower accepts with pusaka_accept_extension before the current due date.",
+  inputSchema: { token_id: z.string(), days: z.number().positive(), fee_near: z.number().min(0) },
+}, tool(async ({ token_id, days, fee_near }) => {
+  spend(STORAGE_PAD, "propose_extension");
+  await call("propose_extension", { token_id, extra_ms: String(Math.round(days * 86_400_000)), fee: toYocto(fee_near).toString() }, { deposit: STORAGE_PAD });
+  return { token_id, extension: await view("loan_extension", { token_id }) };
+}));
+
+reg("pusaka_accept_extension", {
+  description: "As the borrower, take the lender's proposed extension: pay its fee, the due date moves. Restates the proposal's terms, so a proposal changed in the meantime is refused.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const x = await view("loan_extension", { token_id });
+  if (!x) throw new Error("No extension proposed for this loan.");
+  spend(BigInt(x.fee), "accept_extension");
+  await call("accept_extension", { token_id, extra_ms: x.extra_ms }, { deposit: BigInt(x.fee) });
+  return { token_id, fee_near: toNear(x.fee), due: new Date(Number((await view("token_info", { token_id })).loan.due_ms)).toISOString() };
 }));
 
 reg("pusaka_prove_deposits", {

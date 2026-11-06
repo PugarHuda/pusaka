@@ -326,7 +326,7 @@ const ACTIVITY = {
   repay_loan: "repaid a loan", claim_collateral: "claimed collateral", set_heir: "named an heir", still_here: "checked in as holder",
   claim_inheritance: "inherited one", nft_approve: "listed one on Mintbase",
   nft_revoke_all: "stopped selling on Mintbase", offer_loan: "offered a loan", cancel_loan_offer: "withdrew a loan offer",
-  accept_loan_offer: "took a loan offer", refinance_loan: "refinanced a loan", repay_partial: "repaid part of a loan",
+  accept_loan_offer: "took a loan offer", repay_partial: "repaid part of a loan",
   letter_key: "opened a sealed letter", set_letter: "sealed a letter for the next holder",
   propose_extension: "offered a loan extension", accept_extension: "extended a loan", nft_transfer: "transferred one", migrate: "upgraded the contract",
   DeployContract: "upgraded the contract",
@@ -1305,7 +1305,7 @@ function OwnerForms({ t, busy, run, status, market }) {
   );
 }
 
-// ---------- loan market: standing offers, refinance, part repayment, extensions ----------
+// ---------- loan market: standing offers (which also refinance a funded loan), part repayment, extensions ----------
 
 const OFFER_STORAGE = 10n ** 22n; // 0.01 NEAR; the contract refunds what the entry doesn't use
 
@@ -1329,7 +1329,7 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
   const [b, setB] = useState(""); // repay / new days / fee
   const [c, setC] = useState("7"); // days
   useEffect(() => {
-    if (!loan) allOffers().then(setOffers, () => setOffers([]));
+    if (!loan || funded) allOffers().then(setOffers, () => setOffers([]));
     if (funded) view("loan_extension", { token_id: id }).then(setExt, () => setExt(null));
   }, [id, info]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!accountId || (loan && !funded)) return null;
@@ -1340,56 +1340,54 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
     <form className="stack" onSubmit={(e) => { e.preventDefault(); run(label, fn); }}>{children}</form>
   );
   const sats = Number(info.verified_sats);
+  const due = Number(loan?.due_ms);
+  if (funded && Date.now() >= due) return null;
+  const borrower = accountId === loan?.borrower, lender = accountId === loan?.lender;
+  const owed = funded ? BigInt(loan.repay) : 0n; // a refinance pays this to the current lender first
 
-  if (!loan) {
-    const mine = offers.filter(({ offer: o }) => o.token_id === id || (o.min_verified_sats != null && sats >= Number(o.min_verified_sats)));
-    return <>
-      {mine.length > 0 && <div className="stack">
-        <h2>Loan offers</h2>
-        {mine.map(({ id: oid, offer: o }) => <p key={oid}>
-          {o.lender} lends <strong>{near(o.principal)} NEAR</strong>, repay <strong>{near(o.repay)} NEAR</strong> within {days(o.duration_ms)}
-          {o.token_id ? " (for this Pusaka)" : ` (any Pusaka with ${btc(Number(o.min_verified_sats))} BTC verified)`}.{" "}
-          {isOwner && btn(`accept-${oid}`, "Accept offer", "Accepting…", async () => {
-            await call("accept_loan_offer", { token_id: id, offer_id: oid, expected_sign_epoch: info.sign_epoch });
-            return `Loan taken: ${near(o.principal)} NEAR is on its way to you. The Pusaka is collateral until you repay.`;
-          })}
-          {o.lender === accountId && btn(`cancel-${oid}`, "Cancel my offer", "Cancelling…", async () => {
-            await call("cancel_loan_offer", { offer_id: oid });
-            return "Offer cancelled. Your NEAR is on its way back.";
-          })}
-        </p>)}
-      </div>}
-      {!isOwner && form("offer", async () => {
-        await call("offer_loan", { token_id: id, principal: yocto(a).toString(), repay: yocto(b).toString(), duration_ms: String(Math.round(Number(c) * DAY_MS)) },
-          { deposit: yocto(a) + OFFER_STORAGE });
-        return "Offer posted. Your NEAR waits in the contract until the owner accepts or you cancel.";
-      }, <>
-        <h2>Offer a loan</h2>
-        <label>Lend <span className="row"><input type="number" min="0.01" step="0.01" value={a} onChange={(e) => setA(e.target.value)} required /> NEAR, repay
-          <input type="number" min={a} step="0.01" value={b} onChange={(e) => setB(e.target.value)} required /> NEAR within
-          <input type="number" min="0.001" step="any" value={c} onChange={(e) => setC(e.target.value)} required /> days</span></label>
-        <button disabled={!!busy}>{busy === "offer" ? "Offering…" : "Offer a loan"}</button>
-        <p className="muted">The NEAR is held by the contract. If the owner accepts, it goes to them and this Pusaka becomes your collateral.</p>
-      </>)}
-    </>;
-  }
+  // Standing offers that fit this Pusaka. With a funded loan, taking one refinances it.
+  const fits = offers
+    .filter(({ offer: o }) => o.token_id === id || (o.min_verified_sats != null && sats >= Number(o.min_verified_sats)));
+  const offerList = fits.length > 0 && <div className="stack">
+    <h2>{funded ? "Refinance offers" : "Loan offers"}</h2>
+    {fits.map(({ id: oid, offer: o }) => {
+      const short = owed > BigInt(o.principal) ? owed - BigInt(o.principal) : 0n;
+      const left = BigInt(o.principal) > owed ? BigInt(o.principal) - owed : 0n;
+      return <p key={oid}>
+        {o.lender} lends <strong>{near(o.principal)} NEAR</strong>, repay <strong>{near(o.repay)} NEAR</strong> within {days(o.duration_ms)}
+        {o.token_id ? " (for this Pusaka)" : ` (any Pusaka with ${btc(Number(o.min_verified_sats))} BTC verified)`}.
+        {funded && <> Pays off the {near(owed)} NEAR owed to {loan.lender}{short ? `; you add ${near(short)} NEAR` : `; ${near(left)} NEAR comes to you`}.</>}{" "}
+        {isOwner && (!funded || borrower) && btn(`accept-${oid}`, funded ? "Refinance with this offer" : "Accept offer", "Accepting…", async () => {
+          await call("accept_loan_offer", { token_id: id, offer_id: oid, expected_sign_epoch: info.sign_epoch }, short ? { deposit: short } : undefined);
+          return funded ? `Refinanced: ${loan.lender} is paid off, ${o.lender} is your lender now. Repay ${near(o.repay)} NEAR within ${days(o.duration_ms)}.`
+            : `Loan taken: ${near(o.principal)} NEAR is on its way to you. The Pusaka is collateral until you repay.`;
+        })}
+        {o.lender === accountId && btn(`cancel-${oid}`, "Cancel my offer", "Cancelling…", async () => {
+          await call("cancel_loan_offer", { offer_id: oid });
+          return "Offer cancelled. Your NEAR is on its way back.";
+        })}
+      </p>;
+    })}
+  </div>;
+  const offerForm = !isOwner && !lender && form("offer", async () => {
+    await call("offer_loan", { token_id: id, principal: yocto(a).toString(), repay: yocto(b).toString(), duration_ms: String(Math.round(Number(c) * DAY_MS)) },
+      { deposit: yocto(a) + OFFER_STORAGE });
+    return "Offer posted. Your NEAR waits in the contract until the owner accepts or you cancel.";
+  }, <>
+    <h2>{funded ? "Offer to refinance" : "Offer a loan"}</h2>
+    <label>Lend <span className="row"><input type="number" min="0.01" step="0.01" value={a} onChange={(e) => setA(e.target.value)} required /> NEAR, repay
+      <input type="number" min={a} step="0.01" value={b} onChange={(e) => setB(e.target.value)} required /> NEAR within
+      <input type="number" min="0.001" step="any" value={c} onChange={(e) => setC(e.target.value)} required /> days</span></label>
+    <button disabled={!!busy}>{busy === "offer" ? "Offering…" : "Offer a loan"}</button>
+    <p className="muted">The NEAR is held by the contract. {funded
+      ? `If the borrower takes it, it first pays ${loan.lender} the ${near(owed)} NEAR owed and you become the lender.`
+      : "If the owner accepts, it goes to them and this Pusaka becomes your collateral."}</p>
+  </>);
 
-  const due = Number(loan.due_ms);
-  if (Date.now() >= due) return null;
-  const borrower = accountId === loan.borrower, lender = accountId === loan.lender;
+  if (!loan) return <>{offerList}{offerForm}</>;
   return <>
-    {!borrower && !lender && form("refinance", async () => {
-      await call("refinance_loan", { token_id: id, new_repay: a ? yocto(a).toString() : loan.repay,
-        new_duration_ms: String(Math.ceil(Number(b || 0) * DAY_MS)) }, { deposit: BigInt(loan.repay) });
-      return `You are the lender now. ${loan.lender} was paid ${near(loan.repay)} NEAR.`;
-    }, <>
-      <h2>Refinance</h2>
-      <label>Pay {loan.lender} {near(loan.repay)} NEAR and take over; the borrower repays you
-        <span className="row"><input type="number" step="0.0001" placeholder={near(loan.repay)} value={a} onChange={(e) => setA(e.target.value)} /> NEAR within
-          <input type="number" step="any" min={(due - Date.now()) / DAY_MS} value={b} onChange={(e) => setB(e.target.value)} required /> days from now</span></label>
-      <button disabled={!!busy}>{busy === "refinance" ? "Refinancing…" : "Refinance"}</button>
-      <p className="muted">Terms can only get better for the borrower: no higher repay, no earlier due date.</p>
-    </>)}
+    {offerList}
+    {offerForm}
     {borrower && form("part", async () => {
       await call("repay_partial", { token_id: id }, { deposit: yocto(a) });
       return `Paid ${a} NEAR to ${loan.lender}.`;

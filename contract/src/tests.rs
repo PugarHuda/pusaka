@@ -1944,15 +1944,6 @@ fn o9_approved_token_cannot_take_an_offer() {
 }
 
 #[test]
-#[should_panic(expected = "Collateralised")]
-fn o9_token_with_a_loan_cannot_take_another_offer() {
-    let mut c = funded_loan();
-    let id = offer(&mut c, Some("1"), None);
-    at("alice.testnet", NearToken::from_yoctonear(0), 2_000);
-    c.accept_loan_offer("1".into(), id, 0);
-}
-
-#[test]
 #[should_panic(expected = "OfferForAnotherToken")]
 fn o9_offer_for_another_token() {
     let mut c = setup();
@@ -1965,17 +1956,25 @@ fn o9_offer_for_another_token() {
 
 // funded_loan: alice borrows 10, repays 11, bob lends at t=1000, due 1000 + DAY_MS
 
+/// Carol offers 12 NEAR for 13 back within a day, for token "1".
+fn carol_offers(c: &mut Pusaka, now: u64) -> U64 {
+    at("carol.testnet", NearToken::from_millinear(12_100), now);
+    c.offer_loan(Some("1".into()), None, N(12), N(13), U64(DAY_MS))
+}
+
 #[test]
-fn o10_refinance_pays_the_old_lender_in_full_and_takes_over() {
+fn o10_borrower_refinances_by_taking_an_offer() {
     let mut c = funded_loan();
-    at("carol.testnet", N(11), 2_000);
-    c.refinance_loan("1".into(), NearToken::from_millinear(10_500), U64(2 * DAY_MS));
-    assert_eq!(paid_to("bob.testnet"), N(11).as_yoctonear());
+    let id = carol_offers(&mut c, 1_500);
+    let storage = c.loan_offers(None, None)["offers"][0]["offer"]["storage"].as_str().unwrap().parse::<u128>().unwrap();
+    at("alice.testnet", NearToken::from_yoctonear(0), 2_000);
+    c.accept_loan_offer("1".into(), id, 0);
+    assert_eq!(paid_to("bob.testnet"), N(11).as_yoctonear(), "the old lender is paid in full");
+    assert_eq!(paid_to("alice.testnet"), N(1).as_yoctonear(), "the rest of the new principal to the borrower");
+    assert_eq!(paid_to("carol.testnet"), storage);
     let loan = c.token_info("1".into()).unwrap().loan.unwrap();
     assert_eq!(loan.lender, Some(acc("carol.testnet")));
-    assert_eq!(loan.repay, NearToken::from_millinear(10_500));
-    assert_eq!(loan.due_ms, Some(U64(2_000 + 2 * DAY_MS)));
-    assert_eq!(loan.borrower, acc("alice.testnet"));
+    assert_eq!((loan.principal, loan.repay, loan.due_ms), (N(12), N(13), Some(U64(2_000 + DAY_MS))));
     // the old lender has no claim left
     at("bob.testnet", NearToken::from_yoctonear(0), 3 * DAY_MS);
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.claim_collateral("1".into())));
@@ -1983,43 +1982,35 @@ fn o10_refinance_pays_the_old_lender_in_full_and_takes_over() {
 }
 
 #[test]
-#[should_panic(expected = "WorseTerms")]
-fn o10_refinance_with_higher_repay_fails() {
+fn o10_a_smaller_offer_refinances_with_the_difference_attached() {
     let mut c = funded_loan();
-    at("carol.testnet", N(11), 2_000);
-    c.refinance_loan("1".into(), N(12), U64(DAY_MS));
+    let id = offer(&mut c, Some("1"), None); // bob himself: 10 for 11, while 11 is owed to him
+    at("alice.testnet", N(1), 2_000);
+    c.accept_loan_offer("1".into(), id, 0);
+    let storage = paid_to("bob.testnet") - N(11).as_yoctonear();
+    assert!(storage > 0 && storage < NearToken::from_millinear(100).as_yoctonear(), "bob: owed 11 plus his storage");
+    assert_eq!(paid_to("alice.testnet"), 0);
+    assert_eq!(c.token_info("1".into()).unwrap().loan.unwrap().due_ms, Some(U64(2_000 + DAY_MS)));
 }
 
 #[test]
-#[should_panic(expected = "WorseTerms")]
-fn o10_refinance_with_earlier_due_fails() {
+#[should_panic(expected = "doesn't cover")]
+fn o10_a_smaller_offer_without_the_difference_fails() {
     let mut c = funded_loan();
-    at("carol.testnet", N(11), 2_000);
-    c.refinance_loan("1".into(), N(11), U64(DAY_MS - 2_000)); // due DAY_MS, before 1000 + DAY_MS
+    let id = offer(&mut c, Some("1"), None);
+    at("alice.testnet", NearToken::from_millinear(999), 2_000);
+    c.accept_loan_offer("1".into(), id, 0);
 }
 
 #[test]
-#[should_panic(expected = "SelfLoan")]
-fn o10_borrower_cannot_refinance() {
-    let mut c = funded_loan();
-    at("alice.testnet", N(11), 2_000);
-    c.refinance_loan("1".into(), N(10), U64(DAY_MS));
-}
-
-#[test]
-#[should_panic(expected = "Overdue")]
-fn o10_overdue_loan_cannot_be_refinanced() {
-    let mut c = funded_loan();
-    at("carol.testnet", N(11), 1_000 + DAY_MS);
-    c.refinance_loan("1".into(), N(11), U64(DAY_MS));
-}
-
-#[test]
-#[should_panic(expected = "attach exactly the current repay")]
-fn o10_refinance_must_pay_the_old_lender_exactly() {
-    let mut c = funded_loan();
-    at("carol.testnet", N(10), 2_000);
-    c.refinance_loan("1".into(), N(11), U64(DAY_MS));
+#[should_panic(expected = "Collateralised")]
+fn o10_an_open_loan_request_is_not_refinanced() {
+    let mut c = setup();
+    at("alice.testnet", NearToken::from_yoctonear(0), 0);
+    c.request_loan("1".into(), N(10), N(11), U64(DAY_MS));
+    let id = carol_offers(&mut c, 500);
+    at("alice.testnet", NearToken::from_yoctonear(0), 1_000);
+    c.accept_loan_offer("1".into(), id, 0);
 }
 
 #[test]
@@ -2102,8 +2093,9 @@ fn o12_extension_with_the_wrong_fee_fails() {
 fn o12_old_lenders_extension_dies_with_a_refinance() {
     let mut c = funded_loan();
     proposed(&mut c);
-    at("carol.testnet", N(11), 2_500);
-    c.refinance_loan("1".into(), N(11), U64(DAY_MS));
+    let id = carol_offers(&mut c, 2_400);
+    at("alice.testnet", NearToken::from_yoctonear(0), 2_500);
+    c.accept_loan_offer("1".into(), id, 0);
     at("alice.testnet", N(1), 3_000);
     c.accept_extension("1".into(), U64(DAY_MS));
 }

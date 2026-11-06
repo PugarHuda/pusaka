@@ -1,5 +1,6 @@
 // The loan market, live: a lender posts a standing offer for any Pusaka with >= 10,000 verified sats; a holder takes
-// it; a third party refinances at better terms; the borrower repays part, takes an extension, then repays the rest.
+// it; a third party offers better terms and the borrower refinances into them; the borrower repays part, takes an
+// extension, then repays the rest.
 //   node loan-market.mjs <lender> <borrower> <refinancer> <token_id>
 // The token must be the borrower's, free (not listed, no loan) and hold >= 10,000 verified sats.
 import { parseNearAmount } from "near-api-js";
@@ -29,11 +30,14 @@ info = await view("token_info", { token_id: tokenId });
 console.log(`2. ${borrowerId} took it for #${tokenId}: lender ${info.loan.lender}, due ${new Date(Number(info.loan.due_ms)).toISOString()}: ${tx(a)}`);
 await refused("the same offer twice", call(borrower, "accept_loan_offer", { token_id: tokenId, offer_id: offer.id, expected_sign_epoch: info.sign_epoch }), /NoOffer/);
 
-// 3. a third party refinances: pays the lender in full, borrower owes less
-await refused("refinance at worse terms", call(refi, "refinance_loan", { token_id: tokenId, new_repay: N("0.32").toString(), new_duration_ms: String(86_400_000) }, { deposit: N("0.31") }), /[A-Za-z]*(Worse|repay|better)[^"]*/i);
-const r = await callRaw(refi, "refinance_loan", { token_id: tokenId, new_repay: N("0.305").toString(), new_duration_ms: String(2 * 86_400_000) }, { deposit: N("0.31") });
+// 3. a third party offers cheaper, longer terms; the borrower refinances into them, paying the first lender in full
+const ro = await callRaw(refi, "offer_loan", { token_id: tokenId, principal: N("0.3").toString(), repay: N("0.305").toString(), duration_ms: String(2 * 86_400_000) }, { deposit: N("0.31") });
+const better = (await view("loan_offers", {})).offers.at(-1);
 info = await view("token_info", { token_id: tokenId });
-console.log(`3. ${refiId} refinanced: paid ${lenderId} 0.31, now owed ${Number(BigInt(info.loan.repay) / 10n ** 21n) / 1000} NEAR by ${new Date(Number(info.loan.due_ms)).toISOString()}: ${tx(r)}`);
+await refused("a refinance that doesn't pay off the 0.31 owed", call(borrower, "accept_loan_offer", { token_id: tokenId, offer_id: better.id, expected_sign_epoch: info.sign_epoch }), /doesn't cover[^"]*/);
+const r = await callRaw(borrower, "accept_loan_offer", { token_id: tokenId, offer_id: better.id, expected_sign_epoch: info.sign_epoch }, { deposit: N("0.01") });
+info = await view("token_info", { token_id: tokenId });
+console.log(`3. ${refiId} offered 0.3 for 0.305 over 2 days (${tx(ro)}); ${borrowerId} refinanced into it, adding 0.01 so ${lenderId} got 0.31: lender ${info.loan.lender}, due ${new Date(Number(info.loan.due_ms)).toISOString()}: ${tx(r)}`);
 
 // 4. part repayment, then an extension the new lender proposes
 const p = await callRaw(borrower, "repay_partial", { token_id: tokenId }, { deposit: N("0.1") });

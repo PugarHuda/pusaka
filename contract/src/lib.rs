@@ -2031,9 +2031,19 @@ impl Pusaka {
     /// The owner takes a standing offer: the loan is funded at once on the offer's terms and
     /// the principal goes to the owner. Same checks as `request_loan` + `fund_loan`, including
     /// `expected_sign_epoch` (T4), so the lender's sats floor holds when the loan starts.
+    /// With a funded loan already on the token this refinances it: the new principal (plus any
+    /// deposit) first pays the current lender the full repay, the rest goes to the borrower.
+    #[payable]
     pub fn accept_loan_offer(&mut self, token_id: TokenId, offer_id: U64, expected_sign_epoch: u32) {
         let offer: LoanOffer = raw_get(&offer_key(offer_id.0)).expect("NoOffer");
         self.assert_owner(&token_id);
+        let borrower = env::predecessor_account_id();
+        let old = self.loans.get(&token_id).cloned();
+        if let Some(l) = &old {
+            require!(l.lender.is_some(), "Collateralised: cancel your loan request first");
+            require!(l.borrower == borrower, "NotBorrower");
+            self.loans.remove(&token_id); // paid off below; every other lock still applies
+        }
         self.assert_free(&token_id);
         self.assert_epoch(&token_id, expected_sign_epoch);
         match (&offer.token_id, offer.min_verified_sats) {
@@ -2045,8 +2055,10 @@ impl Pusaka {
             (None, Some(min)) => require!(self.verified_sats(&token_id) >= min.0, "BelowSatsFloor"),
             _ => env::panic_str("bad offer"),
         }
-        let borrower = env::predecessor_account_id();
         require!(borrower != offer.lender, "SelfLoan");
+        let owed = old.as_ref().map_or(NearToken::from_yoctonear(0), |l| l.repay);
+        let have = offer.principal.saturating_add(env::attached_deposit());
+        require!(have >= owed, format!("the offer doesn't cover the {owed} owed now: attach the difference"));
         let due = U64(env::block_timestamp_ms().checked_add(offer.duration_ms.0).expect("duration too long"));
         // Removed before any transfer: the same offer can't be accepted or cancelled again.
         env::storage_remove(offer_key(offer_id.0).as_bytes());
@@ -2062,7 +2074,12 @@ impl Pusaka {
             },
         );
         self.log(&token_id, Event::LoanOfferAccepted { offer_id, lender: offer.lender.clone(), due_ms: due });
-        Promise::new(borrower).transfer(offer.principal).detach();
+        if let Some(l) = old {
+            let from = l.lender.unwrap();
+            log_only(&token_id, &Event::LoanRefinanced { from: from.clone(), to: offer.lender.clone(), repay: offer.repay, due_ms: due });
+            refund(from, owed);
+        }
+        refund(borrower, have.saturating_sub(owed));
         refund(offer.lender, offer.storage);
     }
 
@@ -2075,34 +2092,6 @@ impl Pusaka {
             .filter_map(|id| raw_get::<LoanOffer>(&offer_key(id)).map(|o| json!({ "id": U64(id), "offer": o })))
             .collect();
         json!({ "next_id": U64(next), "offers": offers })
-    }
-
-    /// Anyone but the borrower takes over a funded, not overdue loan: attach exactly the
-    /// current `repay`, which pays the old lender in full. The new terms may only be better
-    /// for the borrower (repay no higher, due no earlier), so the borrower need not sign.
-    #[payable]
-    pub fn refinance_loan(&mut self, token_id: TokenId, new_repay: NearToken, new_duration_ms: U64) {
-        let mut loan = self.loans.get(&token_id).expect("NoLoan").clone();
-        let old = loan.lender.clone().expect("LoanNotFunded");
-        let due = loan.due_ms.unwrap().0;
-        let now = env::block_timestamp_ms();
-        require!(now < due, "Overdue: only repay or claim now");
-        let to = env::predecessor_account_id();
-        require!(to != loan.borrower, "SelfLoan");
-        require!(to != old, "AlreadyLender");
-        require!(!new_repay.is_zero() && new_repay <= loan.repay, "WorseTerms: new_repay must be > 0 and <= the current repay");
-        let new_due = now.checked_add(new_duration_ms.0).expect("duration too long");
-        require!(new_due >= due, "WorseTerms: the new due date must not be earlier");
-        let paid = env::attached_deposit();
-        require!(paid == loan.repay, format!("attach exactly the current repay, {}", loan.repay));
-        loan.lender = Some(to.clone());
-        loan.repay = new_repay;
-        loan.duration_ms = new_duration_ms;
-        loan.due_ms = Some(U64(new_due));
-        self.loans.insert(token_id.clone(), loan);
-        // ponytail: tx log, not the 32-entry history: two accounts refinancing back and forth must not flush it
-        log_only(&token_id, &Event::LoanRefinanced { from: old.clone(), to, repay: new_repay, due_ms: U64(new_due) });
-        refund(old, paid);
     }
 
     /// The borrower pays part of the loan before it is due; it goes straight to the lender.

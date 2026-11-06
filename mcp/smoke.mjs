@@ -35,5 +35,16 @@ refused(await show("pusaka_fund_loan", { token_id: "1", max_ltv: 0.001 }), /Loan
 refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above your max/);
 // Guard: outflows (give, withdraw_*) are off unless the operator opts in.
 refused(await show("pusaka_give", { token_id: "4", to: "pusaka-seller.testnet" }), /Outflows are off/);
+await show("pusaka_loan_offers");
+// Guard: a token offer above the LTV cap is refused before anything is escrowed.
+refused(await show("pusaka_offer_loan", { token_id: "1", principal_near: 1, repay_near: 1.01, days: 1, max_ltv: 0.0001 }), /Loan-to-value .* is above/);
+if (fs.existsSync(keyFile)) {
+  // Live: escrow a 0.01 NEAR standing offer for any Pusaka with >= 10,000 verified sats, see it listed, take it back.
+  const r = await show("pusaka_offer_loan", { min_verified_sats: 10000, principal_near: 0.01, repay_near: 0.0101, days: 1 });
+  if (r.isError) throw new Error("offer_loan failed");
+  const { offer_id } = JSON.parse(r.content[0].text);
+  if (!JSON.parse((await show("pusaka_loan_offers")).content[0].text).offers.some((o) => o.offer_id === offer_id)) throw new Error("offer not listed");
+  if ((await show("pusaka_cancel_loan_offer", { offer_id })).isError) throw new Error("cancel failed");
+}
 await client.close();
 console.log("\nsmoke ok");
