@@ -24,6 +24,7 @@ const account = ACCOUNT_ID && process.env.PUSAKA_PRIVATE_KEY
   ? new Account(ACCOUNT_ID, provider, process.env.PUSAKA_PRIVATE_KEY)
   : null;
 const toYocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 18n;
+const btc8 = (sats) => (Number(sats) / 1e8).toFixed(8);
 const toNear = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6;
 
 // Outflow guard: tools that move a Pusaka or its assets away (give, withdraw_*) are off unless the
@@ -52,12 +53,12 @@ Account ${ACCOUNT_ID}, contract ${CONTRACT} on ${NETWORK}.`,
 // Spending guard: the agent can never move more NEAR than this in one session.
 const CAP = toYocto(process.env.PUSAKA_MAX_SPEND_NEAR ?? "5");
 let spent = 0n;
-async function spend(amount, what) {
+async function spend(amount, what, { confirmed = false } = {}) {
   if (spent + amount > CAP) {
     throw new Error(`${what} needs ${toNear(amount)} NEAR but the session cap leaves ${toNear(CAP - spent)} NEAR (PUSAKA_MAX_SPEND_NEAR).`);
   }
   spent += amount; // reserved before asking, so two parallel calls can't both fit under the cap
-  try { await confirm(`The agent wants to ${what.replace(/_/g, " ")}, spending ${toNear(amount)} NEAR (session cap ${toNear(CAP)}, already spent ${toNear(spent - amount)}).`); }
+  try { if (!confirmed) await confirm(`The agent wants to ${what.replace(/_/g, " ")}, spending ${toNear(amount)} NEAR (session cap ${toNear(CAP)}, already spent ${toNear(spent - amount)}).`); }
   catch (e) { spent -= amount; throw e; }
 }
 
@@ -137,8 +138,8 @@ export async function inspect(token_id) {
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
   "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio"]);
 
-/** Tools that move a Pusaka or what it holds away from the agent (also gated by PUSAKA_ALLOW_OUTFLOWS). */
-const OUTFLOW_TOOLS = new Set(["pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc"]);
+/** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
+const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -227,6 +228,7 @@ reg("pusaka_list", {
   description: "List your Pusaka for sale. Optional floor_near + hours make it a Dutch auction falling to the floor.",
   inputSchema: { token_id: z.string(), price_near: z.number().positive(), floor_near: z.number().positive().optional(), hours: z.number().positive().optional() },
 }, tool(async ({ token_id, price_near, floor_near, hours }) => {
+  await confirm(`The agent wants to list Pusaka #${token_id} and its ${btc8((await view("token_info", { token_id })).verified_sats)} BTC for sale at ${price_near} NEAR${floor_near ? `, falling to ${floor_near} NEAR over ${hours ?? 24} h` : ""}: anyone may buy it at that price.`);
   await call("list", { token_id, price: toYocto(price_near).toString(),
     ...(floor_near && { floor: toYocto(floor_near).toString(), duration_ms: String(Math.round((hours ?? 24) * 3_600_000)) }) });
   return { listed: token_id, price_near, floor_near: floor_near ?? price_near };
@@ -241,6 +243,7 @@ reg("pusaka_request_loan", {
   description: "Ask to borrow NEAR against your Pusaka. It stays locked until cancelled, repaid, or claimed.",
   inputSchema: { token_id: z.string(), principal_near: z.number().positive(), repay_near: z.number().positive(), days: z.number().positive() },
 }, tool(async ({ token_id, principal_near, repay_near, days }) => {
+  await confirm(`The agent wants to pledge Pusaka #${token_id} for a loan: borrow ${principal_near} NEAR, repay ${repay_near} NEAR within ${days} days of funding, or the lender takes the Pusaka and all it holds.`);
   await call("request_loan", { token_id, principal: toYocto(principal_near).toString(), repay: toYocto(repay_near).toString(),
     duration_ms: String(Math.round(days * 86_400_000)) });
   return { requested: token_id, principal_near, repay_near, days };
@@ -313,7 +316,8 @@ reg("pusaka_accept_loan_offer", {
   const owed = old ? BigInt(old.repay) : 0n;
   const topup = owed > BigInt(o.principal) ? owed - BigInt(o.principal) : 0n;
   if (topup > toYocto(max_topup_near)) throw new Error(`The offer is ${toNear(topup)} NEAR short of the ${toNear(owed)} NEAR owed now; raise max_topup_near to add it.`);
-  if (topup) await spend(topup, "accept_loan_offer");
+  await confirm(`The agent wants to take ${o.lender}'s offer on Pusaka #${token_id}: ${toNear(o.principal)} NEAR now${old ? ` (first paying ${old.lender} the ${toNear(owed)} NEAR owed${topup ? `, ${toNear(topup)} NEAR of it from you` : ""})` : ""}, repay ${toNear(o.repay)} NEAR within ${Number(o.duration_ms) / 86_400_000} days, or ${o.lender} takes the Pusaka and all it holds.`);
+  if (topup) await spend(topup, "accept_loan_offer", { confirmed: true });
   await call("accept_loan_offer", { token_id, offer_id, expected_sign_epoch: info.sign_epoch }, { deposit: topup });
   const l = (await view("token_info", { token_id })).loan;
   return { token_id, lender: l.lender, ...(old && { paid_off: old.lender, paid_off_near: toNear(owed), topped_up_near: toNear(topup) }),
@@ -408,7 +412,7 @@ reg("pusaka_withdraw_btc", {
   description: "Send BTC out of your Pusaka to a Bitcoin address. The contract builds the transaction, NEAR MPC signs it, this server verifies and broadcasts it.",
   inputSchema: { token_id: z.string(), to: z.string(), amount_btc: z.number().positive(), fee_sats: z.number().int().positive().optional() },
 }, tool(async ({ token_id, to, amount_btc, fee_sats = 300 }) => {
-  await outflow(to);
+  await outflow(to, `send ${amount_btc} BTC (+ ${fee_sats} sats fee) from Pusaka #${token_id}'s Bitcoin address to ${to} on Bitcoin ${NETWORK}`);
   const info = await view("token_info", { token_id });
   const bal = await balances(btcAddress(info.btc_pubkey), info.signed_outpoints);
   const ins = [...bal.spendable].sort((a, b) => b.value - a.value).slice(0, 8);
@@ -427,7 +431,7 @@ reg("pusaka_give", {
   description: "Give your Pusaka to another NEAR account: the NFT and everything it controls (BTC, ETH, SOL, its NEAR account, the letter) move in one transaction. Refuses accounts that don't exist, since a Pusaka sent to an account nobody controls is lost.",
   inputSchema: { token_id: z.string(), to: z.string() },
 }, tool(async ({ token_id, to }) => {
-  await outflow(to);
+  await outflow(to, `give Pusaka #${token_id}, with all the Bitcoin and other assets it controls, to ${to}`);
   const receiver = to.trim().toLowerCase();
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
   await call("nft_transfer", { receiver_id: receiver, token_id, memo: "given by an agent through Pusaka MCP" }, { deposit: 1n, tgas: 50 });
@@ -440,7 +444,7 @@ reg("pusaka_set_heir", {
 }, tool(async ({ token_id, heir, days }) => {
   const to = heir?.trim().toLowerCase() ?? null;
   if (to) {
-    await outflow(to); // naming who may take the Pusaka is as strong as giving it
+    await outflow(to, `name ${to} heir of Pusaka #${token_id}: if you stay silent for ${days} days they can take it and everything it holds`); // naming who may take the Pusaka is as strong as giving it
     if (!(await accountExists(to))) throw new Error(`${to} doesn't exist on NEAR ${NETWORK}.`);
   }
   await call("set_heir", { token_id, heir: to, after_ms: String(Math.round(days * 86_400_000)) }, { deposit: 10_000_000_000_000_000_000_000n });
@@ -470,7 +474,7 @@ reg("pusaka_withdraw_eth", {
   description: `Send ETH or USDC out of your Pusaka on an EVM chain (${EVM_CHAINS.map((c) => `${c.chain.id} ${c.chain.name}`).join(", ")}). The contract builds the EIP-1559 transaction, NEAR MPC signs it with the same key that holds the BTC, this server checks the signature recovers to the Pusaka's address and broadcasts.`,
   inputSchema: { token_id: z.string(), to: z.string(), amount: z.number().positive(), chain_id: z.number().int().optional(), usdc: z.boolean().optional() },
 }, tool(async ({ token_id, to, amount, chain_id = EVM_CHAINS[0].chain.id, usdc = false }) => {
-  await outflow(to);
+  await outflow(to, `send ${amount} ${usdc ? "USDC" : "ETH"} from Pusaka #${token_id}'s address on ${EVM_CHAINS.find((x) => x.chain.id === chain_id)?.chain.name ?? `chain ${chain_id}`} to ${to}`);
   const c = EVM_CHAINS.find((x) => x.chain.id === chain_id);
   if (!c) throw new Error(`chain_id must be one of ${EVM_CHAINS.map((x) => x.chain.id).join(", ")}`);
   to = to.trim();
@@ -497,7 +501,7 @@ reg("pusaka_withdraw_sol", {
   description: "Send SOL out of your Pusaka (its Ed25519 MPC key is a Solana address). The contract builds a plain System transfer, NEAR MPC signs it, this server broadcasts.",
   inputSchema: { token_id: z.string(), to: z.string(), sol: z.number().positive() },
 }, tool(async ({ token_id, to, sol }) => {
-  await outflow(to);
+  await outflow(to, `send ${sol} SOL from Pusaka #${token_id}'s Solana address to ${to}`);
   if (!isSolAddress(to)) throw new Error(`${to} isn't a Solana address`);
   const from = await solAddress(token_id);
   const info = await view("token_info", { token_id });
@@ -515,7 +519,7 @@ reg("pusaka_withdraw_near", {
   description: "Send NEAR out of your Pusaka's own NEAR account (an implicit account of its Ed25519 MPC key). The contract only ever signs a single Transfer from it.",
   inputSchema: { token_id: z.string(), to: z.string(), near: z.number().positive() },
 }, tool(async ({ token_id, to, near }) => {
-  await outflow(to);
+  await outflow(to, `send ${near} NEAR from Pusaka #${token_id}'s own NEAR account to ${to}`);
   const receiver = to.trim().toLowerCase();
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
   const acct = await nearAccount(token_id);
@@ -533,7 +537,7 @@ reg("pusaka_withdraw_nbtc", {
   description: `Send nBTC (Omni Bridge NEP-141) from your Pusaka's own NEAR account. The contract signs one ft_transfer on ${NBTC}; the receiver must be registered with it.`,
   inputSchema: { token_id: z.string(), to: z.string(), sats: z.number().int().positive() },
 }, tool(async ({ token_id, to, sats }) => {
-  await outflow(to);
+  await outflow(to, `send ${sats} sats of nBTC from Pusaka #${token_id}'s own NEAR account to ${to}`);
   const receiver = to.trim().toLowerCase();
   if (!(await provider.callFunction({ contractId: NBTC, method: "storage_balance_of", args: { account_id: receiver } }))) throw new Error(`${receiver} isn't registered with ${NBTC}`);
   const acct = await nearAccount(token_id);

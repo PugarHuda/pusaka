@@ -29,7 +29,9 @@ if (!r1.isError || (await c.callTool({ name: "pusaka_loan_offers", arguments: {}
 
 console.log("2. the person approves");
 answer = "approve";
-const r2 = JSON.parse((await c.callTool({ name: "pusaka_offer_loan", arguments: offer })).content[0].text);
+const r2raw = await c.callTool({ name: "pusaka_offer_loan", arguments: offer });
+if (r2raw.isError) throw new Error(r2raw.content[0].text);
+const r2 = JSON.parse(r2raw.content[0].text);
 console.log(`  offer ${r2.offer_id} posted`);
 const r3 = await c.callTool({ name: "pusaka_cancel_loan_offer", arguments: { offer_id: r2.offer_id } });
 console.log(`3. cancelled (no spend, so no question): ${r3.content[0].text.replace(/\s+/g, " ").slice(0, 80)}`);
