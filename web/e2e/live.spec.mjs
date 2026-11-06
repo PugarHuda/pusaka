@@ -275,7 +275,7 @@ test("home lists the standing loan offers, their yearly rate, and which Pusakas 
   const book = page.getByRole("region", { name: "Loan offers" });
   await expect(book.getByRole("listitem").first()).toContainText(/lends [\d.]+ NEAR, repay [\d.]+ within .*% a year/, { timeout: 30_000 });
   await expect(book).toContainText("pusaka-seller.testnet"); // restock.mjs keeps one open
-  await expect(book.getByRole("link", { name: /^#\d+$/ }).first()).toBeVisible();
+  await expect(book.getByRole("link", { name: /^#\d+$/ }).first()).toBeVisible({ timeout: 30_000 }); // the gallery's token infos load separately
 });
 
 test("the first paint doesn't wait for the app bundle, and the hero never flashes on other pages", async ({ page, request }) => {
