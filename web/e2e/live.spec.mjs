@@ -277,3 +277,15 @@ test("home lists the standing loan offers, their yearly rate, and which Pusakas 
   await expect(book).toContainText("pusaka-seller.testnet"); // restock.mjs keeps one open
   await expect(book.getByRole("link", { name: /^#\d+$/ }).first()).toBeVisible();
 });
+
+test("the first paint doesn't wait for the app bundle, and the hero never flashes on other pages", async ({ page, request }) => {
+  const html = await (await request.get("/")).text();
+  expect(html).toContain("<h1>NFTs that hold real Bitcoin.</h1>"); // in the HTML itself, before any JS
+  expect(html).toMatch(/fonts\.googleapis\.com[^>]+media="print"/); // the web font doesn't block rendering
+  await page.route("**/assets/*.js", (r) => r.abort()); // no app bundle at all
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: "NFTs that hold real Bitcoin." })).toBeVisible();
+  await page.goto("about:blank");
+  await page.goto("/#/pusaka/4"); // a fresh load straight onto a token page, still with no bundle
+  await expect(page.locator("#shell-hero")).toHaveCount(0);
+});

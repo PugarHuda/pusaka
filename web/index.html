@@ -19,10 +19,18 @@
     <meta name="twitter:image" content="https://pusaka-two.vercel.app/og.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&display=optional" rel="stylesheet" />
+    <!-- not render-blocking: display=optional already lets the page paint in the fallback font -->
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&display=optional" rel="stylesheet" media="print" onload="this.media='all'" />
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Painted before any JS: the home page's header and hero, so the first paint doesn't wait for the app bundle.
+         React replaces it on mount; on other routes the hero is dropped at once so it never flashes. -->
+    <div id="root"><header class="bar"><a href="#/" class="wordmark">Pusaka</a></header><main><section class="hero" id="shell-hero">
+      <h1>NFTs that hold real Bitcoin.</h1>
+      <p class="lede">Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR
+        transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep.</p>
+    </section></main></div>
+    <script>if (!/^#?\/?$/.test(location.hash)) document.getElementById("shell-hero").remove();</script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
