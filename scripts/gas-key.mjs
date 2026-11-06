@@ -24,7 +24,7 @@ const status = async (x) => {
 if (cmd === "setup") {
   if (fs.existsSync(file(id))) throw new Error(`${file(id)} exists already`);
   const kp = KeyPair.fromRandom("ed25519");
-  fs.writeFileSync(file(id), JSON.stringify({ account_id: id, private_key: kp.toString() }));
+  fs.writeFileSync(file(id), JSON.stringify({ account_id: id, private_key: kp.toString() }), { mode: 0o600, flag: "wx" }); // owner-only, never overwrite
   const owner = account(id);
   const add = await owner.addFullAccessGasKey(kp.getPublicKey(), Number(a ?? 16));
   const fund = await owner.transferToGasKey(id, kp.getPublicKey(), yocto(b ?? 2));
