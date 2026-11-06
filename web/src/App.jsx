@@ -116,7 +116,8 @@ function useAccount() {
 function useRoute() {
   const [hash, setHash] = useState(location.hash);
   useEffect(() => {
-    const f = () => { setHash(location.hash); window.scrollTo(0, 0); };
+    // a new page: back to the top, and focus on it so a screen reader announces it instead of staying on the old link
+    const f = () => { setHash(location.hash); window.scrollTo(0, 0); document.querySelector("main")?.focus({ preventScroll: true }); };
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
@@ -150,6 +151,8 @@ export default function App() {
 
   return (
     <>
+      {/* not href="#main": the hash is the router */}
+      <a className="skip" href="#/" onClick={(e) => { e.preventDefault(); document.querySelector("main")?.focus(); }}>Skip to content</a>
       <header className="bar">
         <a href="#/" className="wordmark">Pusaka</a>
         <span className="net">{NETWORK === "mainnet" ? "Mainnet" : "Testnet demo"}</span>
@@ -164,7 +167,7 @@ export default function App() {
         )}
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
-      <main>{tokenId === "bad"
+      <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>

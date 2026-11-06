@@ -256,3 +256,16 @@ test("Your Pusakas without a wallet asks to connect, and fits a phone", async ({
   await expect(page).toHaveTitle(/Your Pusakas/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
+
+test("keyboard: a skip link jumps to the content, and a new page takes the focus", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeInViewport();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main")).toBeFocused();
+  await expect(page).toHaveURL(/\/(#\/)?$/); // the hash router didn't move
+  await page.evaluate(() => { location.hash = "#/pusaka/1"; });
+  await expect(page.locator("main")).toBeFocused(); // a screen reader hears the new page, not the old link
+});

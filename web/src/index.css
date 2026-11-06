@@ -25,6 +25,9 @@ a { color: inherit; text-underline-offset: 0.18em; text-decoration-thickness: 1p
 a:hover { color: var(--brass-ink); }
 code { white-space: nowrap; font-size: 0.9em; background: var(--paper); padding: 0.05em 0.3em; border-radius: 3px; }
 :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+main:focus { outline: none; } /* focused by the router, not by the user */
+.skip { position: absolute; left: 1rem; top: -3rem; z-index: 10; padding: 0.5rem 1rem; background: var(--ink); color: #fff; }
+.skip:focus { top: 0.5rem; }
 
 button {
   font: 500 1rem var(--font);
