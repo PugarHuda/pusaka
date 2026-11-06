@@ -11,4 +11,7 @@ console.log("remote tools:", tools.map((t) => t.name).join(", "));
 const r = await client.callTool({ name: "pusaka_inspect", arguments: { token_id: "4" } });
 const d = JSON.parse(r.content[0].text);
 console.log(`Pusaka #4: owner ${d.owner}, ${d.btc.verified_sats} sats verified, ~$${d.usd?.btc_inside?.toFixed(2)}`);
+if (!tools.some((t) => t.name === "pusaka_loan_offers") || tools.some((t) => t.name === "pusaka_offer_loan")) throw new Error("remote must list loan offers and nothing that signs");
+const o = JSON.parse((await client.callTool({ name: "pusaka_loan_offers", arguments: {} })).content[0].text);
+console.log(`open loan offers: ${o.offers.length}`);
 await client.close();
