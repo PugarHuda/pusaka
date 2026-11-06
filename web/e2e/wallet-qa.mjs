@@ -7,6 +7,7 @@
 //   node wallet-qa.mjs <profileDir> claim                             reconnect as the heir and claim, once due
 //   node wallet-qa.mjs <profileDir> judge <buyId> <lendId>            the README's try-it path: Buy one, Lend on another
 //   node wallet-qa.mjs <profileDir> offer <account> <id>              post a standing loan offer through the form, then cancel it
+//   node wallet-qa.mjs <profileDir> remind <account> <id>             the loan/heir calendar reminder on token id, downloaded and read back
 //   node wallet-qa.mjs <profileDir> accept|refinance <account> <id>   as the holder, take the first loan offer shown (gas-free) or refinance with it
 import fs from "node:fs";
 import { chromium } from "playwright";
@@ -259,6 +260,20 @@ try {
     const status = p.locator("section.actions").getByRole("status");
     for (let i = 0; i < 90 && !(await status.count()); i++) await p.waitForTimeout(1000);
     console.log(`${step} #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  }
+  if (step === "remind") { // as keyFile, open token arg2 and check its calendar reminders: the .ics downloads and says the right thing
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${arg2}`);
+    await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    const r = p.locator("p.reminder").first();
+    await r.waitFor({ timeout: 40_000 });
+    console.log("reminder:", (await r.innerText()).replace(/\s+/g, " "));
+    const dl = p.waitForEvent("download");
+    await r.getByRole("link", { name: /\.ics/ }).click();
+    const d = await dl;
+    const text = fs.readFileSync(await d.path(), "utf8");
+    console.log(`downloaded ${d.suggestedFilename()}:`, text.replace(/\r\n /g, "").split("\r\n").filter((l) => /^(SUMMARY|DTSTART|TRIGGER|UID)/.test(l)).join(" | "));
+    console.log("google:", decodeURIComponent(await r.getByRole("link", { name: "Google Calendar" }).getAttribute("href")).slice(0, 160));
   }
   if (step === "judge") {
     const [buyId, lendId] = [keyFile, arg2];

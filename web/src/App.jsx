@@ -9,6 +9,7 @@ import {
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import Emblem from "./Emblem.jsx";
+import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
 import { loadInfos, loadMine } from "./mine.js";
 
@@ -812,6 +813,14 @@ function NbtcSection({ t, canWithdraw, onDone }) {
 // same rule as api/_relayer.mjs: one free check-in per hour (or tenth of the silence), decided at click time
 const freeCheckIn = (h) => Date.now() - Number(h.last_seen_ms) >= Math.min(3_600_000, Number(h.after_ms) / 10);
 
+/** A deadline worth a calendar entry: an .ics with an alarm before it, or straight into Google Calendar. */
+function Reminder({ uid, title, at, details, alarmMin, label = "Remind me" }) {
+  const ev = { uid: `${uid}@pusaka-two.vercel.app`, title, at, details, url: location.href, alarmMin: Math.max(1, Math.round(alarmMin)) };
+  return <p className="reminder">{label}:{" "}
+    <a href={icsHref(ev)} download={`pusaka-${uid}.ics`}>add to calendar (.ics)</a> ·{" "}
+    <a href={googleHref(ev)} target="_blank" rel="noreferrer">Google Calendar</a></p>;
+}
+
 function HeirSection({ id, owner, accountId, isOwner, onDone }) {
   const [h, setH] = useState(undefined);
   const [heir, setHeir] = useState("");
@@ -860,6 +869,9 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
           <button className="secondary" disabled={busy} onClick={() => run("Heir removed", () => call("set_heir", { token_id: id, heir: null, after_ms: "0" }))}>Remove heir</button>
         </p>
       )}
+      {isOwner && h && !due && <Reminder uid={`heir-${id}-${h.claimable_from_ms}`} at={Number(h.claimable_from_ms)} label="Don't let it pass by accident"
+        alarmMin={Math.min(1440, Number(h.after_ms) / 60_000 / 4)} title={`Check in on Pusaka #${id}, or ${h.heir} can claim it`}
+        details={`Press "I'm still here" (or do anything with the Pusaka) before this, or ${h.heir} can claim it with everything it holds.`} />}
       {isOwner && (
         <form onSubmit={name} className="stack">
           <label>{h ? "Change heir" : "Heir"} <input value={heir} onChange={(e) => setHeir(e.target.value)} placeholder="family.testnet" required spellCheck="false" autoCapitalize="none" /></label>
@@ -869,7 +881,9 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
       )}
       {isHeir && (due
         ? <button disabled={busy} onClick={() => run("It's yours now", () => callGasless("claim_inheritance", { token_id: id }))}>Claim inheritance</button>
-        : <p className="muted">You are the heir. You can claim from {when(h.claimable_from_ms)} if {owner} doesn't check in before then.</p>)}
+        : <><p className="muted">You are the heir. You can claim from {when(h.claimable_from_ms)} if {owner} doesn't check in before then.</p>
+          <Reminder uid={`claim-${id}-${h.claimable_from_ms}`} at={Number(h.claimable_from_ms)} alarmMin={0} label="Remind me when it opens"
+            title={`Pusaka #${id} can be claimed`} details={`${owner} has been silent long enough: you can claim the Pusaka now, unless they check in first.`} /></>)}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </section>
   );
@@ -1120,6 +1134,11 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
           );
         })()}
         {funded && <p>{loan.borrower} borrowed {near(loan.principal)} NEAR from {loan.lender}. {near(loan.repay)} NEAR {overdue ? "was" : "is"} due {when(due)}.</p>}
+        {funded && !overdue && (accountId === loan.borrower || accountId === loan.lender) && <Reminder uid={`loan-${id}-${due}`} at={due}
+          alarmMin={Math.min(1440, (due - now) / 60_000 / 4)}
+          title={accountId === loan.borrower ? `Repay Pusaka #${id}: ${near(loan.repay)} NEAR to ${loan.lender}` : `Pusaka #${id} loan to ${loan.borrower} is due`}
+          details={accountId === loan.borrower ? `If ${near(loan.repay)} NEAR isn't repaid by then, ${loan.lender} can take the Pusaka and its ${btc(Number(info.verified_sats))} BTC.`
+            : `If ${loan.borrower} hasn't repaid ${near(loan.repay)} NEAR by then, you can claim the Pusaka and its BTC.`} />}
         {!funded && isOwner && act("cancel-loan", "Cancel loan request", "Cancelling…", async () => {
           await callGasless("cancel_loan_request", { token_id: id });
           return "Loan request cancelled. The Pusaka is unlocked.";

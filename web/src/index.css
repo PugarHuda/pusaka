@@ -246,3 +246,4 @@ textarea:focus, select:focus { border-color: var(--ink); outline: none; }
 .mine li { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; padding: 0.55rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .mine li a { font-weight: 700; }
 .mine-btc { font-variant-numeric: tabular-nums; }
+.reminder { font-size: 0.9rem; margin: 0.3rem 0 0; }
