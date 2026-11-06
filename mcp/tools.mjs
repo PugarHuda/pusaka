@@ -327,6 +327,38 @@ reg("pusaka_accept_extension", {
   return { token_id, fee_near: toNear(x.fee), due: new Date(Number((await view("token_info", { token_id })).loan.due_ms)).toISOString() };
 }));
 
+reg("pusaka_gift_link", {
+  description: "Turn your Pusaka into a one-use gift link (the contract's NEAR linkdrop, NEP-452): whoever opens it gets the NFT and the Bitcoin it controls, and needs no NEAR account; claiming creates one. Costs 0.25 NEAR. The link IS the gift: share it privately. Needs PUSAKA_ALLOW_OUTFLOWS=1, since the Pusaka leaves you.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  outflow("gift link");
+  const { KeyPair } = await import("near-api-js");
+  const kp = KeyPair.fromRandom("ed25519");
+  const deposit = 250_000_000_000_000_000_000_000n;
+  spend(deposit, "gift");
+  await call("gift", { token_id, public_key: kp.getPublicKey().toString() }, { deposit });
+  return { token_id, link: `https://pusaka-two.vercel.app/#/gift/${kp.toString()}`, note: "anyone with this link can claim the Pusaka; cancel with pusaka_cancel_gift" };
+}));
+
+reg("pusaka_cancel_gift", {
+  description: "Take back an open gift link on your Pusaka: the link stops working and the Pusaka is yours to use again.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => { await call("cancel_gift", { token_id }); return { cancelled: token_id }; }));
+
+reg("pusaka_claim_gift", {
+  description: "Claim a Pusaka gift link into this agent's account. Signed with the link's own key, so it costs the agent nothing.",
+  inputSchema: { link: z.string() },
+}, tool(async ({ link }) => {
+  if (!ACCOUNT_ID) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID to claim into it.");
+  const secret = link.trim().split("#/gift/")[1];
+  if (!/^ed25519:[1-9A-HJ-NP-Za-km-z]{40,100}$/.test(secret ?? "")) throw new Error("not a Pusaka gift link");
+  const { KeyPair } = await import("near-api-js");
+  const gift = await view("gift_for_key", { public_key: KeyPair.fromString(secret).getPublicKey().toString() });
+  if (!gift) throw new Error("this link opens no gift: already claimed or cancelled");
+  await new Account(CONTRACT, provider, secret).callFunction({ contractId: CONTRACT, methodName: "claim", args: { account_id: ACCOUNT_ID }, gas: teraToGas(100) });
+  return { claimed: gift.token_id, from: gift.from, owner: (await view("token_info", { token_id: gift.token_id })).token.owner_id };
+}));
+
 reg("pusaka_prove_deposits", {
   description: "Prove confirmed BTC deposits into a Pusaka through NEAR's on-chain Bitcoin light client, so they count as verified.",
   inputSchema: { token_id: z.string() },
