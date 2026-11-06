@@ -2239,3 +2239,55 @@ fn up8_announcement_must_be_a_sha256() {
     at("admin.testnet", NearToken::from_yoctonear(0), 0);
     c.propose_upgrade("not a hash".into(), None);
 }
+
+#[test]
+fn up9_the_admin_hands_upgrades_to_a_dao() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    at("admin.testnet", NearToken::from_yoctonear(0), 2_000);
+    c.transfer_upgrade_admin(acc("council.sputnik-v2.testnet"));
+    let st = c.upgrade_status();
+    assert_eq!(st["admin"], "council.sputnik-v2.testnet");
+    assert!(st["proposal"].is_null(), "the old admin's announcement doesn't survive the handover");
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { announce(&mut c, 3_000); }));
+    assert!(r.is_err(), "the old admin can't announce any more");
+    at("council.sputnik-v2.testnet", NearToken::from_yoctonear(0), 4_000);
+    c.propose_upgrade(hex::encode(env::sha256_array(NEW_CODE)), None);
+}
+
+// ---------- NEAR Social notifications ----------
+
+/// SocialDB `set` calls the contract made in the current call, as their JSON args.
+fn social_sets() -> Vec<serde_json::Value> {
+    near_sdk::test_utils::get_created_receipts().iter()
+        .filter(|r| r.receiver_id.as_str() == "v1.social08.testnet")
+        .flat_map(|r| r.actions.iter())
+        .filter_map(|a| match a {
+            near_sdk::mock::MockAction::FunctionCallWeight { method_name, args, .. } if method_name == b"set" => serde_json::from_slice(args).ok(),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn sn1_a_sale_notifies_the_seller_on_near_social() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    ctx("bob.testnet", NearToken::from_near(5), vec![]);
+    c.buy("1".into(), 0);
+    let sets = social_sets();
+    assert_eq!(sets.len(), 1, "one notification");
+    let notify: serde_json::Value = serde_json::from_str(sets[0]["data"]["pusaka.testnet"]["index"]["notify"].as_str().unwrap()).unwrap();
+    assert_eq!(notify["key"], "alice.testnet");
+    assert_eq!(notify["value"]["event"], "sold");
+    assert_eq!(notify["value"]["token_id"], "1");
+}
+
+#[test]
+fn sn2_listing_notifies_nobody() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(5), None, None);
+    assert!(social_sets().is_empty());
+}

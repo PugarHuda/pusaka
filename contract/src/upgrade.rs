@@ -70,6 +70,15 @@ impl Pusaka {
         p
     }
 
+    /// The admin hands the role to another account, e.g. a DAO, so upgrades then need its vote too.
+    /// Any pending announcement is dropped: the new admin announces for itself.
+    pub fn transfer_upgrade_admin(&mut self, new_admin: AccountId) {
+        let old = assert_admin();
+        raw_put(ADMIN, &new_admin);
+        env::storage_remove(PROPOSAL.as_bytes());
+        env::log_str(&format!("upgrade admin: {old} -> {new_admin}"));
+    }
+
     /// The admin withdraws the announcement.
     pub fn cancel_upgrade(&mut self) {
         assert_admin();

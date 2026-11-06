@@ -1535,6 +1535,19 @@ impl Pusaka {
     fn log(&mut self, token_id: &str, event: Event) {
         // Every logged event changes the owner or the lock state, and so the live art (with_art).
         emit_metadata_update(token_id);
+        // NEAR Social: tell the account this event happened to, in its SocialDB notifications
+        let to = match &event {
+            Event::Sale { from, .. } => Some((from.clone(), "sold")),
+            Event::Transfer { to, .. } => Some((to.clone(), "received")),
+            Event::LoanFunded { .. } => self.tokens.owner_by_id.get(&token_id.to_string()).map(|o| (o, "loan_funded")),
+            Event::LoanOfferAccepted { lender, .. } => Some((lender.clone(), "offer_taken")),
+            Event::LoanRepaid { lender, .. } => Some((lender.clone(), "loan_repaid")),
+            Event::HeirSet { heir: Some(h), .. } => Some((h.clone(), "named_heir")),
+            _ => None,
+        };
+        if let Some((who, kind)) = to {
+            social_notify(&who, kind, token_id);
+        }
         let h = self.history.entry(token_id.to_string()).or_default();
         h.push(Entry { at_ms: U64(env::block_timestamp_ms()), event });
         // ponytail: bounded so list/cancel spam can't grow storage; full history lives in tx logs
@@ -1542,6 +1555,26 @@ impl Pusaka {
             h.remove(0);
         }
     }
+}
+
+/// SocialDB (NEAR Social), where wallets and social apps read an account's notifications.
+#[cfg(not(feature = "mainnet"))]
+const SOCIAL_DB: &str = "v1.social08.testnet";
+#[cfg(feature = "mainnet")]
+const SOCIAL_DB: &str = "social.near";
+const SOCIAL_TGAS: u64 = 10;
+
+/// Writes a NEAR Social notification (`index.notify`, the standard notifications index) from the contract's
+/// own SocialDB account to `who`. Detached: a full SocialDB storage balance or any failure there never
+/// undoes the sale or loan that triggered it. Storage is prepaid with `storage_deposit` on SocialDB for
+/// this contract; index entries overwrite one key, so it doesn't grow.
+fn social_notify(who: &AccountId, kind: &str, token_id: &str) {
+    let me = env::current_account_id();
+    let value = json!({ "key": who, "value": { "type": "pusaka", "event": kind, "token_id": token_id, "contract": me } });
+    let data = json!({ "data": { me.as_str(): { "index": { "notify": value.to_string() } } } });
+    Promise::new(SOCIAL_DB.parse().unwrap())
+        .function_call("set", data.to_string().into_bytes(), NearToken::from_yoctonear(0), Gas::from_tgas(SOCIAL_TGAS))
+        .detach();
 }
 
 /// Events a third party can repeat cheaply go to the transaction log only, not the bounded history.
