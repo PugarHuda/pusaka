@@ -37,7 +37,7 @@ What each line means:
 ## 2. Run the tests (2 minutes)
 
 ```
-cd contract && cargo test        # 198 passed
+cd contract && cargo test        # 211 passed
 ```
 
 Tests are named after the attack they stop; the README's [threat model](README.md#why-the-seller-cant-keep-the-bitcoin)
