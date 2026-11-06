@@ -17,9 +17,10 @@ use near_sdk::{Allowance, PublicKey};
 const GIFT_ALLOWANCE: NearToken = NearToken::from_millinear(110);
 /// What the giver attaches: the allowance (mostly unspent; it stays with the contract, which pays the claim's gas),
 /// plus NEAR for the recipient's new account, plus storage.
-pub const GIFT_DEPOSIT: NearToken = NearToken::from_millinear(170);
-/// Sent to whoever claims, so a new account can pay its first transactions.
-const GIFT_TO_RECIPIENT: NearToken = NearToken::from_millinear(50);
+pub const GIFT_DEPOSIT: NearToken = NearToken::from_millinear(250);
+/// Sent to whoever claims, so a new account can pay its first transactions: a wallet prepays a 100 TGas call at
+/// the pessimistic gas price (~0.101 NEAR), so less than that and it can't even move its new Pusaka.
+const GIFT_TO_RECIPIENT: NearToken = NearToken::from_millinear(130);
 const CLAIM_METHODS: &str = "claim,create_account_and_claim";
 #[cfg(not(feature = "mainnet"))]
 pub(crate) const REGISTRAR: &str = "testnet";
@@ -50,7 +51,7 @@ pub(crate) fn is_gifted(token_id: &str) -> bool {
 
 #[near]
 impl Pusaka {
-    /// The owner turns the Pusaka into a one-use claim link for `public_key`. Attach GIFT_DEPOSIT (0.17 NEAR).
+    /// The owner turns the Pusaka into a one-use claim link for `public_key`. Attach GIFT_DEPOSIT (0.25 NEAR).
     #[payable]
     pub fn gift(&mut self, token_id: TokenId, public_key: PublicKey) {
         self.assert_owner(&token_id);

@@ -1033,7 +1033,7 @@ function Ledger({ history }) {
 
 // ---------- gift links: the contract's NEP-452 linkdrop ----------
 
-const GIFT_DEPOSIT = 170_000_000_000_000_000_000_000n; // 0.17 NEAR: claim-key allowance, the recipient's first NEAR, storage
+const GIFT_DEPOSIT = 250_000_000_000_000_000_000_000n; // 0.25 NEAR: claim-key allowance, the recipient's first NEAR, storage
 
 /** The owner turns the Pusaka into a one-use link; whoever opens it gets the NFT and the Bitcoin it controls. */
 function GiftLink({ id, busy, run }) {
@@ -1051,7 +1051,7 @@ function GiftLink({ id, busy, run }) {
   </div>;
   return <div className="stack">
     <h2>Gift it as a link</h2>
-    <p className="muted">Send this Pusaka, with its Bitcoin, to someone who has no NEAR account yet: they open the link and claim it, and a new account is made for them. A NEAR linkdrop (NEP-452) built into the contract. Costs 0.17 NEAR; 0.05 of it becomes their first NEAR.</p>
+    <p className="muted">Send this Pusaka, with its Bitcoin, to someone who has no NEAR account yet: they open the link and claim it, and a new account is made for them. A NEAR linkdrop (NEP-452) built into the contract. Costs 0.25 NEAR; 0.13 of it becomes their first NEAR, enough for their first transactions.</p>
     <button type="button" disabled={!!busy} onClick={() => run("gift", async () => {
       const kp = KeyPair.fromRandom("ed25519");
       await call("gift", { token_id: id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
@@ -1111,7 +1111,7 @@ function GiftClaim({ secret, accountId }) {
           <h2>{accountId ? "Or claim it as a new account" : "Claim it: no wallet needed"}</h2>
           <label>Pick a name <span className="row"><input value={name} onChange={(e) => setName(e.target.value)} pattern="[a-z0-9][a-z0-9_\-]{1,40}" required spellCheck="false" autoCapitalize="none" placeholder="ana" />{suffix}</span></label>
           <button disabled={!!busy}>{busy === "new" ? "Creating your account…" : "Create my account and claim"}</button>
-          <p className="muted">The account is created on NEAR {NETWORK} with 0.05 NEAR to start. Its key is made in this browser and shown once below.</p>
+          <p className="muted">The account is created on NEAR {NETWORK} with 0.13 NEAR to start. Its key is made in this browser and shown once below.</p>
         </form>
       </>}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}

@@ -13,7 +13,7 @@ import { account, call, view, provider, keyFile, CONTRACT } from "./lib.mjs";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
 const GIFTS = path.join(import.meta.dirname, "..", ".keys", "gifts");
-const GIFT_DEPOSIT = 170_000_000_000_000_000_000_000n; // 0.17 NEAR (contract's GIFT_DEPOSIT)
+const GIFT_DEPOSIT = 250_000_000_000_000_000_000_000n; // 0.25 NEAR (contract's GIFT_DEPOSIT)
 const [cmd, a1, a2] = process.argv.slice(2);
 
 if (cmd === "create") {

@@ -2363,7 +2363,7 @@ fn g2_the_link_claims_it_into_an_account_and_burns_the_key() {
     c.claim(acc("bob.testnet"));
     assert_eq!(owner(&c), acc("bob.testnet"));
     assert!(receipt_actions("pusaka.testnet").iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeleteKey { public_key, .. } if public_key.to_string() == GIFT_PK)));
-    assert_eq!(paid_to("bob.testnet"), NearToken::from_millinear(50).as_yoctonear(), "first NEAR for the recipient");
+    assert_eq!(paid_to("bob.testnet"), NearToken::from_millinear(130).as_yoctonear(), "first NEAR for the recipient");
     assert!(c.gift_of("1".into()).is_none());
     withdraw(&mut c, "bob.testnet", &[0]); // and the BTC is bob's to move
 }
