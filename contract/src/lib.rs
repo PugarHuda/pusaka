@@ -6,6 +6,7 @@
 
 mod art;
 mod btc;
+mod gift;
 mod upgrade;
 mod usdc;
 
@@ -873,6 +874,7 @@ impl Pusaka {
         if self.listings.remove(&token_id).is_some() {
             self.log(&token_id, Event::Unlisted);
         }
+        self.end_gift(&token_id); // an open gift link dies with the holder's will
         // internal_transfer also clears NEP-178 approvals, so no market can sell it afterwards
         self.tokens.internal_transfer(&owner, &h.heir, &token_id, None, None);
         clear_heir(&token_id);
@@ -1522,6 +1524,7 @@ impl Pusaka {
         require!(!in_transfer_call(token_id), "TransferCallPending");
         require!(!self.listings.contains_key(token_id), "Listed");
         require!(!self.loans.contains_key(token_id), "Collateralised");
+        require!(!gift::is_gifted(token_id), "Gifted: cancel the gift first");
     }
 
     fn has_approvals(&self, token_id: &TokenId) -> bool {

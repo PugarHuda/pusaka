@@ -2302,3 +2302,124 @@ fn sn3_a_transfer_call_returned_in_the_callback_notifies_nobody() {
     withdraw(&mut c, "alice.testnet", &[0]); // and the token is unlocked
 }
 
+
+// ---------- gift links: NEP-452 linkdrop built into the contract ----------
+
+const GIFT_PK: &str = "ed25519:BDW6jsm1qFKjVac7dsBCUpDJAeXX2Emzn2bjnuYrVKxQ";
+fn gift_pk() -> near_sdk::PublicKey { GIFT_PK.parse().unwrap() }
+
+/// A call signed with `pk` on the contract account itself (how a gift link's key calls claim).
+fn as_link(pk: &str) {
+    let c = VMContextBuilder::new()
+        .current_account_id(acc("pusaka.testnet"))
+        .predecessor_account_id(acc("pusaka.testnet"))
+        .signer_account_id(acc("pusaka.testnet"))
+        .signer_account_pk(pk.parse().unwrap())
+        .prepaid_gas(Gas::from_tgas(100))
+        .build();
+    testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+}
+
+fn gifted() -> Pusaka {
+    let mut c = setup();
+    ctx("alice.testnet", gift::GIFT_DEPOSIT, vec![]);
+    c.gift("1".into(), gift_pk());
+    c
+}
+
+fn receipt_actions(to: &str) -> Vec<near_sdk::mock::MockAction> {
+    near_sdk::test_utils::get_created_receipts().into_iter().filter(|r| r.receiver_id.as_str() == to).flat_map(|r| r.actions).collect()
+}
+
+#[test]
+fn g1_a_gift_adds_a_claim_only_key_and_locks_the_pusaka() {
+    let mut c = gifted();
+    let adds = receipt_actions("pusaka.testnet").into_iter().any(|a| matches!(a,
+        near_sdk::mock::MockAction::AddKeyWithFunctionCall { public_key, receiver_id, method_names, .. }
+            if public_key.to_string() == GIFT_PK && receiver_id.as_str() == "pusaka.testnet"
+            && method_names.iter().map(|m| m.as_str()).collect::<Vec<_>>() == ["claim", "create_account_and_claim"]));
+    assert!(adds, "a function-call key limited to the two claim methods, on the contract itself");
+    assert_eq!(c.gift_of("1".into()).unwrap()["from"], "alice.testnet");
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.nft_transfer(acc("carol.testnet"), "1".into(), None, None)));
+    assert!(r.is_err(), "gifted: it can't move except through the link");
+}
+
+#[test]
+#[should_panic(expected = "Gifted")]
+fn g1_the_giver_cannot_withdraw_while_the_link_is_open() {
+    let mut c = gifted();
+    withdraw(&mut c, "alice.testnet", &[0]);
+}
+
+#[test]
+fn g2_the_link_claims_it_into_an_account_and_burns_the_key() {
+    let mut c = gifted();
+    as_link(GIFT_PK);
+    c.claim(acc("bob.testnet"));
+    assert_eq!(owner(&c), acc("bob.testnet"));
+    assert!(receipt_actions("pusaka.testnet").iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeleteKey { public_key, .. } if public_key.to_string() == GIFT_PK)));
+    assert_eq!(paid_to("bob.testnet"), NearToken::from_millinear(50).as_yoctonear(), "first NEAR for the recipient");
+    assert!(c.gift_of("1".into()).is_none());
+    withdraw(&mut c, "bob.testnet", &[0]); // and the BTC is bob's to move
+}
+
+#[test]
+#[should_panic(expected = "sign with the gift link's key")]
+fn g3_nobody_else_can_call_claim() {
+    let mut c = gifted();
+    ctx("mallory.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.claim(acc("mallory.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "NoGift")]
+fn g3_another_key_opens_nothing() {
+    let mut c = gifted();
+    as_link("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp");
+    c.claim(acc("mallory.testnet"));
+}
+
+#[test]
+fn g4_the_giver_cancels_and_gets_it_back() {
+    let mut c = gifted();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.cancel_gift("1".into());
+    assert!(c.gift_of("1".into()).is_none());
+    assert!(receipt_actions("pusaka.testnet").iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeleteKey { .. })));
+    withdraw(&mut c, "alice.testnet", &[0]); // unlocked
+}
+
+#[test]
+fn g5_a_new_account_is_created_then_given_the_pusaka() {
+    let mut c = gifted();
+    as_link(GIFT_PK);
+    let _ = c.create_account_and_claim(acc("ana.testnet"), "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp".parse().unwrap());
+    assert!(receipt_actions(gift::REGISTRAR).iter().any(|a| matches!(a, near_sdk::mock::MockAction::FunctionCallWeight { method_name, .. } if method_name == b"create_account")));
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.claim(acc("eve.testnet"))));
+    assert!(r.is_err(), "no second claim while the account is being created");
+    as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+    assert!(c.on_gift_account(gift_pk(), acc("ana.testnet")));
+    assert_eq!(owner(&c), acc("ana.testnet"));
+}
+
+#[test]
+fn g5_if_the_name_is_taken_the_link_stays_claimable() {
+    let mut c = gifted();
+    as_link(GIFT_PK);
+    let _ = c.create_account_and_claim(acc("taken.testnet"), "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp".parse().unwrap());
+    as_contract(vec![PromiseResult::Successful(b"false".to_vec())]);
+    assert!(!c.on_gift_account(gift_pk(), acc("taken.testnet")));
+    assert_eq!(owner(&c), acc("alice.testnet"));
+    as_link(GIFT_PK);
+    c.claim(acc("bob.testnet"));
+    assert_eq!(owner(&c), acc("bob.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "attach")]
+fn g6_a_gift_must_carry_its_deposit() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_millinear(100), vec![]);
+    c.gift("1".into(), gift_pk());
+}
