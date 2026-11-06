@@ -129,6 +129,7 @@ function useRoute() {
   if (/^#?\/?$/.test(hash)) return null; // home
   if (/^#\/mine\/?$/.test(hash)) return "mine";
   if (/^#\/agents\/?$/.test(hash)) return "agents";
+  if (/^#\/market\/?$/.test(hash)) return "market";
   const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
   if (gift) return `gift:${gift[1]}`;
   const m = hash.match(/^#\/pusaka\/(\d{1,30})\/?$/);
@@ -141,7 +142,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -164,10 +165,13 @@ export default function App() {
       <header className="bar">
         <a href="#/" className="wordmark">Pusaka</a>
         <span className="net">{NETWORK === "mainnet" ? "Mainnet" : "Testnet demo"}</span>
-        <a href="#/agents" className="nav-link">For AI agents</a>
+        <nav className="nav" aria-label="Pusaka">
+          <a href="#/market" className={`nav-link${tokenId === "market" ? " is-here" : ""}`}>Market</a>
+          {accountId && <a href="#/mine" className={`nav-link${tokenId === "mine" ? " is-here" : ""}`}>Your Pusakas</a>}
+          <a href="#/agents" className={`nav-link${tokenId === "agents" ? " is-here" : ""}`}>For AI agents</a>
+        </nav>
         {accountId ? (
           <div className="who">
-            <a href="#/mine" className="nav-link">Your Pusakas</a>
             <button className="ghost" onClick={mint} disabled={!!minting && minting.endsWith("…")}>Mint a Pusaka</button>
             <button className="ghost" onClick={() => connector.disconnect()} title="Disconnect wallet">{accountId}</button>
           </div>
@@ -180,8 +184,9 @@ export default function App() {
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
         : tokenId === "agents" ? <Agents />
+        : tokenId === "market" ? <Market accountId={accountId} />
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
-        : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home accountId={accountId} />}</main>
+        : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
           Contract <a href={`${NEAR_EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
@@ -286,15 +291,14 @@ function Scenes({ tokens, px, sats }) {
 
 // ---------- home ----------
 
-function Home({ accountId }) {
+/** Every Pusaka from the contract, newest first; Bitcoin balances from Esplora fill in after, so a slow explorer
+ * never blanks the gallery or the verified total. */
+function useTokens() {
   const [tokens, setTokens] = useState(null);
   const [error, setError] = useState("");
-  const px = usePrices();
   useEffect(() => {
     loadInfos()
       .then((infos) => {
-        // the contract's numbers first; Bitcoin balances from Esplora fill in after, so a slow
-        // mempool.space never blanks the gallery or the verified total
         const ts = infos.map((info) => ({
           id: info.token.token_id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: null,
         })).sort((a, b) => Number(b.id) - Number(a.id)); // nft_tokens is in string order ("10" < "2")
@@ -304,7 +308,13 @@ function Home({ accountId }) {
       })
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
   }, []);
+  return { tokens, error };
+}
 
+/** The landing page: what a Pusaka is, with live readings; the market itself is #/market. */
+function Home() {
+  const { tokens } = useTokens();
+  const px = usePrices();
   const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
   return (
     <>
@@ -316,7 +326,7 @@ function Home({ accountId }) {
           no bridge, no custodian, no key left with the seller.
         </p>
         <p className="cta-row">
-          <a className="pill" href="#pusakas" onClick={(e) => { e.preventDefault(); document.getElementById("pusakas")?.scrollIntoView({ behavior: "smooth" }); }}>See every Pusaka</a>
+          <a className="pill" href="#/market">Open the market</a>
           <a className="pill pill-soft" href="#/agents">Connect an AI agent</a>
         </p>
       </section>
@@ -351,28 +361,6 @@ function Home({ accountId }) {
         </div>
       </section>
 
-      <Activity />
-
-      <OfferBook infos={tokens?.map((t) => t.info)} accountId={accountId} />
-
-      <h2 className="section-title" id="pusakas">Every Pusaka</h2>
-      <section className="gallery" aria-label="All Pusaka">
-        {error && <p className="error">{error}</p>}
-        {!tokens && !error && <p className="muted">Reading the contract…</p>}
-        {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
-        {tokens?.map((t) => (
-          <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
-            <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
-            <span className="piece-name">Pusaka #{t.id}</span>
-            <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
-            {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
-            {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
-            {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
-            {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
-          </a>
-        ))}
-      </section>
-
       <section className="closing">
         <h2>Hand your Bitcoin down<br />like an heirloom.</h2>
         <p className="muted">Name an heir on any Pusaka you hold. If you stay silent for as long as you choose, they can claim it,
@@ -382,13 +370,72 @@ function Home({ accountId }) {
           <div className="shelf" aria-label="Every Pusaka, as the vessel it is">
             {[...tokens].sort((a, b) => Number(a.id) - Number(b.id)).map((t) => (
               <a key={t.id} href={`#/pusaka/${t.id}`} title={`Pusaka #${t.id}: ${stateOf(t.info, Date.now())}`}>
-                <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} size={72} label={`Pusaka #${t.id}`} />
+                <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} size={72} label={`Pusaka #${t.id}`} />
               </a>
             ))}
           </div>
         )}
       </section>
     </>
+  );
+}
+
+const hasLetter = (info) => (info.token.metadata?.extra ?? "").includes('"letter"');
+
+/** The detail page's vessel: everything inside it, as the contract draws it (verified USDC and the heir are separate views). */
+function Vessel({ id, info, locked }) {
+  const [x, setX] = useState({ usdc: 0, heir: false });
+  useEffect(() => {
+    Promise.all([view("usdc_info", { token_id: id }).catch(() => []), view("heir_of", { token_id: id }).catch(() => null)])
+      .then(([u, h]) => setX({ usdc: u.reduce((a, c) => a + Number(c.verified), 0), heir: !!h }));
+  }, [id, info]);
+  return <Emblem pubkey={info.btc_pubkey} sats={Number(info.verified_sats)} usdc={x.usdc} heir={x.heir} letter={hasLetter(info)} locked={locked} size={320} />;
+}
+
+/** The market: every Pusaka with its state, standing loan offers, and the latest on-chain activity. */
+function Market({ accountId }) {
+  const { tokens, error } = useTokens();
+  const px = usePrices();
+  const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
+  const count = (f) => tokens?.filter((t) => f(t.info)).length ?? 0;
+  return (
+    <div className="market">
+      <header className="market-head">
+        <h1>Market</h1>
+        <p className="muted">Every Pusaka, the Bitcoin proven inside it, and what you can do with it now: buy one for sale, lend against one asking for a loan, or take a standing offer.</p>
+        {tokens?.length > 0 && (
+          <dl className="market-stats">
+            <div><dt>Pusaka</dt><dd>{tokens.length}</dd></div>
+            <div><dt>Bitcoin proven</dt><dd>{(sats / 1e8).toFixed(5)} BTC{px && <small> {usd((sats / 1e8) * px.btcUsd)}</small>}</dd></div>
+            <div><dt>For sale</dt><dd>{count((i) => i.listing)}</dd></div>
+            <div><dt>Asking to borrow</dt><dd>{count((i) => i.loan && !i.loan.lender)}</dd></div>
+          </dl>
+        )}
+      </header>
+
+      <section className="gallery" aria-label="All Pusaka">
+        {error && <p className="error">{error}</p>}
+        {!tokens && !error && <p className="muted">Reading the contract…</p>}
+        {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
+        {tokens?.map((t) => (
+          <a key={t.id} href={`#/pusaka/${t.id}`} className="piece">
+            <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
+            <span className="piece-name">Pusaka #{t.id}</span>
+            <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
+            {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
+            {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
+            {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
+            {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
+          </a>
+        ))}
+      </section>
+      <div className="market-side">
+        <OfferBook infos={tokens?.map((t) => t.info)} accountId={accountId} />
+        <Activity />
+      </div>
+
+
+    </div>
   );
 }
 
@@ -570,7 +617,7 @@ function Detail({ id, accountId }) {
   return (
     <article className="detail">
       <div className="detail-face">
-        <Emblem pubkey={info.btc_pubkey} sats={Number(info.verified_sats)} locked={locked} size={320} />
+        <Vessel id={id} info={info} locked={locked} />
         <h1>Pusaka #{id}</h1>
         <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong></p>
       </div>

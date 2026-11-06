@@ -12,10 +12,14 @@ const errorsOf = (page) => {
   return errors;
 };
 
-test("home lists every Pusaka with its verified BTC", async ({ page }) => {
+test("the landing page leads to the market, which lists every Pusaka with its verified BTC", async ({ page }) => {
   const errors = errorsOf(page);
   await page.goto("/#/");
   await expect(page.getByRole("heading", { name: "NFTs that hold real Bitcoin." })).toBeVisible();
+  await expect(page.locator(".piece")).toHaveCount(0); // the landing page isn't the market
+  await page.getByRole("link", { name: "Open the market" }).click();
+  await expect(page).toHaveTitle("Market — Pusaka");
+  await expect(page.getByRole("heading", { level: 1, name: "Market" })).toBeVisible();
   await expect(page.locator(".piece").first()).toContainText("BTC verified", { timeout: 30_000 });
   expect(await page.locator(".piece").count()).toBeGreaterThanOrEqual(4);
   expect(errors).toEqual([]);
@@ -108,8 +112,8 @@ test("a Pusaka on sale through an outside market shows it, and that its BTC is l
   await expect(page.locator(".actions")).toContainText(/Bitcoin is locked/);
 });
 
-test("home shows the latest contract transactions, linked to the explorer", async ({ page }) => {
-  await page.goto("/#/");
+test("the market shows the latest contract transactions, linked to the explorer", async ({ page }) => {
+  await page.goto("/#/market");
   const links = page.locator(".activity a");
   await expect(links.first()).toBeVisible({ timeout: 30_000 });
   await expect(links.first()).toHaveAttribute("href", /near\.rocks\/tx\/[1-9A-HJ-NP-Za-km-z]{43,44}$/);
@@ -270,8 +274,8 @@ test("keyboard: a skip link jumps to the content, and a new page takes the focus
   await expect(page.locator("main")).toBeFocused(); // a screen reader hears the new page, not the old link
 });
 
-test("home lists the standing loan offers, their yearly rate, and which Pusakas could take them", async ({ page }) => {
-  await page.goto("/");
+test("the market lists the standing loan offers, their yearly rate, and which Pusakas could take them", async ({ page }) => {
+  await page.goto("/#/market");
   const book = page.getByRole("region", { name: "Loan offers" });
   await expect(book.getByRole("listitem").first()).toContainText(/lends [\d.]+ NEAR, repay [\d.]+ within .*% a year/, { timeout: 30_000 });
   await expect(book).toContainText("pusaka-seller.testnet"); // restock.mjs keeps one open

@@ -1,6 +1,7 @@
-// A Pusaka's face: a glass vessel that holds its Bitcoin. The orange inside rises with the BTC proven on NEAR
-// (log scale, full at ~0.01 BTC, same scale as the on-chain image); the glass takes its tint from the token's Bitcoin public key, so no two match;
-// a seal on the rim means the BTC is locked (listed, lent against, approved or being signed for).
+// A Pusaka's face: a glass vessel drawn from what it holds, the same picture the contract serves on-chain (art.rs).
+// Orange rises with the BTC proven on NEAR (log scale, full at ~0.01 BTC); verified USDC floats above it in blue;
+// an envelope inside means a sealed letter; a green sprout, a named heir; a lock seal, BTC locked (listed, lent
+// against, approved or being signed for). The glass takes its tint from the token's Bitcoin key, so no two match.
 
 // pastel glass tints: [light, mid, deep] — picked by the key's first byte
 const GLASS = [
@@ -16,13 +17,17 @@ function bytes(hex) {
   return hex ? hex.match(/../g).map((b) => parseInt(b, 16)) : Array(33).fill(0);
 }
 
-export default function Emblem({ pubkey, sats = 0, locked = false, size = 220, label }) {
+export default function Emblem({ pubkey, sats = 0, usdc = 0, letter = false, heir = false, locked = false, size = 220, label }) {
   const b = bytes(pubkey);
   const [light, mid, deep] = GLASS[b[1] % GLASS.length];
   // the contract's scale (art.rs fill_milli): bit length of 1 + sats over 20, at least 0.12 once anything is proven
-  const fill = sats > 0 ? Math.min(1, Math.max(0.12, Math.floor(Math.log2(1 + sats) + 1) / 20)) : 0;
+  const btc = sats > 0 ? Math.min(1, Math.max(0.12, Math.floor(Math.log2(1 + sats) + 1) / 20)) : 0;
+  // usdc_milli: bit length of 1 + whole cents over 20, half the vessel at most, at least 0.06 once verified
+  const usd = usdc > 0 ? Math.min(0.5, Math.max(0.06, (Math.floor(Math.log2(Math.floor(usdc / 10_000) + 1)) + 1) / 40)) : 0;
+  const fill = Math.min(1, btc + usd);
   const id = `v${(pubkey ?? "0").slice(2, 10)}${size}`;
-  const level = 186 - fill * 168; // y of the liquid's surface inside the r=86 glass
+  const btcLevel = 186 - btc * 168;
+  const level = 186 - fill * 168; // y of the top liquid's surface inside the r=86 glass
   const tilt = ((b[2] / 255) - 0.5) * 10;
   const wave = `M8 ${level} C 50 ${level - 7 + tilt} 90 ${level + 7 - tilt} 130 ${level} S 180 ${level - 5} 200 ${level} L200 200 L0 200 Z`;
   const bubbles = fill ? Array.from({ length: 5 }, (_, i) => ({
@@ -50,14 +55,27 @@ export default function Emblem({ pubkey, sats = 0, locked = false, size = 220, l
           <stop offset="0.45" stopColor="#f7931a" />
           <stop offset="1" stopColor="#d4690b" />
         </linearGradient>
+        <linearGradient id={`${id}u`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#bfe0ff" />
+          <stop offset="1" stopColor="#2775ca" />
+        </linearGradient>
         <clipPath id={`${id}c`}><circle cx="100" cy="100" r="86" /></clipPath>
         <filter id={`${id}b`} x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5" /></filter>
       </defs>
       <circle cx="100" cy="100" r="92" fill={`url(#${id}g)`} />
       <g clipPath={`url(#${id}c)`}>
         {fill > 0 && <>
-          <path d={wave} fill={`url(#${id}l)`} opacity="0.93" />
-          <path d={wave.split(" L200 200")[0]} fill="none" stroke="#ffe3a3" strokeWidth="2.5" opacity="0.9" />
+          {fill > btc && <>
+            <path d={wave} fill={`url(#${id}u)`} opacity="0.9" />
+            <path d={wave.split(" L200 200")[0]} fill="none" stroke="#d6ecff" strokeWidth="2.5" opacity="0.9" />
+          </>}
+          {btc > 0 && (() => {
+            const top = fill > btc ? `M0 ${btcLevel} C 60 ${btcLevel + 4 - tilt} 120 ${btcLevel - 4 + tilt} 200 ${btcLevel}` : wave.split(" L200 200")[0];
+            return <>
+              <path d={`${top} L200 200 L0 200 Z`} fill={`url(#${id}l)`} opacity="0.93" />
+              <path d={top} fill="none" stroke="#ffe3a3" strokeWidth="2.5" opacity="0.9" />
+            </>;
+          })()}
           {bubbles.map((x, i) => <circle key={i} cx={x.cx} cy={x.cy} r={x.r} fill="#fff3d0" opacity="0.55" />)}
         </>}
         {/* the glass's own glow from below, so an empty vessel still reads as glass */}
@@ -68,6 +86,21 @@ export default function Emblem({ pubkey, sats = 0, locked = false, size = 220, l
       <ellipse cx="70" cy="58" rx="30" ry="17" transform="rotate(-32 70 58)" fill="#ffffff" opacity="0.75" filter={`url(#${id}b)`} />
       <ellipse cx="62" cy="52" rx="9" ry="5" transform="rotate(-32 62 52)" fill="#ffffff" opacity="0.95" />
       <path d="M150 142 A 62 62 0 0 1 112 166" fill="none" stroke="#ffffff" strokeWidth="4" strokeLinecap="round" opacity="0.6" />
+      {letter && (
+        <g transform="translate(84 70) rotate(-8)">
+          <rect width="34" height="23" rx="3" fill="#ffffff" stroke="#cbb6f7" strokeWidth="1.2" />
+          <path d="M1 2 L17 13 L33 2" fill="none" stroke="#cbb6f7" strokeWidth="1.4" />
+          <circle cx="17" cy="13" r="3.6" fill="#b48cf0" />
+        </g>
+      )}
+      {heir && (
+        <g transform="translate(44 156)">
+          <circle r="15" fill="#ffffff" />
+          <circle r="15" fill="none" stroke="#a9c98b" strokeWidth="1.5" />
+          <path d="M0 8 V-2" stroke="#3f6b23" strokeWidth="2.2" strokeLinecap="round" />
+          <path d="M0 0 C -1 -7 -7 -9 -10 -8 C -9 -3 -5 0 0 0 Z M0 -2 C 1 -9 7 -11 10 -10 C 9 -5 5 -2 0 -2 Z" fill="#7cae55" />
+        </g>
+      )}
       {locked && (
         <g transform="translate(156 44)" className="em-seal">
           <circle r="17" fill="#ffffff" />

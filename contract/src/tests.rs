@@ -724,6 +724,46 @@ fn n2b_vessel_fill_scale() {
 }
 
 #[test]
+fn n2c_image_shows_everything_inside() {
+    let mut c = setup();
+    let svg = svg_of(&c);
+    assert!(!svg.contains("id=\"letter\"") && !svg.contains("id=\"heir\"") && svg.contains("data-usdc=\"0\""));
+
+    // verified USDC: a blue layer, also with no BTC under it
+    near_sdk::env::storage_write(format!("up:1:{}", crate::usdc::CHAINS[0].0).as_bytes(), &near_sdk::borsh::to_vec(&2_500_000u128).unwrap());
+    let svg = svg_of(&c);
+    assert!(svg.contains("url(#u)") && !svg.contains("url(#l)") && !svg.contains("data-usdc=\"0\""), "USDC layer");
+    let d = c.nft_token("1".into()).unwrap().metadata.unwrap().description.unwrap();
+    assert!(d.contains("2.500000 USDC verified"), "{d}");
+
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_letter("1".into(), "v1:QUJD".into(), None);
+    assert!(svg_of(&c).contains("id=\"letter\""), "letter inside");
+
+    ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+    c.set_heir("1".into(), Some(acc("carol.testnet")), U64(SILENCE));
+    let svg = svg_of(&c);
+    assert!(svg.contains("id=\"heir\"") && !svg.contains("id=\"seal\""), "heir sprout, not locked");
+    let d = c.nft_token("1".into()).unwrap().metadata.unwrap().description.unwrap();
+    assert!(d.contains("sealed letter") && d.contains("named heir"), "{d}");
+
+    // the heir travels? no: a transfer clears it, and the picture follows
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    let svg = svg_of(&c);
+    assert!(!svg.contains("id=\"heir\"") && svg.contains("id=\"letter\""), "heir cleared by the transfer, letter kept");
+}
+
+#[test]
+fn n2d_usdc_layer_scale() {
+    use crate::art::usdc_milli;
+    assert_eq!(usdc_milli(0), 0);
+    assert_eq!(usdc_milli(1), 60, "any verified USDC shows");
+    assert_eq!(usdc_milli(1_000_000), 175); // 1 USDC = 100 cents: 7 bits
+    assert_eq!(usdc_milli(u128::MAX), 500, "never more than half the vessel");
+}
+
+#[test]
 fn n3_collection_icon_set() {
     let c = setup();
     assert!(c.nft_metadata().icon.unwrap().starts_with("data:image/svg+xml;base64,"));

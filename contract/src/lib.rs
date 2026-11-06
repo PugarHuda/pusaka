@@ -1431,20 +1431,34 @@ impl Pusaka {
 
     // ---------- internals ----------
 
-    /// Live metadata: the image and description follow the BTC verified inside and the lock state.
+    /// Live metadata: the image and description follow what the token holds (verified BTC and USDC, a sealed letter,
+    /// a named heir) and whether its BTC is locked.
     fn with_art(&self, mut t: Token) -> Token {
-        let sats = self.verified_sats(&t.token_id);
-        let locked = self.listings.contains_key(&t.token_id)
-            || self.loans.contains_key(&t.token_id)
-            || self.pending.contains_key(&t.token_id);
-        if let (Some(m), Some(pk)) = (t.metadata.as_mut(), self.btc_keys.get(&t.token_id)) {
-            m.media = Some(art::data_uri(&art::emblem_svg(pk, sats, locked)));
-            m.description = Some(format!(
-                "Holds {}.{:08} BTC verified on NEAR by the Bitcoin light client.{}",
-                sats / 100_000_000,
-                sats % 100_000_000,
-                if locked { " Locked: listed, collateral, or signing." } else { "" }
-            ));
+        let id = t.token_id.clone();
+        let usdc: u128 = usdc::CHAINS.iter().map(|ch| {
+            raw_get::<u128>(&format!("up:{id}:{}", ch.0)).unwrap_or(0).saturating_sub(raw_get::<u128>(&format!("uo:{id}:{}", ch.0)).unwrap_or(0))
+        }).sum();
+        let c = art::Contents {
+            sats: self.verified_sats(&id),
+            usdc,
+            letter: t.metadata.as_ref().and_then(|m| m.extra.as_deref()).is_some_and(|e| e.contains("\"letter\"")),
+            heir: self.heir_of(id.clone()).is_some(),
+            locked: self.listings.contains_key(&id)
+                || self.loans.contains_key(&id)
+                || self.pending.contains_key(&id)
+                || t.approved_account_ids.as_ref().is_some_and(|a| !a.is_empty()),
+        };
+        if let (Some(m), Some(pk)) = (t.metadata.as_mut(), self.btc_keys.get(&id)) {
+            m.media = Some(art::data_uri(&art::emblem_svg(pk, &c)));
+            let mut d = format!("Holds {}.{:08} BTC verified on NEAR by the Bitcoin light client", c.sats / 100_000_000, c.sats % 100_000_000);
+            if c.usdc > 0 {
+                d.push_str(&format!(" and {}.{:06} USDC verified by NEAR's MPC network", c.usdc / 1_000_000, c.usdc % 1_000_000));
+            }
+            d.push('.');
+            if c.letter { d.push_str(" Carries a sealed letter for its holder."); }
+            if c.heir { d.push_str(" Has a named heir."); }
+            if c.locked { d.push_str(" Locked: listed, collateral, approved to a market, or signing."); }
+            m.description = Some(d);
         }
         t
     }
