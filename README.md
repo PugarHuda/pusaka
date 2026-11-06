@@ -28,6 +28,9 @@ market sell it (tested live on Mintbase's market), and the contract freezes the 
 
 Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable DeFi, Open Innovation.
 
+Second project by the same builder, independent of this one: [Koperasi](https://github.com/PugarHuda/koperasi), an AI
+agent owned and governed by its members (tracks Social Money, Autonomous Business, Agent Economy).
+
 | | |
 |---|---|
 | Contract | [`pusaka-btc.testnet`](https://testnet.near.rocks/account/pusaka-btc.testnet) (NEAR testnet) |
