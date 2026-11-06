@@ -2302,18 +2302,3 @@ fn sn3_a_transfer_call_returned_in_the_callback_notifies_nobody() {
     withdraw(&mut c, "alice.testnet", &[0]); // and the token is unlocked
 }
 
-#[test]
-fn x9_a_transfer_call_whose_callback_never_lands_unlocks_after_the_timeout() {
-    let mut c = setup();
-    transfer_call(&mut c); // the receiver holds it; nft_resolve_transfer never runs
-    let holder = owner(&c);
-    let at = |height: u64| {
-        let ctx = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(holder.clone())
-            .block_height(height).prepaid_gas(Gas::from_tgas(300)).build();
-        testing_env!(ctx, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
-    };
-    at(PENDING_TIMEOUT_BLOCKS - 1);
-    assert!(c.token_info("1".into()).unwrap().pending, "still in flight");
-    at(PENDING_TIMEOUT_BLOCKS + 1);
-    assert!(!c.token_info("1".into()).unwrap().pending, "lapsed: the holder isn't frozen forever");
-}

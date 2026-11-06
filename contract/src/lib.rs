@@ -1633,13 +1633,11 @@ fn transfer_call_key(token_id: &str) -> String {
 
 /// Set from nft_transfer_call until nft_resolve_transfer: the receiver owns the token meanwhile
 /// but nobody can sign, list, lend, approve or move it. No unlock_stale: the resolve always runs.
-/// The lock lasts until nft_resolve_transfer, which normally runs a few blocks later. If that callback ever
-/// failed, the lock lapses after PENDING_TIMEOUT_BLOCKS like a signing lock (T9), so no token stays frozen.
+// ponytail: fail-closed, no timeout. A receiver can delay nft_resolve_transfer (chained promises), so a lock
+// that lapsed would let it empty the token before handing it back. The callback does no cross-contract work
+// (no SocialDB notify from callbacks), so its fixed gas covers it.
 fn in_transfer_call(token_id: &str) -> bool {
-    env::storage_read(transfer_call_key(token_id).as_bytes()).is_some_and(|b| {
-        let since = <[u8; 8]>::try_from(b.as_slice()).map_or(0, u64::from_le_bytes); // pre-timeout locks: 0, lapsed
-        env::block_height() < since.saturating_add(PENDING_TIMEOUT_BLOCKS)
-    })
+    env::storage_has_key(transfer_call_key(token_id).as_bytes())
 }
 
 /// Any change of holder ends the old holder's will: a buyer never inherits someone else's heir.
@@ -1816,7 +1814,7 @@ impl NonFungibleTokenCore for Pusaka {
         let sender = env::predecessor_account_id();
         let (from, approvals) = self.tokens.internal_transfer(&sender, &receiver_id, &token_id, approval_id, memo);
         clear_heir(&token_id);
-        raw_put(&transfer_call_key(&token_id), &env::block_height());
+        raw_put(&transfer_call_key(&token_id), &());
         // A buyer or lender who looked before the call must look again (T4/T19). Nothing was
         // signed, so no approval cooldown (signed_at) is started.
         self.sign_epoch.insert(token_id.clone(), self.epoch(&token_id) + 1);
