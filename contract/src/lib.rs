@@ -6,6 +6,7 @@
 
 mod art;
 mod btc;
+mod upgrade;
 mod usdc;
 
 use near_contract_standards::non_fungible_token::core::{ext_nft_receiver, NonFungibleTokenCore, NonFungibleTokenResolver};

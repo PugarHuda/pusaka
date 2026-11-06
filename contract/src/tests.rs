@@ -2121,3 +2121,121 @@ fn o14_borrower_accepts_only_the_extension_they_saw() {
     at("alice.testnet", N(1), 3_000);
     c.accept_extension("1".into(), U64(7 * DAY_MS)); // the borrower agreed to a week; the proposal says a day
 }
+
+// ---------- timelocked upgrades: the contract account can hold no key ----------
+
+/// `at`, with raw call input (the wasm bytes for apply_upgrade).
+fn at_with_input(caller: &str, now_ms: u64, input: &[u8]) {
+    let mut c = VMContextBuilder::new()
+        .current_account_id(acc("pusaka.testnet"))
+        .predecessor_account_id(acc(caller))
+        .block_timestamp(now_ms * 1_000_000)
+        .prepaid_gas(Gas::from_tgas(300))
+        .build();
+    c.input = input.into();
+    testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+}
+
+const NEW_CODE: &[u8] = b" asm new code";
+
+fn with_admin() -> Pusaka {
+    let mut c = setup();
+    at("pusaka.testnet", NearToken::from_yoctonear(0), 0);
+    c.set_upgrade_admin(acc("admin.testnet"));
+    c
+}
+
+fn announce(c: &mut Pusaka, now: u64) -> upgrade::UpgradeProposal {
+    at("admin.testnet", NearToken::from_yoctonear(0), now);
+    c.propose_upgrade(hex::encode(env::sha256_array(NEW_CODE)), None)
+}
+
+#[test]
+#[should_panic(expected = "OnlyTheContractItself")]
+fn up1_only_the_contract_itself_names_the_admin() {
+    let mut c = setup();
+    at("alice.testnet", NearToken::from_yoctonear(0), 0);
+    c.set_upgrade_admin(acc("alice.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "NotUpgradeAdmin")]
+fn up2_only_the_admin_announces() {
+    let mut c = with_admin();
+    at("alice.testnet", NearToken::from_yoctonear(0), 0);
+    c.propose_upgrade("00".repeat(32), None);
+}
+
+#[test]
+#[should_panic(expected = "NoUpgradeAdmin")]
+fn up2_no_admin_no_upgrades() {
+    let mut c = setup();
+    at("alice.testnet", NearToken::from_yoctonear(0), 0);
+    c.propose_upgrade("00".repeat(32), None);
+}
+
+#[test]
+#[should_panic(expected = "TooEarly")]
+fn up3_announced_code_waits_for_the_delay() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    at_with_input("bob.testnet", 1_000 + upgrade::UPGRADE_DELAY_MS - 1, NEW_CODE);
+    let _ = c.apply_upgrade();
+}
+
+#[test]
+#[should_panic(expected = "CodeMismatch")]
+fn up4_only_the_announced_bytes_deploy() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    at_with_input("bob.testnet", 1_000 + upgrade::UPGRADE_DELAY_MS, b" asm other code");
+    let _ = c.apply_upgrade();
+}
+
+#[test]
+fn up5_after_the_delay_anyone_deploys_the_announced_code_once() {
+    let mut c = with_admin();
+    let p = announce(&mut c, 1_000);
+    assert_eq!(p.applicable_from_ms, U64(1_000 + upgrade::UPGRADE_DELAY_MS));
+    assert_eq!(c.upgrade_status()["proposal"]["code_sha256"], hex::encode(env::sha256_array(NEW_CODE)));
+    at_with_input("bob.testnet", 1_000 + upgrade::UPGRADE_DELAY_MS, NEW_CODE);
+    let _ = c.apply_upgrade();
+    let deployed = near_sdk::test_utils::get_created_receipts().iter().any(|r| r.receiver_id == acc("pusaka.testnet")
+        && r.actions.iter().any(|a| matches!(a, near_sdk::mock::MockAction::DeployContract { code, .. } if code == NEW_CODE)));
+    assert!(deployed, "a DeployContract of exactly the announced bytes, to the contract itself");
+    assert!(c.upgrade_status()["proposal"].is_null(), "used once");
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { let _ = c.apply_upgrade(); }));
+    assert!(r.is_err(), "nothing left to apply");
+}
+
+#[test]
+#[should_panic(expected = "TooEarly")]
+fn up6_a_new_announcement_restarts_the_delay() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    announce(&mut c, 1_000 + upgrade::UPGRADE_DELAY_MS - 10); // swapped in just before it matured
+    at_with_input("bob.testnet", 1_000 + upgrade::UPGRADE_DELAY_MS, NEW_CODE);
+    let _ = c.apply_upgrade();
+}
+
+#[test]
+fn up7_renounced_means_final() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    at("admin.testnet", NearToken::from_yoctonear(0), 2_000);
+    c.renounce_upgrades();
+    let st = c.upgrade_status();
+    assert_eq!(st["renounced"], true);
+    assert!(st["admin"].is_null() && st["proposal"].is_null());
+    at("pusaka.testnet", NearToken::from_yoctonear(0), 3_000);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.set_upgrade_admin(acc("admin.testnet"))));
+    assert!(r.is_err(), "not even the contract account can turn upgrades back on");
+}
+
+#[test]
+#[should_panic(expected = "64 hex")]
+fn up8_announcement_must_be_a_sha256() {
+    let mut c = with_admin();
+    at("admin.testnet", NearToken::from_yoctonear(0), 0);
+    c.propose_upgrade("not a hash".into(), None);
+}
