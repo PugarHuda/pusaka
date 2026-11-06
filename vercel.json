@@ -30,5 +30,10 @@
       "source": "/p/:id",
       "destination": "/api/share?id=:id"
     }
-  ]
+  ],
+  "functions": {
+    "api/og.mjs": {
+      "includeFiles": "api/fonts/**"
+    }
+  }
 }
