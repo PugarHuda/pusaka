@@ -14,7 +14,9 @@ export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_
 const MAX_TGAS = 100n;
 /** list/cancel/loan-request ping-pong is free for the attacker; one relayed state change per token per minute caps it. */
 export const RELAY_COOLDOWN_MS = 60_000;
-const THROTTLED = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_request"]);
+const THROTTLED = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_request", "accept_loan_offer"]);
+/** A gas-free loan must be worth it: below this a self-dealing lender+borrower pair would just be farming relayer gas. */
+export const MIN_RELAYED_PRINCIPAL = 10n ** 22n; // 0.01 NEAR
 /** Relayer-paid USDC proofs per token: each leaves 0.002 NEAR of storage, so dust deposits can't drain the relayer. */
 export const MAX_FREE_USDC_PROOFS = 4;
 // ponytail: per-instance memory, not a shared store; Fluid Compute reuses instances so parallel
@@ -92,9 +94,15 @@ const offerById = async (id) => {
  * A BTC holder with no NEAR can take a loan gas-free: the offer's principal is already escrowed and each
  * offer can be taken once, so this can't be farmed. Mirrors the contract's checks so the relayer never pays
  * for a doomed call; a refinance is relayed only when the offer alone pays off the current loan (no deposit).
+ * Also throttled per token like list/cancel, and only for offers of at least MIN_RELAYED_PRINCIPAL.
  */
 export function acceptWouldSucceed(info, offer, who, args) {
-  if (!info || !offer || offer.lender === who || info.listing || info.pending) return false;
+  if (typeof args.token_id !== "string" || typeof args.offer_id !== "string" || !Number.isInteger(args.expected_sign_epoch)) return false;
+  if (Object.keys(args).length !== 3) return false;
+  // assert_free: key derived, no signature or transfer_call in flight (pending), not listed, no NEP-178 approval
+  if (!info || !offer || offer.lender === who || !info.btc_pubkey || info.listing || info.pending) return false;
+  if (Object.keys(info.token?.approved_account_ids ?? {}).length) return false;
+  if (BigInt(offer.principal) < MIN_RELAYED_PRINCIPAL) return false;
   if (args.expected_sign_epoch !== info.sign_epoch) return false;
   if (info.loan && !(info.loan.lender && info.loan.borrower === who && BigInt(info.loan.repay) <= BigInt(offer.principal))) return false;
   return offer.token_id != null
