@@ -2,7 +2,7 @@
 // and loading skeletons. All of them read the contract; nothing here is decorative data.
 import { useEffect, useMemo, useState } from "react";
 import { renderSVG } from "uqr";
-import { near } from "./near.js";
+import { near, view } from "./near.js";
 import { loadInfos } from "./mine.js";
 
 function useNow(ms = 1000, on = true) {
@@ -127,4 +127,92 @@ export function GallerySkeleton({ n = 10 }) {
   return Array.from({ length: n }, (_, i) => (
     <div key={i} className="piece piece-skeleton" aria-hidden="true"><span className="sk-orb" /><span className="sk-line" /><span className="sk-line short" /></div>
   ));
+}
+
+// ---------- proof trail, owner checklist, command palette ----------
+
+/** Each counted deposit, step by step: sent on Bitcoin, proven by NEAR's light client, counted (or signed away). */
+export function ProofTrail({ info, explorer, nearExplorer, lightClient }) {
+  const signed = new Set(info.signed_outpoints.map((o) => `${o.txid}:${o.vout}`));
+  if (!info.proven_utxos.length) return null;
+  return (
+    <section className="trail" aria-label="Proof trail">
+      <h2>Proof trail</h2>
+      <p className="muted">Where each satoshi above comes from. Every step is public; none of it is our word.</p>
+      <ol>{info.proven_utxos.map((u) => {
+        const out = signed.has(`${u.txid}:${u.vout}`);
+        return (
+          <li key={`${u.txid}:${u.vout}`}>
+            <span className="trail-amt">{Number(u.value).toLocaleString("en-US")} sats</span>
+            <span className="trail-steps">
+              <a href={`${explorer}/tx/${u.txid}`} target="_blank" rel="noreferrer"><i className="ok" />Sent on Bitcoin <code>{u.txid.slice(0, 10)}…:{u.vout}</code></a>
+              <a href={`${nearExplorer}/account/${lightClient}`} target="_blank" rel="noreferrer"><i className="ok" />Merkle proof checked by NEAR's light client</a>
+              <span>{out ? <><i className="out" />Signed away by the holder: no longer counted</> : <><i className="ok" />Counted in this Pusaka's verified Bitcoin</>}</span>
+            </span>
+          </li>
+        );
+      })}</ol>
+    </section>
+  );
+}
+
+/** For the holder: what's done and what's next with this Pusaka, read from the contract. */
+export function OwnerChecklist({ info, letter, pendingSats }) {
+  const sats = Number(info.verified_sats);
+  const [heir, setHeir] = useState(false);
+  useEffect(() => { view("heir_of", { token_id: info.token.token_id }).then((h) => setHeir(!!h), () => {}); }, [info]);
+  const steps = [
+    { done: sats > 0 || pendingSats > 0, text: "Fill it: send Bitcoin to its address", hint: "Use the address or QR code above." },
+    { done: sats > 0, text: "Prove it on NEAR", hint: pendingSats > 0 ? "A deposit is waiting: press Prove for free once it has a confirmation." : "Happens after the first confirmation; free with the relayer." },
+    { done: !!(info.listing || info.loan || Object.keys(info.token.approved_account_ids ?? {}).length), text: "Put it to work: sell it or borrow against it", hint: "List it below, ask for a loan, or take a standing offer." },
+    { done: heir, text: "Name an heir", hint: "If you go silent, it passes on with everything inside." },
+    { done: letter, text: "Seal a letter for the next holder", hint: "Only whoever holds it can read it." },
+  ];
+  const n = steps.filter((s) => s.done).length;
+  return (
+    <section className="checklist" aria-label="Your Pusaka checklist">
+      <h2>Your Pusaka: {n} of {steps.length} done</h2>
+      <ol>{steps.map((s) => (
+        <li key={s.text} className={s.done ? "is-done" : ""}><strong>{s.text}</strong>{!s.done && <span className="muted">{s.hint}</span>}</li>
+      ))}</ol>
+    </section>
+  );
+}
+
+/** Ctrl/Cmd+K: jump to any page or Pusaka. A native <dialog>, so focus and Escape work without code. */
+export function CommandPalette({ accountId }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [ids, setIds] = useState([]);
+  const [sel, setSel] = useState(0);
+  useEffect(() => {
+    const k = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
+    addEventListener("keydown", k);
+    return () => removeEventListener("keydown", k);
+  }, []);
+  useEffect(() => { if (open && !ids.length) loadInfos().then((x) => setIds(x.map((i) => i.token.token_id).sort((a, b) => a - b))).catch(() => {}); }, [open, ids.length]);
+  const pages = [["Home", "#/"], ["Market", "#/market"], ...(accountId ? [["Your Pusakas", "#/mine"]] : []), ["For AI agents", "#/agents"]];
+  const items = [...pages.map(([label, href]) => ({ label, href })), ...ids.map((id) => ({ label: `Pusaka #${id}`, href: `#/pusaka/${id}` }))]
+    .filter((x) => x.label.toLowerCase().includes(q.toLowerCase().replace(/^#/, "")));
+  if (/^#?\d+$/.test(q.trim()) && !items.some((x) => x.label === `Pusaka #${q.trim().replace("#", "")}`)) items.unshift({ label: `Pusaka #${q.trim().replace("#", "")}`, href: `#/pusaka/${q.trim().replace("#", "")}` });
+  const go = (x) => { if (!x) return; location.hash = x.href.slice(1); setOpen(false); setQ(""); };
+  if (!open) return null;
+  return (
+    <div className="palette-backdrop" onClick={() => setOpen(false)}>
+      <div className="palette" role="dialog" aria-modal="true" aria-label="Go to" onClick={(e) => e.stopPropagation()}>
+        <input autoFocus value={q} placeholder="Go to a page or Pusaka #…" aria-label="Go to"
+          onChange={(e) => { setQ(e.target.value); setSel(0); }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+            if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
+            if (e.key === "Enter") go(items[sel]);
+          }} />
+        <ul role="listbox">{items.slice(0, 9).map((x, i) => (
+          <li key={x.href} role="option" aria-selected={i === sel} className={i === sel ? "is-sel" : ""} onMouseEnter={() => setSel(i)} onClick={() => go(x)}>{x.label}</li>
+        ))}</ul>
+        <p className="muted">Enter to open, Esc to close, Ctrl+K anywhere</p>
+      </div>
+    </div>
+  );
 }

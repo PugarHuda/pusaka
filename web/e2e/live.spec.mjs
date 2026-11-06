@@ -304,3 +304,14 @@ test("For AI agents lists the live MCP endpoint's tools, prompts and resources, 
   await expect(page.getByText(/^nobody can sign as the contract.*timelock\.$/)).toBeVisible();
   await expect(page.getByText(/claude mcp add --transport http pusaka https?:\/\//)).toBeVisible();
 });
+
+test("a Pusaka's share link carries an Open Graph card drawn from its on-chain image", async ({ request }) => {
+  const html = await (await request.get("/p/4", { maxRedirects: 0 })).text();
+  expect(html).toMatch(/<meta property="og:image" content="https:\/\/[^"]+\/api\/og\?id=4">/);
+  expect(html).toContain('content="0; url=/#/pusaka/4"');
+  const png = await request.get("/api/og?id=4");
+  expect(png.status()).toBe(200);
+  expect(png.headers()["content-type"]).toBe("image/png");
+  expect((await png.body()).subarray(1, 4).toString()).toBe("PNG");
+  expect((await request.get("/api/og?id=abc")).status()).toBe(400);
+});

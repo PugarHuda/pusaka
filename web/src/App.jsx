@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CONTRACT, EXPLORER, MARKET, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
+  CONTRACT, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
@@ -11,7 +11,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
-import { AuctionClock, BtcQr, Bell, GallerySkeleton } from "./extras.jsx";
+import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette } from "./extras.jsx";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
@@ -185,6 +185,7 @@ export default function App() {
         )}
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
+      <CommandPalette accountId={accountId} />
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
@@ -386,6 +387,18 @@ function Home() {
 }
 
 const hasLetter = (info) => (info.token.metadata?.extra ?? "").includes('"letter"');
+
+/** Share one Pusaka: /p/<id> carries its Open Graph card (api/share.mjs, api/og.mjs), so the post shows the vessel. */
+function ShareLinks({ id, btcText }) {
+  const url = `${location.origin}/p/${id}`;
+  const text = `Pusaka #${id} holds ${btcText}, proven on NEAR. Sell the NFT and the Bitcoin goes with it. Built at NEAR HACKATHON @NEARProtocol #NEARHackathon`;
+  return (
+    <p className="share">
+      <CopyButton text={url} label="Copy share link" what="share link" />
+      <a className="link-btn" href={`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`} target="_blank" rel="noreferrer">Post on X</a>
+    </p>
+  );
+}
 
 /** The detail page's vessel: everything inside it, as the contract draws it (verified USDC and the heir are separate views). */
 function Vessel({ id, info, locked }) {
@@ -654,9 +667,11 @@ function Detail({ id, accountId }) {
         <Vessel id={id} info={info} locked={locked} />
         <h1>Pusaka #{id}</h1>
         <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong></p>
+        <ShareLinks id={id} btcText={`${btc(Number(info.verified_sats))} BTC`} />
       </div>
 
       <div className="detail-body">
+        {isOwner && <OwnerChecklist info={info} letter={hasLetter(info)} pendingSats={bal ? Math.max(0, bal.safe + bal.pending - Number(info.verified_sats)) : 0} />}
         <section>
           <h2>Bitcoin inside, verified on NEAR</h2>
           <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
@@ -691,6 +706,8 @@ function Detail({ id, accountId }) {
             <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id})](${location.origin}/#/pusaka/${id})`} />
           </p>
         </section>
+
+        <ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />
 
         {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}

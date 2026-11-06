@@ -15,5 +15,8 @@
     "dev": "npm run dev -w web",
     "build": "npm run build -w web",
     "lint": "oxlint -c .oxlintrc.json api shared mcp scripts shade/agent.mjs shade/deploy-tee.mjs && npm run lint -w web"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2"
   }
 }

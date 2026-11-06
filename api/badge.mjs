@@ -8,8 +8,8 @@ export function badge(id, sats) {
   const right = `${(sats / 1e8).toFixed(8)} BTC verified`;
   const lw = 12 + left.length * 7, rw = 12 + right.length * 7;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${lw + rw}" height="22" role="img" aria-label="${esc(left)}: ${esc(right)}">
-<title>${esc(left)}: ${esc(right)} on NEAR</title><rect width="${lw}" height="22" rx="4" fill="#14213d"/><rect x="${lw}" width="${rw}" height="22" rx="4" fill="#b08d3c"/>
-<rect x="${lw - 4}" width="8" height="22" fill="#b08d3c"/><g font-family="Verdana,sans-serif" font-size="12" fill="#fff">
+<title>${esc(left)}: ${esc(right)} on NEAR</title><rect width="${lw}" height="22" rx="4" fill="#0d0d0a"/><rect x="${lw}" width="${rw}" height="22" rx="4" fill="#d4690b"/>
+<rect x="${lw - 4}" width="8" height="22" fill="#d4690b"/><g font-family="Verdana,sans-serif" font-size="12" fill="#fff">
 <text x="6" y="15">${esc(left)}</text><text x="${lw + 6}" y="15">${esc(right)}</text></g></svg>`;
 }
 
