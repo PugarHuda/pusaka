@@ -210,7 +210,8 @@ function Home({ accountId }) {
         <h1>NFTs that hold real Bitcoin.</h1>
         <p className="lede">
           Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR
-          transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep.
+          transaction. No bridge, no wrapped BTC, no custodian, and no private key for the seller to keep. Every deposit is
+          proven on NEAR by its Bitcoin light client, not reported by us.
         </p>
       </section>
 

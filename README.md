@@ -2,13 +2,17 @@
 
 [![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
 
-**NFTs that hold real Bitcoin. Sell the NFT and the Bitcoin goes with it.**
+**NFTs that hold real Bitcoin, proven on-chain. Sell the NFT and the Bitcoin goes with it.**
 
 Each Pusaka is a NEAR NFT (NEP-171) that controls its own native Bitcoin address through
 [NEAR Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures). The address's key is held by the
 NEAR MPC network and can only be used by the Pusaka contract, and the contract only asks for a signature when the
 **current NFT owner** requests one. So transferring the NFT transfers control of the BTC, in one NEAR transaction:
 no bridge, no wrapped BTC, no custodian, no private key the seller could keep a copy of.
+
+And the Bitcoin inside is **proven, not claimed**: every deposit is checked on NEAR against Bitcoin's own block
+headers by NEAR's on-chain Bitcoin light client, and the contract subtracts every output it ever signed away. A buyer,
+a lender or an agent reads `verified_sats` from the contract and needs no indexer, no oracle and no trust in us.
 
 One NFT is a whole set of wallets: the same MPC key that holds its Bitcoin also controls one address on every EVM
 chain (ETH and USDC on Ethereum, Base and Arbitrum), and a second, Ed25519 MPC key is both a **Solana address** and the
