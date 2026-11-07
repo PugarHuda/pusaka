@@ -6,7 +6,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { base58 } from "@scure/base";
 import {
-  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch, usdcToProve, PROVE_USDC_DEPOSIT,
+  CONTRACT, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, btcFetch, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch, usdcToProve, PROVE_USDC_DEPOSIT,
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
@@ -194,6 +194,20 @@ export async function relay(b64) {
   return { tx: res.transaction.hash, sender: sd.delegateAction.senderId, methods: sd.delegateAction.actions.map((a) => a.functionCall.methodName) };
 }
 
+/** Free proofs below this need to be the Pusaka's own change; anyone could otherwise make the relayer pay for dust. */
+export const MIN_FREE_PROOF_SATS = 10_000;
+const MIN_CHANGE_SATS = 1_000;
+
+/**
+ * A withdrawal's change coming back to the Pusaka: the transaction spends outpoints the contract signed for this token.
+ * Only the holder can get such a signature (and pays the withdraw deposit and the Bitcoin fee for it), so it's not dust farming;
+ * without this, the change of every small withdrawal stayed unproven unless the holder paid for the proof.
+ */
+export function isOwnChange(tx, signedOutpoints) {
+  const signed = new Set(signedOutpoints.map((o) => `${o.txid.toLowerCase()}:${o.vout}`));
+  return !!tx?.vin?.some((i) => signed.has(`${String(i.txid).toLowerCase()}:${i.vout}`));
+}
+
 /** Proves every confirmed, unproven deposit of a token, paid by `relayer` (the TEE agent passes its own account). */
 export async function proveToken(tokenId, relayer) {
   // typeof first: String(["1"]) is "1"
@@ -202,9 +216,14 @@ export async function proveToken(tokenId, relayer) {
   if (!info?.btc_pubkey) throw Object.assign(new Error("no such Pusaka"), { status: 404 });
   const lc = await lightClientHeight();
   const bal = await balances(btcAddress(info.btc_pubkey), info.signed_outpoints);
-  const todo = bal.spendable.filter((u) => u.value >= 10_000 && u.status?.confirmed
+  const ready = bal.spendable.filter((u) => u.value >= MIN_CHANGE_SATS && u.status?.confirmed
     && u.status.block_height + BTC_MIN_CONFIRMATIONS - 1 <= lc
-    && !info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout)).slice(0, 4);
+    && !info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout));
+  const todo = [];
+  for (const u of ready) {
+    if (todo.length === 4) break;
+    if (u.value >= MIN_FREE_PROOF_SATS || isOwnChange(await btcFetch(`/tx/${u.txid}`).then((r) => r.json()).catch(() => null), info.signed_outpoints)) todo.push(u);
+  }
   // USDC on Base/Arbitrum, attested by NEAR MPC: only finalized logs (the MPC reads finalized blocks)
   const proved = (await provider.callFunction({ contractId: CONTRACT, method: "usdc_info", args: { token_id: String(tokenId) } }).catch(() => []))
     .reduce((n, x) => n + x.deposits.length, 0);

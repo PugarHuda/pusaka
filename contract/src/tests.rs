@@ -814,6 +814,61 @@ fn p7_cannot_reprove_a_signed_outpoint() {
     let _ = c.prove_deposit("1".into(), REAL_TX.into(), 0, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
 }
 
+/// A one-input, one-output transaction spending `prev:vout` (display order) and paying `value` to token 1.
+fn tx_to_token_1(c: &Pusaka, prev: &str, vout: u32, value: u64) -> String {
+    let pk = c.btc_keys.get("1").unwrap().clone();
+    let script = btc::p2wpkh_script(&btc::hash160(&pk));
+    let mut prev_internal = hex::decode(prev).unwrap();
+    prev_internal.reverse();
+    let mut tx = vec![2, 0, 0, 0, 1];
+    tx.extend(prev_internal);
+    tx.extend(vout.to_le_bytes());
+    tx.extend([0, 0xff, 0xff, 0xff, 0xff, 1]);
+    tx.extend(value.to_le_bytes());
+    tx.push(script.len() as u8);
+    tx.extend(script);
+    tx.extend([0, 0, 0, 0]);
+    hex::encode(tx)
+}
+
+fn prove_change(c: &mut Pusaka, signed_vout: u32, spent_vout: u32, value: u64) {
+    ctx("pusaka.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.signed.insert("1".into(), vec![OutPointRef { txid: REAL_TXID.into(), vout: signed_vout }]);
+    let tx = tx_to_token_1(c, REAL_TXID, spent_vout, value);
+    ctx("bob.testnet", NearToken::from_millinear(20), vec![]);
+    let _ = c.prove_deposit("1".into(), tx, 0, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+}
+
+#[test]
+fn ch1_parses_the_inputs_a_transaction_spends() {
+    let ins = btc::inputs(&hex::decode(REAL_TX).unwrap());
+    assert_eq!(ins.len(), 2);
+    assert_eq!(ins[0], ("e7d22e966f4c86f902540678ab57614d23dff2c4787db54036e3d3f91eb15a71".to_string(), 0));
+    assert_eq!(ins[1].1, 0);
+}
+
+#[test]
+fn ch2_a_withdrawals_change_below_the_deposit_minimum_is_provable() {
+    // withdrawing 1,000 of 10,000 sats leaves ~8,700: it must still count, or the rest of the BTC is stranded
+    let mut c = setup();
+    prove_change(&mut c, 0, 0, 8_700);
+}
+
+#[test]
+#[should_panic(expected = "below the minimum")]
+fn ch3_small_deposit_from_anyone_else_is_still_dust() {
+    // spends an outpoint the contract never signed for this token: a stranger's dust
+    let mut c = setup();
+    prove_change(&mut c, 0, 1, 8_700);
+}
+
+#[test]
+#[should_panic(expected = "below the minimum")]
+fn ch4_own_change_below_its_floor_is_rejected() {
+    let mut c = setup();
+    prove_change(&mut c, 0, 0, 999);
+}
+
 // ---------- NEP-178 / NEP-199: external markets ----------
 
 fn approve(c: &mut Pusaka, market: &str) {

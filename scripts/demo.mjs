@@ -47,17 +47,35 @@ if (!tokenId) {
 }
 let info = await view("token_info", { token_id: tokenId });
 if (info.token.owner_id !== seller.accountId) [seller, buyer] = [buyer, seller]; // reuse: whoever owns it sells
-const addr = btcAddress(info.btc_pubkey);
+let addr = btcAddress(info.btc_pubkey);
 ok(`Pusaka #${tokenId} owned by ${info.token.owner_id}`);
 ok(`its native Bitcoin address: ${addr}  (key derived on-chain by the NEAR MPC network)`);
 
 // ---------- 2. fund + prove ----------
 step(2, "Put real (testnet3) BTC inside it, then prove it on NEAR");
 let bal = await balances(addr, info.signed_outpoints);
+let restock = null; // the stocked Pusaka we bought instead, relisted at the end
 if (bal.safe + bal.pending < 2000 && Number(info.verified_sats) < 2000) {
+  const waitMin = Number(arg("wait") ?? 3);
   console.log(`   → open https://coinfaucet.eu/en/btc-testnet/ and send to ${addr}`);
-  console.log("   waiting for the deposit to show up in the mempool…");
-  while ((bal = await balances(addr, info.signed_outpoints)).safe + bal.pending < 2000) await sleep(5000);
+  console.log(`   waiting up to ${waitMin} min for the deposit (--wait <min> to wait longer); then a Pusaka that already holds proven BTC is bought instead`);
+  const until = Date.now() + waitMin * 60_000;
+  while ((bal = await balances(addr, info.signed_outpoints)).safe + bal.pending < 2000 && Date.now() < until) await sleep(5000);
+  if (bal.safe + bal.pending < 2000) {
+    // No BTC sent (an automated run can't use a faucet): take a stocked Pusaka from the market, so every later step still runs on real BTC.
+    const n = Number(await view("nft_total_supply"));
+    const stock = (await Promise.all(Array.from({ length: n }, (_, i) => view("token_info", { token_id: String(i + 1) }))))
+      .filter((t) => t.listing && Number(t.verified_sats) >= 5000 && BigInt(t.listing.price) <= BigInt(parseNearAmount("2")))
+      .sort((a, b) => (BigInt(a.listing.price) < BigInt(b.listing.price) ? -1 : 1));
+    if (!stock.length) throw new Error("No deposit arrived and no stocked Pusaka is for sale; send testnet3 BTC and rerun with --wait 30");
+    restock = stock[0];
+    tokenId = restock.token.token_id;
+    await call(seller, "buy", { token_id: tokenId, expected_sign_epoch: restock.sign_epoch }, { deposit: BigInt(restock.listing.price) });
+    ok(`no deposit yet, so ${seller.accountId} bought stocked Pusaka #${tokenId} (${restock.verified_sats} sats already proven); the flow continues with it`);
+    info = await view("token_info", { token_id: tokenId });
+    addr = btcAddress(info.btc_pubkey);
+    bal = await balances(addr, info.signed_outpoints);
+  }
 }
 const proven = (u) => info.proven_utxos.some((p) => p.txid === u.txid && p.vout === u.vout);
 let toProve = bal.spendable.filter((u) => !proven(u));
@@ -140,6 +158,11 @@ await sleep(LOAN_MS + 2000);
 await call(seller, "claim_collateral", { token_id: tokenId });
 info = await view("token_info", { token_id: tokenId });
 ok(`${seller.accountId} claimed the collateral — new owner: ${info.token.owner_id}, BTC included. No bridge, no liquidation bot.`);
+
+if (restock) { // put it back on the shelf for the next person who runs this
+  await call(seller, "list", { token_id: tokenId, price: restock.listing.floor });
+  ok(`relisted #${tokenId} at ${Number(BigInt(restock.listing.floor) / 10n ** 21n) / 1000} NEAR for the next run`);
+}
 
 console.log(`\nDone. Pusaka #${tokenId} history:`);
 for (const h of info.history) console.log(`   ${new Date(Number(h.at_ms)).toISOString()}  ${h.event.kind}`);

@@ -44,8 +44,12 @@ const PROVEN_BYTES: u64 = 140;
 const PROOF_TGAS: u64 = 40;
 /// Sealed holder letter, base64 ciphertext.
 const MAX_LETTER: usize = 2000;
-/// Proving dust would let anyone bloat a token's registry; below this a deposit isn't provable.
+/// Proving dust would let anyone bloat a token's registry; below this a deposit isn't provable,
+/// unless it is the Pusaka's own change (see MIN_CHANGE_SATS).
 const MIN_PROVEN_SATS: u64 = 10_000;
+/// A withdrawal's change back to the Pusaka spends outpoints the contract signed for this token, which only
+/// its holder can get; it counts down to this, so a small withdrawal doesn't strand the rest of the BTC.
+const MIN_CHANGE_SATS: u64 = 1_000;
 /// Shortest silence after which an heir may claim. Testnet: 10 minutes, so it can be shown.
 #[cfg(not(feature = "mainnet"))]
 const HEIR_MIN_MS: u64 = 10 * 60 * 1000;
@@ -780,11 +784,13 @@ impl Pusaka {
         txid_display.reverse();
         let txid = hex::encode(txid_display);
         // A signed outpoint is spent or spendable by a signature holder: proving it would only add a dead entry.
-        let spent = self.signed.get(&token_id).is_some_and(|s| s.iter().any(|o| o.txid == txid && o.vout == vout));
+        let signed = self.signed.get(&token_id);
+        let spent = signed.is_some_and(|s| s.iter().any(|o| o.txid == txid && o.vout == vout));
         require!(!spent, "already signed for; it can't count as verified");
         let (value, script) = btc::output(&tx, vout);
         require!(script == btc::p2wpkh_script(&btc::hash160(&pk)), "output does not pay this Pusaka");
-        require!(value >= MIN_PROVEN_SATS, "deposit below the minimum that can be proven");
+        let own_change = || signed.is_some_and(|s| btc::inputs(&tx).iter().any(|(t, v)| s.iter().any(|o| &o.txid == t && o.vout == *v)));
+        require!(value >= MIN_PROVEN_SATS || (value >= MIN_CHANGE_SATS && own_change()), "deposit below the minimum that can be proven");
         let list = self.proven.get(&token_id);
         require!(!list.is_some_and(|v| v.iter().any(|u| u.txid == txid && u.vout == vout)), "already proven");
         require!(list.map_or(0, |v| v.len()) < MAX_PROVEN, "too many proven deposits; withdraw to consolidate");

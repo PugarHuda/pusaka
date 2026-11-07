@@ -27,3 +27,12 @@ assert.ok(!ok(info, any, { ...args, expected_sign_epoch: "3" }), "epoch must be 
 assert.ok(!ok(info, any, { ...args, offer_id: 1 }), "offer id must be a string");
 assert.ok(!ok(info, any, { ...args, extra: 1 }), "unknown keys");
 console.log("relayer accept preflight ok");
+
+// free proofs below 10,000 sats only for the Pusaka's own change: its tx spends an outpoint the contract signed for the token
+import { isOwnChange } from "./_relayer.mjs";
+const signedOut = [{ txid: "ab".repeat(32), vout: 1 }];
+assert.ok(isOwnChange({ vin: [{ txid: "AB".repeat(32), vout: 1 }] }, signedOut), "own change (any case)");
+assert.ok(!isOwnChange({ vin: [{ txid: "ab".repeat(32), vout: 0 }] }, signedOut), "other vout: a stranger's dust");
+assert.ok(!isOwnChange(null, signedOut), "Esplora down: no free proof");
+assert.ok(!isOwnChange({ vin: [{ txid: "ab".repeat(32), vout: 1 }] }, []), "nothing signed yet");
+console.log("relayer own-change ok");

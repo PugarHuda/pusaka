@@ -59,6 +59,24 @@ pub fn output(tx: &[u8], vout: u32) -> (u64, Vec<u8>) {
     unreachable!()
 }
 
+/// Outpoints a non-witness transaction spends, as (txid in display order, vout).
+pub fn inputs(tx: &[u8]) -> Vec<(String, u32)> {
+    assert!(tx.len() > 10, "tx too short");
+    let mut i = 4;
+    let n_in = varint(tx, &mut i);
+    let mut out = Vec::new();
+    for _ in 0..n_in {
+        let mut h: [u8; 32] = tx[i..i + 32].try_into().unwrap();
+        h.reverse();
+        let vout = u32::from_le_bytes(tx[i + 32..i + 36].try_into().unwrap());
+        out.push((hex::encode(h), vout));
+        i += 36;
+        let len = varint(tx, &mut i) as usize;
+        i += len + 4;
+    }
+    out
+}
+
 fn display_hash(h: &str) -> [u8; 32] {
     let mut b: [u8; 32] = hex::decode(h).expect("bad hash hex").try_into().expect("hash must be 32 bytes");
     b.reverse(); // explorer order -> internal order, which the light client stores
