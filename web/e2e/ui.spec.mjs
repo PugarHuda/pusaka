@@ -153,6 +153,20 @@ for (const [name, path, ready] of [
   });
 }
 
+test("axe: dark mode has no serious or critical violations either (contrast included)", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  for (const [path, ready] of [["/#/", "h1"], ["/#/market", "a[href^='#/pusaka/']"], ["/#/pusaka/2", ".ledger"]]) {
+    await page.goto(path);
+    await page.locator(ready).first().waitFor({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+    const bad = r.violations.filter((v) => ["serious", "critical"].includes(v.impact))
+      .map((v) => `${path} ${v.id} (${v.impact}): ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`);
+    expect(bad).toEqual([]);
+  }
+});
+
 // ---------- visual regression (pages whose pixels don't depend on live data) ----------
 
 test("visual: not-found page", async ({ page }) => {
@@ -162,11 +176,14 @@ test("visual: not-found page", async ({ page }) => {
   await expect(page).toHaveScreenshot("not-found.png", { fullPage: true, maxDiffPixelRatio: 0.02, mask: [page.locator(".bell, header .live")] });
 });
 
-test("visual: Your Pusakas without a wallet, light and dark", async ({ page }) => {
-  for (const scheme of ["light", "dark"]) {
-    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: scheme });
-    await page.goto("/#/mine");
-    await expect(page.getByRole("button", { name: /connect/i }).first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator("main")).toHaveScreenshot(`mine-${scheme}.png`, { maxDiffPixelRatio: 0.02 });
-  }
+test("visual: Your Pusakas without a wallet, light, then dark when the system switches while it's open", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
+  await page.goto("/#/mine");
+  await expect(page.getByRole("button", { name: /connect/i }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("main")).toHaveScreenshot("mine-light.png", { maxDiffPixelRatio: 0.02 });
+  await page.emulateMedia({ colorScheme: "dark" }); // no reload: the page has to follow the system by itself
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
+  await expect(page.locator("main")).toHaveScreenshot("mine-dark.png", { maxDiffPixelRatio: 0.02 });
 });

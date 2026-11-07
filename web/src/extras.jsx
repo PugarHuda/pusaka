@@ -226,10 +226,23 @@ export function CommandPalette({ accountId }) {
 
 export function ThemeToggle() {
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
+  // until the person picks a theme here, follow the system, also when it changes while the page is open
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const follow = () => {
+      let chosen = null;
+      try { chosen = localStorage.getItem("pusaka:theme"); } catch { /* storage blocked: follow the system */ }
+      if (chosen) return;
+      document.documentElement.dataset.theme = mq.matches ? "dark" : "light";
+      setDark(mq.matches);
+    };
+    mq.addEventListener("change", follow);
+    return () => mq.removeEventListener("change", follow);
+  }, []);
   const flip = () => {
     const next = dark ? "light" : "dark";
     document.documentElement.dataset.theme = next;
-    localStorage.setItem("pusaka:theme", next);
+    try { localStorage.setItem("pusaka:theme", next); } catch { /* storage blocked: this visit only */ }
     setDark(!dark);
   };
   return (
