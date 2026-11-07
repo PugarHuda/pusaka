@@ -5,9 +5,17 @@
 import { test, expect } from "@playwright/test";
 import { nearFetch } from "@pusaka/shared";
 
-// The app reads Bitcoin from mempool.space and fails over to Blockstream; a refused or rate-limited
-// Esplora request is that failover working (CI runners get 429s without CORS headers), not an app error.
-const ESPLORA_NOISE = /mempool\.space|blockstream\.info/;
+// The app reads Bitcoin from mempool.space then Blockstream, and NEAR from FastNear then dRPC then NEAR's RPC;
+// a refused or rate-limited request to one of them is that failover working (CI runners get 429s without CORS
+// headers), not an app error. ui.spec tests the failover itself by taking every endpoint down.
+const ESPLORA_NOISE = /mempool\.space|blockstream\.info|rpc\.fastnear\.com|drpc\.org|rpc\.testnet\.near\.org/;
+/** A contract view through the app's own RPC failover. */
+const contractView = async (method, args) => {
+  const r = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "optimistic", account_id: "pusaka-btc.testnet", method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") } }) })).json();
+  if (!r.result) throw new Error(`RPC: ${JSON.stringify(r.error ?? r).slice(0, 200)}`);
+  return JSON.parse(Buffer.from(r.result.result).toString());
+};
 const errorsOf = (page) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -71,13 +79,8 @@ test("relayer API refuses bad input", async ({ request }) => {
   expect((await notDelegate.json()).error).toMatch(/SignedDelegate/);
 });
 
-test("the NFT image is drawn on-chain and follows verified BTC", async ({ request }) => {
-  const rpc = await request.post("https://test.rpc.fastnear.com", { data: {
-    jsonrpc: "2.0", id: 1, method: "query",
-    params: { request_type: "call_function", finality: "optimistic", account_id: "pusaka-btc.testnet",
-      method_name: "nft_token", args_base64: Buffer.from(JSON.stringify({ token_id: "4" })).toString("base64") },
-  } });
-  const token = JSON.parse(Buffer.from((await rpc.json()).result.result).toString());
+test("the NFT image is drawn on-chain and follows verified BTC", async () => {
+  const token = await contractView("nft_token", { token_id: "4" });
   expect(token.metadata.media).toMatch(/^data:image\/svg\+xml;base64,/);
   const svg = Buffer.from(token.metadata.media.split(",")[1], "base64").toString();
   expect(svg).toContain("<svg");
@@ -102,13 +105,8 @@ test("home shows total BTC verified and the social card is served", async ({ pag
   expect(await page.locator('meta[property="og:image"]').getAttribute("content")).toMatch(/og\.png$/);
 });
 
-test("a Pusaka on sale through an outside market shows it, and that its BTC is locked", async ({ page, request }) => {
-  const rpc = await request.post("https://test.rpc.fastnear.com", { data: {
-    jsonrpc: "2.0", id: 1, method: "query",
-    params: { request_type: "call_function", finality: "optimistic", account_id: "pusaka-btc.testnet",
-      method_name: "nft_tokens", args_base64: Buffer.from("{}").toString("base64") },
-  } });
-  const tokens = JSON.parse(Buffer.from((await rpc.json()).result.result).toString());
+test("a Pusaka on sale through an outside market shows it, and that its BTC is locked", async ({ page }) => {
+  const tokens = await contractView("nft_tokens", {});
   const onMarket = tokens.find((t) => Object.keys(t.approved_account_ids ?? {}).length > 0);
   test.skip(!onMarket, "no Pusaka is approved on an outside market right now");
   await page.goto(`/#/pusaka/${onMarket.token_id}`);

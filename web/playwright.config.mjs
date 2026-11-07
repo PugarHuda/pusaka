@@ -7,7 +7,7 @@ export default defineConfig({
   timeout: 90_000,
   workers: 2,
   retries: process.env.CI ? 1 : 0,
-  reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
+  reporter: [["list"], ["html", { open: "never", outputFolder: process.env.REPORT_DIR ?? "playwright-report" }]],
   snapshotPathTemplate: "{testDir}/__screenshots__/{projectName}-{platform}/{arg}{ext}",
   use: { baseURL: process.env.E2E_URL ?? "https://pusaka-two.vercel.app", headless: true, trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [
