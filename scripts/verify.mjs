@@ -54,7 +54,16 @@ ok(up.renounced || (up.admin && Number(up.delay_ms) >= 600_000), "new code only 
 //    this contract (i.e. the current NFT owner, through it) can get a signature for it.
 const tokens = await view("nft_tokens", { from_index: "0", limit: 100 });
 const lc = await lightClientHeight();
-let total = 0, utxoChecks = 0, mismatches = [];
+let total = 0, utxoChecks = 0, mismatches = [], unreachable = [];
+// A Bitcoin explorer that rate-limits isn't a wrong balance: retry with backoff, then report it as unreachable.
+const btcTx = async (txid) => {
+  for (let i = 0; i < 4; i++) {
+    const tx = await btcFetch(`/tx/${txid}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (tx) return tx;
+    await new Promise((ok) => setTimeout(ok, 1500 * 2 ** i));
+  }
+  return null;
+};
 for (const t of tokens) {
   const info = await view("token_info", { token_id: t.token_id });
   if (!info.btc_pubkey) continue;
@@ -67,15 +76,17 @@ for (const t of tokens) {
   if (sum !== Number(info.verified_sats)) mismatches.push(`#${t.token_id} sum ${sum} ≠ ${info.verified_sats}`);
   const addr = btcAddress(info.btc_pubkey);
   for (const u of info.proven_utxos) {
-    const tx = await btcFetch(`/tx/${u.txid}`).then((r) => r.json()).catch(() => null);
-    const out = tx?.vout?.[u.vout];
+    const tx = await btcTx(u.txid);
+    if (!tx) { unreachable.push(`#${t.token_id} ${u.txid.slice(0, 10)}:${u.vout}`); continue; }
+    const out = tx.vout?.[u.vout];
     if (!out || out.scriptpubkey_address !== addr || out.value !== Number(u.value) || !tx.status?.confirmed || tx.status.block_height > lc) mismatches.push(`#${t.token_id} ${u.txid.slice(0, 10)}:${u.vout}`);
     utxoChecks++;
   }
   total += Number(info.verified_sats);
 }
 ok(!mismatches.some((m) => m.endsWith("key")), `all ${tokens.length} Pusaka BTC keys are the MPC's derivation for ${CONTRACT}`, `signer ${MPC}`);
-ok(!mismatches.some((m) => !m.endsWith("key")), `verified_sats = proven deposits never signed away; ${utxoChecks} proven deposits found on Bitcoin, confirmed, paying the right address`, mismatches.join(", ") || `light client ${BTC_LIGHT_CLIENT} at block ${lc}`);
+ok(!mismatches.some((m) => !m.endsWith("key")) && !unreachable.length, `verified_sats = proven deposits never signed away; ${utxoChecks - unreachable.length} proven deposits found on Bitcoin, confirmed, paying the right address`,
+  [mismatches.filter((m) => !m.endsWith("key")).join(", "), unreachable.length && `couldn't reach mempool.space or Blockstream for ${unreachable.join(", ")} (rate limit? run again)`].filter(Boolean).join("; ") || `light client ${BTC_LIGHT_CLIENT} at block ${lc}`);
 
 // 5. The public reserves API says the same as the contract.
 const res = await fetch(`${APP}/api/reserves`).then((r) => r.json()).catch(() => null);

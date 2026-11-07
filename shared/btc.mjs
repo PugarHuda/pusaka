@@ -80,14 +80,30 @@ export async function nearFetch(init) {
 
 /** near-api-js provider over NEAR_RPCS: two short retries per endpoint instead of 12 against one. Pass near-api-js in. */
 export function nearProvider({ FailoverRpcProvider, JsonRpcProvider }) {
-  // Same as FailoverRpcProvider, minus its console.error on every switch (a fallback isn't an error).
+  // FailoverRpcProvider keeps one shared index and steps it on every error: twenty parallel reads failing
+  // on a rate-limited RPC stepped it twenty times, round and round, back onto that RPC. Here each call
+  // tries the endpoints in order, skipping any that failed in the last minute; only network-level
+  // failures count against an endpoint, anything else (a contract panic) is the answer and is thrown.
+  const downUntil = new Map();
+  const networkError = (e) => e?.type === "RetriesExceeded" || e instanceof TypeError || e?.name === "AbortError" || e?.name === "TimeoutError"
+    || /\b(429|50\d)\b|fetch|network|timed? ?out|rate.?limit/i.test(String(e?.message ?? e));
   class Failover extends FailoverRpcProvider {
     async withBackoff(getResult) {
-      const errors = [];
-      for (let i = 0; i < this.providers.length; i++) {
-        try { return await getResult(this.currentProvider); } catch (e) { errors.push(e); this.switchToNextProvider(); }
+      const now = Date.now();
+      const order = this.providers.map((p, i) => i).sort((a, b) => ((downUntil.get(a) ?? 0) > now) - ((downUntil.get(b) ?? 0) > now));
+      let last;
+      for (const i of order) {
+        try {
+          const r = await getResult(this.providers[i]);
+          downUntil.delete(i);
+          return r;
+        } catch (e) {
+          if (!networkError(e)) throw e;
+          last = e;
+          downUntil.set(i, Date.now() + 60_000);
+        }
       }
-      throw errors.at(-1);
+      throw last;
     }
   }
   return new Failover(NEAR_RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 2, wait: 400, backoff: 2 })));
@@ -549,6 +565,7 @@ export async function broadcastNear(b64) {
 }
 // ---------- staking: the Pusaka's own NEAR account delegates to validators ----------
 /** Pools from the network's official staking-pool factory; the contract accepts no other (POOL_SUFFIX). */
+const POOL_DUST = 10n ** 21n;
 export const POOL_SUFFIX = NETWORK === "mainnet" ? ".poolv1.near" : ".pool.f863973.m0";
 
 /** The current validators that are factory pools, with their fee, lowest fee first. */
@@ -574,7 +591,9 @@ export async function stakeBalances(account, pools) {
       poolView(pool, "get_account_unstaked_balance", { account_id: account }),
       poolView(pool, "is_account_unstaked_balance_available", { account_id: account }),
     ]);
-    return { pool, staked: BigInt(staked), unstaked: BigInt(unstaked), withdrawable: ready && BigInt(unstaked) > 0n };
+    // pools leave a few yocto of rounding behind as "unstaked": below 0.001 NEAR it is dust, not something to withdraw
+    const u = BigInt(unstaked) >= POOL_DUST ? BigInt(unstaked) : 0n;
+    return { pool, staked: BigInt(staked), unstaked: u, withdrawable: ready && u > 0n };
   }));
 }
 
