@@ -547,6 +547,37 @@ export async function broadcastNear(b64) {
   if (r.status?.Failure) throw new Error(`NEAR rejected it: ${JSON.stringify(r.status.Failure).slice(0, 200)}`);
   return r.transaction.hash;
 }
+// ---------- staking: the Pusaka's own NEAR account delegates to validators ----------
+/** Pools from the network's official staking-pool factory; the contract accepts no other (POOL_SUFFIX). */
+export const POOL_SUFFIX = NETWORK === "mainnet" ? ".poolv1.near" : ".pool.f863973.m0";
+
+/** The current validators that are factory pools, with their fee, lowest fee first. */
+export async function stakingPools() {
+  const v = await nearRpc("validators", [null]);
+  const ids = v.current_validators.map((x) => x.account_id).filter((a) => a.endsWith(POOL_SUFFIX));
+  const fees = await Promise.all(ids.map((id) => poolView(id, "get_reward_fee_fraction").catch(() => null)));
+  return ids.map((id, i) => ({ pool: id, fee: fees[i] ? fees[i].numerator / fees[i].denominator : null }))
+    .filter((p) => p.fee !== null).sort((a, b) => a.fee - b.fee);
+}
+
+const poolView = async (pool, method, args = {}) => {
+  const r = await nearRpc("query", { request_type: "call_function", finality: "final", account_id: pool, method_name: method,
+    args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) });
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(r.result)));
+};
+
+/** What `account` has at each pool: staked (earning), unstaked (waiting or ready), and whether it can be withdrawn now. */
+export async function stakeBalances(account, pools) {
+  return Promise.all(pools.map(async (pool) => {
+    const [staked, unstaked, ready] = await Promise.all([
+      poolView(pool, "get_account_staked_balance", { account_id: account }),
+      poolView(pool, "get_account_unstaked_balance", { account_id: account }),
+      poolView(pool, "is_account_unstaked_balance_available", { account_id: account }),
+    ]);
+    return { pool, staked: BigInt(staked), unstaked: BigInt(unstaked), withdrawable: ready && BigInt(unstaked) > 0n };
+  }));
+}
+
 export * from "./ckd.mjs";
 export * from "./intents.mjs";
 

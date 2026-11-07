@@ -103,6 +103,14 @@ const CKD_DOMAIN: u32 = 2;
 /// NEAR MPC foreign-transaction verification (secp256k1 attestations of other chains' txs).
 const FOREIGN_TX_DOMAIN: u32 = 3;
 /// Omni Bridge nBTC: native BTC deposited to its connector becomes this NEP-141 on NEAR.
+/// Staking pools a Pusaka's NEAR account may delegate to: those made by the network's official pool factory.
+#[cfg(not(feature = "mainnet"))]
+pub const POOL_SUFFIX: &str = ".pool.f863973.m0";
+#[cfg(feature = "mainnet")]
+pub const POOL_SUFFIX: &str = ".poolv1.near";
+/// A token remembers up to this many pools it delegated to, so a buyer can look its stake up.
+const MAX_POOLS: usize = 3;
+const POOLS_BYTES: u64 = 220;
 #[cfg(not(feature = "mainnet"))]
 pub const NBTC: &str = "nbtc.n-bridge.testnet";
 #[cfg(feature = "mainnet")]
@@ -239,6 +247,17 @@ pub enum Event {
     GuardiansSet { guardians: Vec<AccountId>, threshold: u8 },
     /// A guardian approved releasing the Pusaka to the heir; at the quorum the holder's last waiting period starts.
     ReleaseApproved { guardian: AccountId, approvals: u8, release_at_ms: U64 },
+    /// The holder had the Pusaka's own NEAR account stake, unstake or withdraw at a staking pool.
+    Staking { nonce: U64, pool: AccountId, action: String, amount: NearToken, signed: bool },
+}
+
+/// The kinds of transaction the contract signs from a Pusaka's own NEAR account.
+#[near(serializers = [json])]
+pub enum NearTx {
+    Transfer,
+    Nbtc { sats: U128 },
+    /// deposit_and_stake, unstake or withdraw_all at a staking pool (action: stake | unstake | withdraw).
+    Stake { pool: AccountId, action: String },
 }
 
 #[near(serializers = [json, borsh])]
@@ -1110,7 +1129,7 @@ impl Pusaka {
     #[payable]
     pub fn withdraw_near(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nonce: U64, block_hash: String) -> Promise {
         require!(!amount.is_zero(), "amount must be > 0");
-        self.internal_near_tx(token_id, receiver_id, amount, None, nonce, block_hash)
+        self.internal_near_tx(token_id, receiver_id, amount, NearTx::Transfer, nonce, block_hash)
     }
 
     /// Owner-only. Sends nBTC (Omni Bridge) held by the Pusaka's own NEAR account: the one other
@@ -1121,15 +1140,41 @@ impl Pusaka {
     #[payable]
     pub fn withdraw_nbtc(&mut self, token_id: TokenId, receiver_id: AccountId, sats: U128, nonce: U64, block_hash: String) -> Promise {
         require!(sats.0 > 0, "sats must be > 0");
-        self.internal_near_tx(token_id, receiver_id, NearToken::from_yoctonear(0), Some(sats), nonce, block_hash)
+        self.internal_near_tx(token_id, receiver_id, NearToken::from_yoctonear(0), NearTx::Nbtc { sats }, nonce, block_hash)
     }
 
-    fn internal_near_tx(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nbtc: Option<U128>, nonce: U64, block_hash: String) -> Promise {
+    /// Owner-only. The Pusaka's own NEAR account delegates to a staking pool from the official factory
+    /// (action `stake` puts `amount` in with deposit_and_stake, `unstake` starts taking `amount` out,
+    /// `withdraw` collects whatever finished unstaking). The stake and its rewards stay the account's,
+    /// so they move with the NFT: only the next holder can unstake them. Attach ~0.01 NEAR, 300 TGas.
+    #[payable]
+    pub fn stake_near(&mut self, token_id: TokenId, pool: AccountId, action: String, amount: NearToken, nonce: U64, block_hash: String) -> Promise {
+        self.assert_owner(&token_id);
+        require!(pool.as_str().ends_with(POOL_SUFFIX) && pool.as_str().len() > POOL_SUFFIX.len(), format!("pool must be a staking pool *{POOL_SUFFIX}"));
+        require!(matches!(action.as_str(), "stake" | "unstake" | "withdraw"), "action: stake, unstake or withdraw");
+        require!(action == "withdraw" || !amount.is_zero(), "amount must be > 0");
+        let key = pools_key(&token_id);
+        let mut pools = self.staking_pools_of(token_id.clone());
+        if !pools.contains(&pool) {
+            require!(pools.len() < MAX_POOLS, "this Pusaka already uses 3 pools");
+            pools.push(pool.clone());
+            env::storage_write(key.as_bytes(), &serde_json::to_vec(&pools).unwrap());
+        }
+        self.internal_near_tx(token_id, pool.clone(), amount, NearTx::Stake { pool, action }, nonce, block_hash)
+    }
+
+    /// Staking pools this Pusaka's NEAR account has delegated to; ask each pool for its balances.
+    pub fn staking_pools_of(&self, token_id: TokenId) -> Vec<AccountId> {
+        env::storage_read(pools_key(&token_id).as_bytes()).map(|b| serde_json::from_slice(&b).unwrap()).unwrap_or_default()
+    }
+
+    fn internal_near_tx(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, kind: NearTx, nonce: U64, block_hash: String) -> Promise {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
         let block_hash = parse_b58_32(&block_hash, "block_hash");
         let key = format!("{token_id}:near");
-        charge_storage(if self.eth_nonces.contains_key(&key) { 0 } else { ETH_NONCE_BYTES }, 1);
+        let pools = if matches!(kind, NearTx::Stake { .. }) { POOLS_BYTES } else { 0 };
+        charge_storage(pools + if self.eth_nonces.contains_key(&key) { 0 } else { ETH_NONCE_BYTES }, 1);
         let floor = self.eth_nonces.get(&key).copied().unwrap_or(0).max(nonce.0);
         self.eth_nonces.insert(key, floor);
         self.bump_epoch(&token_id, 1);
@@ -1146,20 +1191,21 @@ impl Pusaka {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(SIGN_TGAS + 25))
-                    .on_near_key(token_id, receiver_id, amount, nonce, block_hash, nbtc),
+                    .on_near_key(token_id, receiver_id, amount, nonce, block_hash, kind),
             )
     }
 
     #[private]
-    pub fn on_near_key(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nonce: U64, block_hash: [u8; 32], nbtc: Option<U128>) -> PromiseOrValue<SignedNear> {
+    pub fn on_near_key(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nonce: U64, block_hash: [u8; 32], kind: NearTx) -> PromiseOrValue<SignedNear> {
         let Some(pk) = ed25519_key_result() else {
             self.pending.remove(&token_id);
-            self.log(&token_id, match nbtc { Some(sats) => Event::WithdrawNbtc { nonce, sats, signed: false }, None => Event::WithdrawNear { nonce, amount, signed: false } });
+            self.log(&token_id, near_event(&kind, nonce, amount, false));
             return PromiseOrValue::Value(SignedNear { transaction: String::new(), account: String::new(), signature: None });
         };
-        let tx = match nbtc {
-            Some(sats) => near_ft_transfer_tx(&pk, nonce.0, &NBTC.parse().unwrap(), &receiver_id, sats.0, &block_hash),
-            None => near_transfer_tx(&pk, nonce.0, &receiver_id, &block_hash, amount.as_yoctonear()),
+        let tx = match &kind {
+            NearTx::Nbtc { sats } => near_ft_transfer_tx(&pk, nonce.0, &NBTC.parse().unwrap(), &receiver_id, sats.0, &block_hash),
+            NearTx::Transfer => near_transfer_tx(&pk, nonce.0, &receiver_id, &block_hash, amount.as_yoctonear()),
+            NearTx::Stake { pool, action } => near_stake_tx(&pk, nonce.0, pool, action, amount.as_yoctonear(), &block_hash),
         };
         PromiseOrValue::Promise(
             Promise::new(self.mpc.clone())
@@ -1174,20 +1220,20 @@ impl Pusaka {
                 .then(
                     Self::ext(env::current_account_id())
                         .with_static_gas(Gas::from_tgas(8))
-                        .on_near_signed(token_id, nonce, amount, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &tx), hex::encode(pk), nbtc),
+                        .on_near_signed(token_id, nonce, amount, base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &tx), hex::encode(pk), kind),
                 ),
         )
     }
 
     #[private]
-    pub fn on_near_signed(&mut self, token_id: TokenId, nonce: U64, amount: NearToken, transaction: String, account: String, nbtc: Option<U128>) -> SignedNear {
+    pub fn on_near_signed(&mut self, token_id: TokenId, nonce: U64, amount: NearToken, transaction: String, account: String, kind: NearTx) -> SignedNear {
         self.pending.remove(&token_id);
         let signature: Option<Value> = match env::promise_result_checked(0, 1024) {
             Ok(b) => serde_json::from_slice(&b).ok(),
             _ => None,
         };
         let signed = signature.is_some();
-        self.log(&token_id, match nbtc { Some(sats) => Event::WithdrawNbtc { nonce, sats, signed }, None => Event::WithdrawNear { nonce, amount, signed } });
+        self.log(&token_id, near_event(&kind, nonce, amount, signed));
         SignedNear { transaction, account, signature }
     }
 
@@ -1853,24 +1899,52 @@ pub fn near_transfer_tx(pk: &[u8; 32], nonce: u64, receiver: &AccountId, block_h
     t
 }
 
-/// Borsh `Transaction` (v0) from the implicit account of `pk` with one FunctionCall:
-/// `ft_transfer({receiver_id, amount})` on `token`, 1 yoctoNEAR, 30 TGas. The only call ever signed.
-pub fn near_ft_transfer_tx(pk: &[u8; 32], nonce: u64, token: &AccountId, receiver: &AccountId, amount: u128, block_hash: &[u8; 32]) -> Vec<u8> {
+fn near_event(kind: &NearTx, nonce: U64, amount: NearToken, signed: bool) -> Event {
+    match kind {
+        NearTx::Nbtc { sats } => Event::WithdrawNbtc { nonce, sats: *sats, signed },
+        NearTx::Transfer => Event::WithdrawNear { nonce, amount, signed },
+        NearTx::Stake { pool, action } => Event::Staking { nonce, pool: pool.clone(), action: action.clone(), amount, signed },
+    }
+}
+
+fn pools_key(token_id: &str) -> String {
+    format!("sp:{token_id}")
+}
+
+/// Borsh `Transaction` (v0) from the implicit account of `pk` with one FunctionCall on `receiver`.
+#[allow(clippy::too_many_arguments)]
+pub fn near_call_tx(pk: &[u8; 32], nonce: u64, receiver: &str, method: &str, args: &[u8], gas: u64, deposit: u128, block_hash: &[u8; 32]) -> Vec<u8> {
     let str_ = |t: &mut Vec<u8>, s: &[u8]| { t.extend((s.len() as u32).to_le_bytes()); t.extend(s); };
     let mut t = vec![];
     str_(&mut t, hex::encode(pk).as_bytes()); // signer_id: the implicit account
     t.push(0); // PublicKey::ED25519
     t.extend(pk);
     t.extend(nonce.to_le_bytes());
-    str_(&mut t, token.as_bytes());
+    str_(&mut t, receiver.as_bytes());
     t.extend(block_hash);
     t.extend(1u32.to_le_bytes()); // one action
     t.push(2); // Action::FunctionCall
-    str_(&mut t, b"ft_transfer");
-    str_(&mut t, json!({"receiver_id": receiver, "amount": amount.to_string()}).to_string().as_bytes());
-    t.extend(30_000_000_000_000u64.to_le_bytes()); // gas
-    t.extend(1u128.to_le_bytes()); // deposit: NEP-141 requires exactly 1 yoctoNEAR
+    str_(&mut t, method.as_bytes());
+    str_(&mut t, args);
+    t.extend(gas.to_le_bytes());
+    t.extend(deposit.to_le_bytes());
     t
+}
+
+/// `ft_transfer({receiver_id, amount})` on `token`, 1 yoctoNEAR (NEP-141 requires exactly that), 30 TGas.
+pub fn near_ft_transfer_tx(pk: &[u8; 32], nonce: u64, token: &AccountId, receiver: &AccountId, amount: u128, block_hash: &[u8; 32]) -> Vec<u8> {
+    let args = json!({"receiver_id": receiver, "amount": amount.to_string()}).to_string();
+    near_call_tx(pk, nonce, token.as_str(), "ft_transfer", args.as_bytes(), 30_000_000_000_000, 1, block_hash)
+}
+
+/// The staking pool calls: deposit_and_stake (attaching `yocto`), unstake({amount}), withdraw_all. 125 TGas each.
+pub fn near_stake_tx(pk: &[u8; 32], nonce: u64, pool: &AccountId, action: &str, yocto: u128, block_hash: &[u8; 32]) -> Vec<u8> {
+    let (method, args, deposit) = match action {
+        "stake" => ("deposit_and_stake", "{}".to_string(), yocto),
+        "unstake" => ("unstake", json!({"amount": yocto.to_string()}).to_string(), 0),
+        _ => ("withdraw_all", "{}".to_string(), 0),
+    };
+    near_call_tx(pk, nonce, pool.as_str(), method, args.as_bytes(), 125_000_000_000_000, deposit, block_hash)
 }
 
 /// ABI for `transfer(address,uint256)`.

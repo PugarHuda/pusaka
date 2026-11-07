@@ -1180,9 +1180,9 @@ fn a2_near_floor_recorded_before_signing_and_never_drops() {
     assert!(c.token_info("1".into()).unwrap().pending);
     assert_eq!(c.near_nonce_floor("1".into()), U64(50));
     as_contract(vec![PromiseResult::Successful(SOL_KEY.as_bytes().to_vec())]);
-    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(100), U64(50), [3; 32], None), PromiseOrValue::Promise(_)));
+    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(100), U64(50), [3; 32], NearTx::Transfer), PromiseOrValue::Promise(_)));
     as_contract(vec![PromiseResult::Successful(br#"{"scheme":"Ed25519","signature":[1]}"#.to_vec())]);
-    let _ = c.on_near_signed("1".into(), U64(50), NearToken::from_millinear(100), "".into(), "".into(), None);
+    let _ = c.on_near_signed("1".into(), U64(50), NearToken::from_millinear(100), "".into(), "".into(), NearTx::Transfer);
     withdraw_near(&mut c, "alice.testnet", 10);
     assert_eq!(c.near_nonce_floor("1".into()), U64(50));
 }
@@ -1192,7 +1192,7 @@ fn a3_failed_key_releases_the_lock() {
     let mut c = setup();
     withdraw_near(&mut c, "alice.testnet", 1);
     as_contract(vec![PromiseResult::Failed]);
-    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32], None), PromiseOrValue::Value(_)));
+    assert!(matches!(c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32], NearTx::Transfer), PromiseOrValue::Value(_)));
     assert!(!c.token_info("1".into()).unwrap().pending);
 }
 
@@ -1201,6 +1201,129 @@ fn a3_failed_key_releases_the_lock() {
 fn a4_non_owner_cannot_move_the_near_account() {
     let mut c = setup();
     withdraw_near(&mut c, "bob.testnet", 1);
+}
+
+#[cfg(not(feature = "mainnet"))]
+const POOL: &str = "legends.pool.f863973.m0";
+#[cfg(feature = "mainnet")]
+const POOL: &str = "legends.poolv1.near";
+
+fn stake(c: &mut Pusaka, caller: &str, pool: &str, action: &str, millinear: u128) {
+    ctx(caller, NearToken::from_millinear(10), vec![]);
+    let _ = c.stake_near("1".into(), acc(pool), action.into(), NearToken::from_millinear(millinear), U64(7), SOL_TO.into());
+}
+
+/// Method name, args, gas and deposit of a FunctionCall tx built by near_call_tx, read back from its bytes.
+fn call_parts(t: &[u8], receiver: &str) -> (String, String, u64, u128) {
+    let mut i = 109 + 4 + receiver.len() + 32 + 4;
+    assert_eq!(t[i], 2, "Action::FunctionCall");
+    i += 1;
+    let rd = |i: &mut usize| { let n = u32::from_le_bytes(t[*i..*i + 4].try_into().unwrap()) as usize; *i += 4 + n; String::from_utf8(t[*i - n..*i].to_vec()).unwrap() };
+    let method = rd(&mut i);
+    let args = rd(&mut i);
+    let gas = u64::from_le_bytes(t[i..i + 8].try_into().unwrap());
+    let deposit = u128::from_le_bytes(t[i + 8..i + 24].try_into().unwrap());
+    assert_eq!(t.len(), i + 24);
+    (method, args, gas, deposit)
+}
+
+#[test]
+fn sk1_stake_tx_layout_for_each_action() {
+    let pk = [7u8; 32];
+    let pool = acc(POOL);
+    let st = near_stake_tx(&pk, 9, &pool, "stake", 5, &[3; 32]);
+    assert_eq!(&st[113..113 + POOL.len()], POOL.as_bytes());
+    assert_eq!(call_parts(&st, POOL), ("deposit_and_stake".into(), "{}".into(), 125_000_000_000_000, 5));
+    assert_eq!(call_parts(&near_stake_tx(&pk, 9, &pool, "unstake", 5, &[3; 32]), POOL), ("unstake".into(), r#"{"amount":"5"}"#.into(), 125_000_000_000_000, 0));
+    assert_eq!(call_parts(&near_stake_tx(&pk, 9, &pool, "withdraw", 5, &[3; 32]), POOL), ("withdraw_all".into(), "{}".into(), 125_000_000_000_000, 0));
+    // the nBTC transfer still builds byte for byte the same through the shared builder
+    let ft = near_ft_transfer_tx(&pk, 9, &acc(NBTC), &acc("bob.testnet"), 1000, &[3; 32]);
+    assert_eq!(call_parts(&ft, NBTC), ("ft_transfer".into(), r#"{"receiver_id":"bob.testnet","amount":"1000"}"#.into(), 30_000_000_000_000, 1));
+}
+
+#[test]
+fn sk2_stake_records_the_pool_bumps_the_epoch_and_logs_it() {
+    let mut c = setup();
+    let seen = c.token_info("1".into()).unwrap().sign_epoch;
+    stake(&mut c, "alice.testnet", POOL, "stake", 500);
+    let info = c.token_info("1".into()).unwrap();
+    assert!(info.pending, "locked until the MPC answers");
+    assert!(info.sign_epoch > seen, "a buyer who looked before must look again");
+    assert_eq!(c.staking_pools_of("1".into()), vec![acc(POOL)]);
+    assert_eq!(c.near_nonce_floor("1".into()), U64(7));
+    as_contract(vec![PromiseResult::Successful(SOL_KEY.as_bytes().to_vec())]);
+    let kind = NearTx::Stake { pool: acc(POOL), action: "stake".into() };
+    assert!(matches!(c.on_near_key("1".into(), acc(POOL), NearToken::from_millinear(500), U64(7), [3; 32], kind), PromiseOrValue::Promise(_)));
+    as_contract(vec![PromiseResult::Successful(br#"{"scheme":"Ed25519","signature":[1]}"#.to_vec())]);
+    let kind = NearTx::Stake { pool: acc(POOL), action: "stake".into() };
+    let _ = c.on_near_signed("1".into(), U64(7), NearToken::from_millinear(500), "".into(), "".into(), kind);
+    let info = c.token_info("1".into()).unwrap();
+    assert!(!info.pending);
+    assert!(matches!(&info.history.last().unwrap().event, Event::Staking { action, signed: true, .. } if action == "stake"));
+}
+
+#[test]
+#[should_panic(expected = "pool must be a staking pool")]
+fn sk3_only_pools_from_the_official_factory() {
+    let mut c = setup();
+    stake(&mut c, "alice.testnet", "drain.testnet", "stake", 500);
+}
+
+#[test]
+#[should_panic(expected = "pool must be a staking pool")]
+fn sk3_the_factory_itself_is_not_a_pool() {
+    let mut c = setup();
+    stake(&mut c, "alice.testnet", &POOL_SUFFIX[1..], "stake", 500);
+}
+
+#[test]
+#[should_panic(expected = "action: stake, unstake or withdraw")]
+fn sk4_only_the_three_pool_calls() {
+    let mut c = setup();
+    stake(&mut c, "alice.testnet", POOL, "unstake_all_and_send_to_me", 500);
+}
+
+#[test]
+#[should_panic(expected = "NotOwner")]
+fn sk5_only_the_holder_stakes() {
+    let mut c = setup();
+    stake(&mut c, "bob.testnet", POOL, "stake", 500);
+}
+
+#[test]
+#[should_panic(expected = "amount must be > 0")]
+fn sk6_zero_stake_rejected() {
+    let mut c = setup();
+    stake(&mut c, "alice.testnet", POOL, "stake", 0);
+}
+
+#[test]
+fn sk6_withdraw_needs_no_amount() {
+    let mut c = setup();
+    stake(&mut c, "alice.testnet", POOL, "withdraw", 0);
+    assert!(c.token_info("1".into()).unwrap().pending);
+}
+
+#[test]
+#[should_panic(expected = "already uses 3 pools")]
+fn sk7_at_most_three_pools() {
+    let mut c = setup();
+    for (i, p) in ["a", "b", "c", "d"].iter().map(|x| format!("{x}{POOL_SUFFIX}")).enumerate() {
+        if i > 0 {
+            as_contract(vec![PromiseResult::Failed]);
+            let _ = c.on_near_key("1".into(), acc(&p), NearToken::from_millinear(1), U64(7), [3; 32], NearTx::Transfer);
+        }
+        stake(&mut c, "alice.testnet", &p, "stake", 1);
+    }
+}
+
+#[test]
+#[should_panic(expected = "Listed")]
+fn sk8_a_listed_pusaka_cannot_stake() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
+    c.list("1".into(), NearToken::from_near(1), None, None);
+    stake(&mut c, "alice.testnet", POOL, "stake", 500);
 }
 
 /// The sale-in-the-middle-of-a-payout case: the seller starts a payout, a buyer tries to buy
@@ -1221,7 +1344,7 @@ fn a5_buyer_with_pre_payout_view_cannot_buy() {
     let seen = c.token_info("1".into()).unwrap().sign_epoch;
     withdraw_near(&mut c, "alice.testnet", 1);
     as_contract(vec![PromiseResult::Failed]);
-    let _ = c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32], None);
+    let _ = c.on_near_key("1".into(), acc("bob.testnet"), NearToken::from_millinear(1), U64(1), [3; 32], NearTx::Transfer);
     ctx("alice.testnet", NearToken::from_yoctonear(0), vec![]);
     c.list("1".into(), NearToken::from_near(1), None, None);
     ctx("bob.testnet", NearToken::from_near(1), vec![]);
