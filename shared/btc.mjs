@@ -263,11 +263,18 @@ export async function broadcast(txHex) {
 }
 
 // ---------- EVM: the same MPC key also owns one address on every EVM chain ----------
-import { createPublicClient, http, keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex, encodeFunctionData, erc20Abi } from "viem";
-/** Every EVM chain the contract signs for (EVM_CHAINS), each with a client. */
-export const EVM_CHAINS = CONFIG.evm.map((c) => ({ ...c, client: createPublicClient({ chain: c.chain, transport: http(c.rpc) }) }));
+import { keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex, encodeFunctionData, erc20Abi } from "viem";
+/** Every EVM chain the contract signs for (EVM_CHAINS). */
+export const EVM_CHAINS = CONFIG.evm;
 export const EVM = EVM_CHAINS[0];
 const chainOf = (id) => EVM_CHAINS.find((c) => c.chain.id === Number(id ?? EVM.chain.id)) ?? (() => { throw new Error(`chain ${id} not supported`); })();
+// viem's RPC client is ~75 kB gzipped: loaded on the first EVM read, not with the page
+const clients = new Map();
+const clientOf = (id) => {
+  const c = chainOf(id);
+  if (!clients.has(c.chain.id)) clients.set(c.chain.id, import("viem").then(({ createPublicClient, http }) => createPublicClient({ chain: c.chain, transport: http(c.rpc) })));
+  return clients.get(c.chain.id);
+};
 /** An outside NEP-178/199 market Pusaka can be sold on (Mintbase). */
 export const MARKET = CONFIG.market;
 export const NBTC = CONFIG.nbtc;
@@ -290,7 +297,8 @@ export function evmAddress(pubkeyHex) {
  * so the balance only counts once the account's on-chain nonce has reached the floor.
  */
 export async function evmBalances(address, floor, chainId) {
-  const { client, usdc } = chainOf(chainId);
+  const { usdc } = chainOf(chainId);
+  const client = await clientOf(chainId);
   const [wei, nonce, usdcUnits] = await Promise.all([
     client.getBalance({ address }),
     // latest, not pending: a signed tx still sitting in the mempool must keep the ETH at risk
@@ -304,7 +312,7 @@ export async function evmBalances(address, floor, chainId) {
 
 /** ERC-20 transfers need more than 21k gas; `erc20` set means a USDC transfer. */
 export async function evmTxParams(address, chainId, erc20) {
-  const { client } = chainOf(chainId);
+  const client = await clientOf(chainId);
   const [nonce, fees] = await Promise.all([
     client.getTransactionCount({ address, blockTag: "pending" }),
     client.estimateFeesPerGas(),
@@ -338,7 +346,7 @@ export async function finalizeEth(tx, signed, expectedFrom) {
 }
 
 export async function broadcastEth(raw, chainId) {
-  return chainOf(chainId).client.sendRawTransaction({ serializedTransaction: raw });
+  return (await clientOf(chainId)).sendRawTransaction({ serializedTransaction: raw });
 }
 
 // ---------- Solana: the token's Ed25519 MPC key (same path, domain 1) is a Solana address ----------
