@@ -247,6 +247,20 @@ test("a will's guardians and quorum on the page are the contract's guardians_of"
   await expect(box).toContainText(/If the guardians never answer, the heir can claim alone from/);
 });
 
+test("a Pusaka's staked NEAR is listed per validator, from the pools the contract remembers", async ({ page }) => {
+  const args = Buffer.from(JSON.stringify({ token_id: "2" })).toString("base64");
+  const r = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "final", account_id: "pusaka-btc.testnet", method_name: "staking_pools_of", args_base64: args } }) })).json();
+  if (!r.result) throw new Error(`RPC: ${JSON.stringify(r.error ?? r).slice(0, 200)}`);
+  const pools = JSON.parse(Buffer.from(r.result.result).toString());
+  expect(pools.length, "#2 stakes (scripts/stake.mjs)").toBeGreaterThan(0);
+  expect(pools.every((p) => p.endsWith(".pool.f863973.m0"))).toBe(true);
+  await page.goto("/#/pusaka/2");
+  const s = page.getByRole("region", { name: "Staking" });
+  await expect(s).toContainText(/[\d.]+ NEAR at validators/, { timeout: 30_000 });
+  for (const p of pools) await expect(s.getByRole("link", { name: p })).toBeVisible();
+});
+
 // Monitoring as much as testing: CI runs this every 6 hours, so it fails before a judge finds an empty shelf.
 test("the README's try-it stock is there and the relayer can pay for it", async () => {
   // through the app's own RPC failover (FastNear, dRPC, NEAR): one rate-limited RPC must not page us
