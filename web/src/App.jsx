@@ -1792,8 +1792,11 @@ const OFFER_STORAGE = 10n ** 22n; // 0.01 NEAR; the contract refunds what the en
 
 async function allOffers() {
   const out = [];
+  // one retry per page: a single rate-limited RPC answer used to hide the whole offer book
+  const page = (from) => view("loan_offers", { from: String(from), limit: "100" })
+    .catch(() => new Promise((r) => setTimeout(r, 2000)).then(() => view("loan_offers", { from: String(from), limit: "100" })));
   for (let from = 0, next = 1; from < next; from += 100) {
-    const r = await view("loan_offers", { from: String(from), limit: "100" });
+    const r = await page(from);
     next = Number(r.next_id);
     out.push(...r.offers);
   }
