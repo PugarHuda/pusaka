@@ -239,7 +239,7 @@ Anyone can call `prove_deposit(token_id, tx_hex, vout, block_hash, tx_index, mer
 2. It calls `verify_transaction_inclusion_v2` on Near-One's light client with the merkle proofs (borsh, internal byte order) and the required confirmations.
 3. On `true`, the deposit is recorded. `verified_sats` = proven deposits never signed for.
 
-Deposits under 10,000 sats aren't provable, so nobody can fill a Pusaka's registry with dust. The one exception is a withdrawal's change coming back to the Pusaka: its transaction spends outpoints the contract signed for this token, which only the holder can get, so it counts down to 1,000 sats (tests `ch2`–`ch4`), and the relayer proves it for free. Before this, withdrawing 1,000 of a Pusaka's 10,000 sats left the other ~8,700 unprovable forever.
+Deposits under 10,000 sats aren't provable, so nobody can fill a Pusaka's registry with dust. The one exception is a withdrawal's change coming back to the Pusaka: `withdraw` records the txid of the transaction it builds (a segwit txid doesn't depend on the signatures), and output 1 of exactly that transaction counts down to 1,000 sats; the same amount from any other transaction, even one the holder's own wallet builds from the same coins, is still dust (tests `ch1`–`ch4`). The relayer proves it for free. Before this, withdrawing 1,000 of a Pusaka's 10,000 sats left the other ~8,700 unprovable forever.
 
 The web app shows this verified amount first, offers *Prove deposit* for confirmed deposits that aren't proven yet, and the medallion's ring fills with verified BTC only.
 

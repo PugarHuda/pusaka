@@ -47,9 +47,11 @@ const MAX_LETTER: usize = 2000;
 /// Proving dust would let anyone bloat a token's registry; below this a deposit isn't provable,
 /// unless it is the Pusaka's own change (see MIN_CHANGE_SATS).
 const MIN_PROVEN_SATS: u64 = 10_000;
-/// A withdrawal's change back to the Pusaka spends outpoints the contract signed for this token, which only
-/// its holder can get; it counts down to this, so a small withdrawal doesn't strand the rest of the BTC.
+/// A withdrawal's change (output 1 of a transaction this contract built for this token, recorded under
+/// `ch:<txid>`) counts down to this, so a small withdrawal doesn't strand the rest of the BTC.
 const MIN_CHANGE_SATS: u64 = 1_000;
+/// One `ch:<txid>` -> token id entry, rounded up.
+const CHANGE_BYTES: u64 = 120;
 /// Shortest silence after which an heir may claim. Testnet: 10 minutes, so it can be shown.
 #[cfg(not(feature = "mainnet"))]
 const HEIR_MIN_MS: u64 = 10 * 60 * 1000;
@@ -660,7 +662,7 @@ impl Pusaka {
         let utxos = canonical_utxos(utxos);
         // 1 yocto per MPC sign call + storage for the outpoints this may record.
         charge_storage(
-            OUTPOINT_BYTES * utxos.len() as u64,
+            OUTPOINT_BYTES * utxos.len() as u64 + CHANGE_BYTES,
             utxos.len() as u128,
         );
 
@@ -669,6 +671,8 @@ impl Pusaka {
         let inputs: Vec<_> = utxos.iter().map(|u| (u.txid.clone(), u.vout, u.value.0)).collect();
         let dest = hex::decode(&to_script_hex).expect("bad script hex");
         let spend = btc::build_spend(&pkh, &inputs, dest, amount_sat.0, fee_sat.0, format!("pusaka:{token_id}").as_bytes());
+        // The txid of a segwit spend doesn't depend on its signatures: remember it, so its change can be proven below 10,000 sats.
+        env::storage_write(change_key(&btc::txid(&spend.tx)).as_bytes(), token_id.as_bytes());
 
         // Record every outpoint *before* asking for signatures. If a signature is
         // produced but never reaches our callback (MPC timeout, late respond), it is
@@ -784,13 +788,13 @@ impl Pusaka {
         txid_display.reverse();
         let txid = hex::encode(txid_display);
         // A signed outpoint is spent or spendable by a signature holder: proving it would only add a dead entry.
-        let signed = self.signed.get(&token_id);
-        let spent = signed.is_some_and(|s| s.iter().any(|o| o.txid == txid && o.vout == vout));
+        let spent = self.signed.get(&token_id).is_some_and(|s| s.iter().any(|o| o.txid == txid && o.vout == vout));
         require!(!spent, "already signed for; it can't count as verified");
         let (value, script) = btc::output(&tx, vout);
         require!(script == btc::p2wpkh_script(&btc::hash160(&pk)), "output does not pay this Pusaka");
-        let own_change = || signed.is_some_and(|s| btc::inputs(&tx).iter().any(|(t, v)| s.iter().any(|o| &o.txid == t && o.vout == *v)));
-        require!(value >= MIN_PROVEN_SATS || (value >= MIN_CHANGE_SATS && own_change()), "deposit below the minimum that can be proven");
+        // below the dust floor only the change output of a withdrawal this contract built for this token
+        let own_change = vout == 1 && env::storage_read(change_key(&txid).as_bytes()).is_some_and(|t| t == token_id.as_bytes());
+        require!(value >= MIN_PROVEN_SATS || (value >= MIN_CHANGE_SATS && own_change), "deposit below the minimum that can be proven");
         let list = self.proven.get(&token_id);
         require!(!list.is_some_and(|v| v.iter().any(|u| u.txid == txid && u.vout == vout)), "already proven");
         require!(list.map_or(0, |v| v.len()) < MAX_PROVEN, "too many proven deposits; withdraw to consolidate");
@@ -1736,6 +1740,10 @@ pub struct Heir {
     pub heir: AccountId,
     pub after_ms: u64,
     pub last_seen_ms: u64,
+}
+
+fn change_key(txid: &str) -> String {
+    format!("ch:{txid}")
 }
 
 fn heir_key(token_id: &str) -> String {

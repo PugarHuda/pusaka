@@ -5,10 +5,14 @@
 import { test, expect } from "@playwright/test";
 import { nearFetch } from "@pusaka/shared";
 
+// The app reads Bitcoin from mempool.space and fails over to Blockstream; a refused or rate-limited
+// Esplora request is that failover working (CI runners get 429s without CORS headers), not an app error.
+const ESPLORA_NOISE = /mempool\.space|blockstream\.info/;
 const errorsOf = (page) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  page.on("console", (m) => m.type() === "error" && !ESPLORA_NOISE.test(m.text()) && !ESPLORA_NOISE.test(m.location()?.url ?? "")
+    && errors.push(m.text()));
   return errors;
 };
 
@@ -227,11 +231,12 @@ test("every Pusaka has an heir section; the will is read from the contract", asy
   await expect(s.getByText(/No heir named|can claim this Pusaka/)).toBeVisible();
 });
 
-test("a will's guardians and quorum on the page are the contract's guardians_of", async ({ page, request }) => {
+test("a will's guardians and quorum on the page are the contract's guardians_of", async ({ page }) => {
   const args = Buffer.from(JSON.stringify({ token_id: "2" })).toString("base64");
-  const r = await request.post("https://test.rpc.fastnear.com", { data: { jsonrpc: "2.0", id: 1, method: "query",
-    params: { request_type: "call_function", finality: "final", account_id: "pusaka-btc.testnet", method_name: "guardians_of", args_base64: args } } });
-  const g = JSON.parse(Buffer.from((await r.json()).result.result).toString());
+  const r = await (await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "final", account_id: "pusaka-btc.testnet", method_name: "guardians_of", args_base64: args } }) })).json();
+  if (!r.result) throw new Error(`RPC: ${JSON.stringify(r.error ?? r).slice(0, 200)}`);
+  const g = JSON.parse(Buffer.from(r.result.result).toString());
   await page.goto("/#/pusaka/2");
   const s = page.locator("section", { has: page.getByRole("heading", { name: "Heir" }) });
   await expect(s).toBeVisible({ timeout: 30_000 });

@@ -831,42 +831,58 @@ fn tx_to_token_1(c: &Pusaka, prev: &str, vout: u32, value: u64) -> String {
     hex::encode(tx)
 }
 
-fn prove_change(c: &mut Pusaka, signed_vout: u32, spent_vout: u32, value: u64) {
-    ctx("pusaka.testnet", NearToken::from_yoctonear(0), vec![]);
-    c.signed.insert("1".into(), vec![OutPointRef { txid: REAL_TXID.into(), vout: signed_vout }]);
-    let tx = tx_to_token_1(c, REAL_TXID, spent_vout, value);
+/// Withdraws `amount` of one 10,000-sat input with a 300-sat fee; returns the unsigned spend the contract built.
+fn small_withdrawal(c: &mut Pusaka, amount: u64) -> String {
+    ctx("alice.testnet", NearToken::from_millinear(20), vec![]);
+    let to = "0014".to_string() + &"11".repeat(20);
+    let u = Utxo { txid: TXID.into(), vout: 0, value: U64(10_000) };
+    let _ = c.withdraw("1".into(), vec![u], to.clone(), U64(amount), U64(300));
+    let pk = c.btc_keys.get("1").unwrap().clone();
+    let spend = btc::build_spend(&btc::hash160(&pk), &[(TXID.into(), 0, 10_000)], hex::decode(to).unwrap(), amount, 300, b"pusaka:1");
+    btc::unsigned_hex(&spend.tx)
+}
+
+fn prove(c: &mut Pusaka, tx: String, vout: u32) {
     ctx("bob.testnet", NearToken::from_millinear(20), vec![]);
-    let _ = c.prove_deposit("1".into(), tx, 0, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+    let _ = c.prove_deposit("1".into(), tx, vout, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
 }
 
 #[test]
-fn ch1_parses_the_inputs_a_transaction_spends() {
-    let ins = btc::inputs(&hex::decode(REAL_TX).unwrap());
-    assert_eq!(ins.len(), 2);
-    assert_eq!(ins[0], ("e7d22e966f4c86f902540678ab57614d23dff2c4787db54036e3d3f91eb15a71".to_string(), 0));
-    assert_eq!(ins[1].1, 0);
-}
-
-#[test]
-fn ch2_a_withdrawals_change_below_the_deposit_minimum_is_provable() {
-    // withdrawing 1,000 of 10,000 sats leaves ~8,700: it must still count, or the rest of the BTC is stranded
+fn ch1_a_withdrawals_change_below_the_deposit_minimum_is_provable() {
+    // withdrawing 1,000 of 10,000 sats leaves 8,700: it must still count, or the rest of the BTC is stranded
     let mut c = setup();
-    prove_change(&mut c, 0, 0, 8_700);
+    let tx = small_withdrawal(&mut c, 1_000);
+    prove(&mut c, tx, 1);
 }
 
 #[test]
 #[should_panic(expected = "below the minimum")]
-fn ch3_small_deposit_from_anyone_else_is_still_dust() {
-    // spends an outpoint the contract never signed for this token: a stranger's dust
+fn ch2_the_same_small_amount_from_any_other_transaction_is_dust() {
+    // spends an outpoint the contract signed, but the contract didn't build it: the holder's own wallet could
     let mut c = setup();
-    prove_change(&mut c, 0, 1, 8_700);
+    let _ = small_withdrawal(&mut c, 1_000);
+    let tx = tx_to_token_1(&c, TXID, 0, 8_700);
+    prove(&mut c, tx, 0);
 }
 
 #[test]
 #[should_panic(expected = "below the minimum")]
-fn ch4_own_change_below_its_floor_is_rejected() {
+fn ch3_change_below_its_own_floor_is_rejected() {
     let mut c = setup();
-    prove_change(&mut c, 0, 0, 999);
+    let tx = small_withdrawal(&mut c, 8_701); // change 999
+    prove(&mut c, tx, 1);
+}
+
+#[test]
+#[should_panic(expected = "below the minimum")]
+fn ch4_another_tokens_change_does_not_count_here() {
+    let mut c = setup();
+    let tx = small_withdrawal(&mut c, 1_000);
+    ctx("pusaka.testnet", NearToken::from_yoctonear(0), vec![]);
+    let mut id = btc::sha256d(&hex::decode(&tx).unwrap());
+    id.reverse();
+    env::storage_write(format!("ch:{}", hex::encode(id)).as_bytes(), b"2");
+    prove(&mut c, tx, 1);
 }
 
 // ---------- NEP-178 / NEP-199: external markets ----------

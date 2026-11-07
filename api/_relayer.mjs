@@ -199,9 +199,9 @@ export const MIN_FREE_PROOF_SATS = 10_000;
 const MIN_CHANGE_SATS = 1_000;
 
 /**
- * A withdrawal's change coming back to the Pusaka: the transaction spends outpoints the contract signed for this token.
- * Only the holder can get such a signature (and pays the withdraw deposit and the Bitcoin fee for it), so it's not dust farming;
- * without this, the change of every small withdrawal stayed unproven unless the holder paid for the proof.
+ * Likely a withdrawal's change (output 1 of a transaction spending outpoints the contract signed for this token).
+ * A cheap pre-check so the relayer doesn't pay for dust; the contract itself only accepts output 1 of a transaction
+ * it built (`ch:<txid>`), so a lookalike fails there.
  */
 export function isOwnChange(tx, signedOutpoints) {
   const signed = new Set(signedOutpoints.map((o) => `${o.txid.toLowerCase()}:${o.vout}`));
@@ -222,7 +222,7 @@ export async function proveToken(tokenId, relayer) {
   const todo = [];
   for (const u of ready) {
     if (todo.length === 4) break;
-    if (u.value >= MIN_FREE_PROOF_SATS || isOwnChange(await btcFetch(`/tx/${u.txid}`).then((r) => r.json()).catch(() => null), info.signed_outpoints)) todo.push(u);
+    if (u.value >= MIN_FREE_PROOF_SATS || (u.vout === 1 && isOwnChange(await btcFetch(`/tx/${u.txid}`).then((r) => r.json()).catch(() => null), info.signed_outpoints))) todo.push(u);
   }
   // USDC on Base/Arbitrum, attested by NEAR MPC: only finalized logs (the MPC reads finalized blocks)
   const proved = (await provider.callFunction({ contractId: CONTRACT, method: "usdc_info", args: { token_id: String(tokenId) } }).catch(() => []))
