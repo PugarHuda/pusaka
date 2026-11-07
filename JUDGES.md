@@ -41,7 +41,7 @@ cd contract && cargo test        # 211 passed
 ```
 
 Tests are named after the attack they stop; the README's [threat model](README.md#why-the-seller-cant-keep-the-bitcoin)
-maps each attack to its tests (`t1_…` to `t5_…`, loans `l…`/`o…`, heir `h…`, upgrades `up…`, gift links `g…`).
+maps each attack to its tests (`t1_…` to `t5_…`, loans `l…`/`o…`, heir `h…`, guardians `gd…`, upgrades `up…`, gift links `g…`).
 
 ## 3. Use it (2 minutes)
 
@@ -59,4 +59,5 @@ standing loan offer on the home page gas-free. `#/mine` shows what you hold.
 | Deposits count only once NEAR's Bitcoin light client proves them | `prove_deposit` → `on_deposit_proven` | `p*_*` |
 | A loan's collateral can't be emptied before or during the loan | `fund_loan`, `accept_loan_offer`, `claim_collateral` | `l*_*`, `o*_*` |
 | An heir can claim only after the holder's silence | `claim_inheritance` | `h*_heir*` |
+| Guardians can only release to the named heir, only after the silence, and anything the holder signs voids their approvals | `set_guardians`, `approve_release`, `claim_inheritance` | `gd1_*`–`gd10_*` |
 | Code changes only after a public, timelocked announcement; no key on the contract | `contract/src/upgrade.rs` | `up1_*`–`up8_*` |

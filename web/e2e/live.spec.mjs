@@ -227,6 +227,21 @@ test("every Pusaka has an heir section; the will is read from the contract", asy
   await expect(s.getByText(/No heir named|can claim this Pusaka/)).toBeVisible();
 });
 
+test("a will's guardians and quorum on the page are the contract's guardians_of", async ({ page, request }) => {
+  const args = Buffer.from(JSON.stringify({ token_id: "2" })).toString("base64");
+  const r = await request.post("https://test.rpc.fastnear.com", { data: { jsonrpc: "2.0", id: 1, method: "query",
+    params: { request_type: "call_function", finality: "final", account_id: "pusaka-btc.testnet", method_name: "guardians_of", args_base64: args } } });
+  const g = JSON.parse(Buffer.from((await r.json()).result.result).toString());
+  await page.goto("/#/pusaka/2");
+  const s = page.locator("section", { has: page.getByRole("heading", { name: "Heir" }) });
+  await expect(s).toBeVisible({ timeout: 30_000 });
+  if (!g) return expect(s.locator(".guardians")).toHaveCount(0);
+  const box = s.locator(".guardians");
+  await expect(box).toContainText(`Guardians: ${g.guardians.join(", ")}`);
+  await expect(box).toContainText(`${g.threshold} of ${g.guardians.length} must agree`);
+  await expect(box).toContainText(/If the guardians never answer, the heir can claim alone from/);
+});
+
 // Monitoring as much as testing: CI runs this every 6 hours, so it fails before a judge finds an empty shelf.
 test("the README's try-it stock is there and the relayer can pay for it", async () => {
   // through the app's own RPC failover (FastNear, dRPC, NEAR): one rate-limited RPC must not page us
