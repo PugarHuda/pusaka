@@ -670,7 +670,7 @@ function Detail({ id, accountId }) {
 
   if (missing) return <section><h1>No Pusaka #{id}</h1><p className="error">There is no Pusaka #{id} yet. <a href="#/">See all Pusaka</a></p></section>;
   if (!t && failed) return <p className="error">Couldn't reach NEAR to load Pusaka #{id}. <button onClick={refresh}>Try again</button></p>;
-  if (!t) return <p className="muted">Loading Pusaka #{id}…</p>;
+  if (!t) return <article className="detail"><div className="detail-face"><h1>Pusaka #{id}</h1><p className="muted">Loading Pusaka #{id}…</p></div></article>;
 
   const { info, address, bal } = t;
   const owner = info.token.owner_id;

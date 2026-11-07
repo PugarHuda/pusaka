@@ -32,7 +32,15 @@
       <p class="lede">Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR transaction:
         no bridge, no custodian, no key left with the seller.</p>
     </section></div></main></div></div>
-    <script>if (!/^#?\/?$/.test(location.hash)) document.getElementById("shell-hero").remove();</script>
+    <script>
+      // a Pusaka's page paints its title from the URL at once (the same markup the app shows while it reads the chain)
+      { const m = /^#\/pusaka\/(\d{1,9})$/.exec(location.hash), hero = document.getElementById("shell-hero");
+      if (m) {
+        const face = document.createElement("article"); face.className = "detail"; face.innerHTML = '<div class="detail-face"><h1></h1><p class="muted"></p></div>';
+        face.querySelector("h1").textContent = "Pusaka #" + Number(m[1]); face.querySelector("p").textContent = "Loading Pusaka #" + Number(m[1]) + "…";
+        hero.replaceWith(face);
+      } else if (!/^#?\/?$/.test(location.hash)) hero.remove(); }
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
