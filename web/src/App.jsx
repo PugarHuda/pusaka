@@ -4,7 +4,7 @@ import {
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
-  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances,
+  nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances, stakingPools, stakeBalances,
   ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE, exitQuote,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
@@ -127,7 +127,12 @@ function useRoute() {
     // a new page: back to the top, and focus on it so a screen reader announces it instead of staying on the old link
     const go = () => { setHash(location.hash); window.scrollTo(0, 0); document.querySelector("main")?.focus({ preventScroll: true }); };
     const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const f = () => (document.startViewTransition && !calm ? document.startViewTransition(() => flushSync(go)) : go());
+    const f = () => {
+      if (!document.startViewTransition || calm) return go();
+      // a second navigation before the first animates skips or aborts it: expected, not an error
+      const t = document.startViewTransition(() => flushSync(go));
+      for (const p of [t.ready, t.finished, t.updateCallbackDone]) p?.catch(() => {});
+    };
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
   }, []);
@@ -304,7 +309,9 @@ function Scenes({ tokens, px, sats }) {
 function useTokens() {
   const [tokens, setTokens] = useState(null);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    setError("");
     loadInfos()
       .then((infos) => {
         const ts = infos.map((info) => ({
@@ -315,13 +322,13 @@ function useTokens() {
           setTokens((cur) => cur.map((x) => (x.id === t.id ? { ...x, bal } : x)))).catch(() => {}));
       })
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
-  }, []);
-  return { tokens, error };
+  }, [attempt]);
+  return { tokens, error, retry: () => setAttempt((n) => n + 1) };
 }
 
 /** The landing page: what a Pusaka is, with live readings; the market itself is #/market. */
 function Home() {
-  const { tokens } = useTokens();
+  const { tokens, error, retry } = useTokens();
   const px = usePrices();
   const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
   return (
@@ -339,6 +346,7 @@ function Home() {
         </p>
       </section>
 
+      {error && <p className="error" role="alert">{error} <button type="button" onClick={retry}>Try again</button></p>}
       <Scenes tokens={tokens} px={px} sats={sats} />
       </div>
 
@@ -429,7 +437,7 @@ const SORTS = {
 };
 
 function Market({ accountId }) {
-  const { tokens: all, error } = useTokens();
+  const { tokens: all, error, retry } = useTokens();
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("new");
   const [, bump] = useState(0);
@@ -465,7 +473,7 @@ function Market({ accountId }) {
       </div>
 
       <section className="gallery" aria-label="All Pusaka">
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error} <button type="button" onClick={retry}>Try again</button></p>}
         {!tokens && !error && <GallerySkeleton />}
         {tokens?.length === 0 && <p className="muted">No Pusaka yet. Connect a wallet and mint the first one.</p>}
         {shown?.length === 0 && <p className="muted">No Pusaka match this filter.</p>}
@@ -721,6 +729,7 @@ function Detail({ id, accountId }) {
         {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.nearAcct && <NearAccountSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.nearAcct && <NbtcSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+        {t.nearAcct && <StakeSection t={t} canStake={isOwner && !locked} onDone={refresh} />}
 
         <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
 
@@ -969,7 +978,8 @@ function NearAccountSection({ t, canWithdraw, onDone }) {
     <section>
       <h2>Its own NEAR account</h2>
       <p className="muted">The Ed25519 key is also a NEAR account. Anyone can send it NEAR; only the holder of this NFT
-        can move it, and only as plain transfers, so no one can add a key and keep it after a sale.</p>
+        can move it, and only through transactions the contract builds (transfers, nBTC transfers and staking calls), so no one
+        can add a key and keep it after a sale.</p>
       {a.error ? <p className="error">Couldn't read the account.</p> : <>
         <p className="amount small"><span>{near(a.safe)}</span> NEAR</p>
         {a.atRisk > 0n && <p className="warn">{near(a.atRisk)} NEAR is at risk: a signed transfer for nonce {a.floor} hasn't been used yet.</p>}
@@ -981,6 +991,79 @@ function NearAccountSection({ t, canWithdraw, onDone }) {
           <label>Send NEAR to <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="name.testnet" required spellCheck="false" /></label>
           <label>Amount <span className="row"><input type="number" min="0.0001" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> NEAR</span></label>
           <button disabled={busy}>{busy ? "Signing with NEAR MPC…" : "Withdraw NEAR"}</button>
+        </form>
+      )}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </section>
+  );
+}
+
+/**
+ * Staking: the Pusaka's NEAR account delegates to a validator from the official pool factory. The stake and its
+ * rewards belong to that account, so they move with the NFT; only the current holder can unstake or withdraw.
+ */
+function StakeSection({ t, canStake, onDone }) {
+  const { id, nearAcct: a } = t;
+  const [stakes, setStakes] = useState(null);
+  const [pools, setPools] = useState(null);
+  const [pool, setPool] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+  const load = useCallback(() => view("staking_pools_of", { token_id: id })
+    .then((ps) => stakeBalances(a.address, ps)).then(setStakes, () => setStakes([])), [id, a?.address]);
+  useEffect(() => { if (a?.address) load(); }, [load, a?.address]);
+  useEffect(() => { if (canStake && a?.yocto > 0n && !pools) stakingPools().then((ps) => { setPools(ps); setPool((x) => x || ps[0]?.pool || ""); }, () => setPools([])); }, [canStake, a?.yocto, pools]);
+  if (!a?.address || (!stakes?.length && !(canStake && a.yocto > 0n))) return null;
+
+  async function act(action, p, amountYocto = 0n) {
+    setBusy(`${action}:${p}`); setMsg(null);
+    try {
+      const { nonce, blockHash } = await nearTxParams(a.address);
+      const signed = await call("stake_near", {
+        token_id: id, pool: p, action, amount: amountYocto.toString(), nonce: String(nonce), block_hash: blockHash,
+      }, { deposit: 10_000_000_000_000_000_000_000n, tgas: 300 });
+      if (signed.account !== a.address) throw new Error("The contract signed for a different account.");
+      const hash = await broadcastNear(await finalizeNear(signed));
+      const done = { stake: "Staked", unstake: "Unstaking started; withdraw it after about 4 epochs (2 days on mainnet)", withdraw: "Withdrawn to its NEAR account" }[action];
+      setMsg({ ok: true, text: <>{done}. <a href={`${NEAR_EXPLORER}/tx/${hash}`} target="_blank" rel="noreferrer">View on NEAR</a></> });
+      setAmount("");
+      await onDone(); await load();
+    } catch (err) { setMsg({ ok: false, text: err.message }); }
+    finally { setBusy(""); }
+  }
+
+  const total = (stakes ?? []).reduce((n, s) => n + s.staked + s.unstaked, 0n);
+  return (
+    <section aria-label="Staking">
+      <h2>Staked NEAR</h2>
+      <p className="muted">Its NEAR account can delegate to a validator (only pools from NEAR's official staking-pool factory).
+        The stake and its rewards belong to the account, so they move with the NFT: a buyer gets them, and only the holder can unstake.</p>
+      {stakes === null ? <p className="muted">Reading the pools…</p> : stakes.length > 0 && <>
+        <p className="amount small"><span>{near(total)}</span> NEAR at validators</p>
+        <ul className="stakes">
+          {stakes.map((s) => (
+            <li key={s.pool}>
+              <a href={`${NEAR_EXPLORER}/account/${s.pool}`} target="_blank" rel="noreferrer">{s.pool}</a>: {near(s.staked)} staked
+              {s.unstaked > 0n && <>, {near(s.unstaked)} unstaked {s.withdrawable ? "(ready)" : "(waiting out the unstake period)"}</>}
+              {canStake && <span className="row">
+                {s.staked > 0n && <button type="button" className="secondary" disabled={!!busy} onClick={() => act("unstake", s.pool, s.staked)}>
+                  {busy === `unstake:${s.pool}` ? "Signing with NEAR MPC…" : "Unstake all"}</button>}
+                {s.withdrawable && <button type="button" disabled={!!busy} onClick={() => act("withdraw", s.pool)}>
+                  {busy === `withdraw:${s.pool}` ? "Signing with NEAR MPC…" : "Withdraw"}</button>}
+              </span>}
+            </li>
+          ))}
+        </ul>
+      </>}
+      {canStake && a.yocto > 0n && (
+        <form onSubmit={(e) => { e.preventDefault(); act("stake", pool, yocto(amount)); }} className="stack">
+          <label>Validator <select value={pool} onChange={(e) => setPool(e.target.value)} required>
+            {(pools ?? []).map((p) => <option key={p.pool} value={p.pool}>{p.pool} ({(p.fee * 100).toFixed(0)}% fee)</option>)}
+          </select></label>
+          <label>Amount <span className="row"><input type="number" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> NEAR</span></label>
+          <p className="muted">Leave a little NEAR in the account for gas. Pools take at least 1 NEAR.</p>
+          <button disabled={!!busy || !pools?.length}>{busy.startsWith("stake:") ? "Signing with NEAR MPC…" : "Stake from its NEAR account"}</button>
         </form>
       )}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
@@ -1467,6 +1550,7 @@ function describe(e) {
     case "WithdrawErc20": return `Signed a withdrawal of ${formatUnits(BigInt(e.amount), 6)} USDC on chain ${e.chain_id} (nonce ${e.nonce}${e.signed ? "" : ", signature failed"})`;
     case "WithdrawSol": return `Signed a withdrawal of ${sol9(e.lamports)} SOL${e.signed ? "" : " (signature failed)"}`;
     case "WithdrawNear": return `Signed a transfer of ${near(e.amount)} NEAR from its own account${e.signed ? "" : " (signature failed)"}`;
+    case "Staking": return `Signed ${e.action === "withdraw" ? "a withdrawal of unstaked NEAR" : `${e.action === "stake" ? "a stake" : "an unstake"} of ${near(e.amount)} NEAR`} at ${e.pool}${e.signed ? "" : " (signature failed)"}`;
     case "WithdrawNbtc": return `Signed a transfer of ${Number(e.sats).toLocaleString()} nBTC sats from its own account${e.signed ? "" : " (signature failed)"}`;
     case "Royalty": return `Royalty of ${near(e.amount)} NEAR paid to its creator ${e.creator}`;
     case "HeirSet": return e.heir ? `Named an heir, ${e.heir}, who may claim it after ${days(e.after_ms)} of silence` : "Removed its heir";

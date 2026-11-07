@@ -13,7 +13,7 @@ import {
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
-  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote,
+  nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote, stakingPools, stakeBalances, POOL_SUFFIX,
   MPC, btcFetch, ckdEphemeral, ckdSecret, ckdKey, ckdAppId, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
@@ -128,7 +128,10 @@ export async function inspect(token_id) {
       const b = await nearBalances(a, await view("near_nonce_floor", { token_id }));
       const floor = await view("near_nonce_floor", { token_id });
       const n = await nbtcBalances(a, floor).catch(() => null);
-      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk, nbtc_safe_sats: n && Number(n.safe), nbtc_at_risk_sats: n && Number(n.atRisk) };
+      // staked NEAR belongs to the same account, so it moves with the NFT too
+      const pools = await view("staking_pools_of", { token_id }).catch(() => []);
+      const staking = (await stakeBalances(a, pools).catch(() => [])).map((x) => ({ pool: x.pool, staked_yocto: x.staked, unstaked_yocto: x.unstaked, withdrawable: x.withdrawable }));
+      return { account: a, safe_yocto: b.safe, at_risk_yocto: b.atRisk, nbtc_safe_sats: n && Number(n.safe), nbtc_at_risk_sats: n && Number(n.atRisk), staking };
     }).catch(() => null),
   ]);
   if (sol) out.sol = sol;
@@ -551,7 +554,7 @@ reg("pusaka_withdraw_sol", {
 }));
 
 reg("pusaka_withdraw_near", {
-  description: "Send NEAR out of your Pusaka's own NEAR account (an implicit account of its Ed25519 MPC key). The contract only ever signs a single Transfer from it.",
+  description: "Send NEAR out of your Pusaka's own NEAR account (an implicit account of its Ed25519 MPC key). The contract signs only transactions it builds from it: one Transfer here, nBTC ft_transfer and staking-pool calls elsewhere.",
   inputSchema: { token_id: z.string(), to: z.string(), near: z.number().positive() },
 }, tool(async ({ token_id, to, near }) => {
   await outflow(to, `send ${near} NEAR from Pusaka #${token_id}'s own NEAR account to ${to}`);
@@ -577,6 +580,25 @@ reg("pusaka_withdraw_nbtc", {
   if (!(await provider.callFunction({ contractId: NBTC, method: "storage_balance_of", args: { account_id: receiver } }))) throw new Error(`${receiver} isn't registered with ${NBTC}`);
   const acct = await nearAccount(token_id);
   const have = BigInt(await provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: acct } }));
+
+reg("pusaka_stake_near", {
+  description: `Stake, unstake or withdraw NEAR from your Pusaka's own NEAR account at a validator (pools from the official factory, *${POOL_SUFFIX}). The stake and its rewards stay in that account, so they move with the NFT; nothing leaves the Pusaka. pool "best" picks the active factory pool with the lowest fee. Unstaked NEAR can be withdrawn after about 4 epochs.`,
+  inputSchema: { token_id: z.string(), action: z.enum(["stake", "unstake", "withdraw"]), pool: z.string(), near: z.number().positive().optional() },
+}, tool(async ({ token_id, action, pool, near }) => {
+  if (action !== "withdraw" && !near) throw new Error("say how much NEAR to stake or unstake");
+  const p = pool === "best" ? (await stakingPools())[0]?.pool : pool.trim().toLowerCase();
+  if (!p?.endsWith(POOL_SUFFIX)) throw new Error(`${p} isn't a pool from the official factory (*${POOL_SUFFIX}); the contract would refuse it`);
+  const acct = await nearAccount(token_id);
+  const { nonce, blockHash } = await nearTxParams(acct);
+  const deposit = 10_000_000_000_000_000_000_000n;
+  await spend(deposit, "stake_near");
+  const signed = await call("stake_near", { token_id, pool: p, action, amount: action === "withdraw" ? "0" : toYocto(near).toString(), nonce: String(nonce), block_hash: blockHash },
+    { deposit, tgas: 300 });
+  if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
+  const hash = await broadcastNear(await finalizeNear(signed));
+  const [now] = await stakeBalances(acct, [p]);
+  return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, account: acct, pool: p, staked_yocto: now.staked, unstaked_yocto: now.unstaked, withdrawable: now.withdrawable };
+}));
   if (have < BigInt(sats)) throw new Error(`Pusaka #${token_id} holds ${have} nBTC sats`);
   const { nonce, blockHash } = await nearTxParams(acct);
   const deposit = 10_000_000_000_000_000_000_000n;
