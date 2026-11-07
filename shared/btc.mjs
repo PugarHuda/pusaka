@@ -402,9 +402,22 @@ export async function prices() {
     if (!r.ok) throw new Error("price sources unavailable");
     return r.json();
   }
+  // one retry per primary source; a source that still fails is named, never a bare "fetch failed"
+  const get = async (url, name) => {
+    for (let i = 0; ; i++) {
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return await r.json();
+      } catch (e) {
+        if (i) throw new Error(`price source ${name} unavailable (${e.message})`);
+        await new Promise((ok) => setTimeout(ok, 800));
+      }
+    }
+  };
   const [btc, ref, cg] = await Promise.all([
-    fetch("https://mempool.space/api/v1/prices", { signal: AbortSignal.timeout(8000) }).then((r) => r.json()),
-    fetch("https://api.ref.finance/list-token-price", { signal: AbortSignal.timeout(8000) }).then((r) => r.json()),
+    get("https://mempool.space/api/v1/prices", "mempool.space"),
+    get("https://api.ref.finance/list-token-price", "Rhea"),
     // independent second source; a lender's LTV guard shouldn't rest on one HTTP API
     fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,near,ethereum&vs_currencies=usd", { signal: AbortSignal.timeout(8000) })
       .then((r) => (r.ok ? r.json() : null)).catch(() => null),

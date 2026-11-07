@@ -199,7 +199,7 @@ reg("pusaka_fund_loan", {
   const info = await view("token_info", { token_id });
   const l = info?.loan;
   if (!l || l.lender) throw new Error("No open loan request.");
-  const px = await prices();
+  const px = await prices().catch((e) => { throw new Error(`Prices could not be cross-checked (${e.message}); not funding without them.`); });
   if (!px.crossChecked) throw new Error("Prices could not be cross-checked against a second source; not funding on one source.");
   const st = loanStats(l, Number(info.verified_sats), px);
   if (!Number.isFinite(st.ltv)) throw new Error("No BTC is verified inside this Pusaka, so the loan has no collateral.");
@@ -294,7 +294,7 @@ reg("pusaka_offer_loan", {
   if (!token_id === !min_verified_sats) throw new Error("Give exactly one of token_id, min_verified_sats.");
   if (repay_near < principal_near) throw new Error("repay_near must be at least principal_near.");
   const terms = { principal: toYocto(principal_near).toString(), repay: toYocto(repay_near).toString(), duration_ms: String(Math.round(days * 86_400_000)) };
-  const px = await prices();
+  const px = await prices().catch((e) => { throw new Error(`Prices could not be cross-checked (${e.message}); not lending without them.`); });
   if (!px.crossChecked) throw new Error("Prices could not be cross-checked against a second source; not lending on one source.");
   const sats = token_id ? Number((await view("token_info", { token_id }))?.verified_sats ?? 0) : min_verified_sats;
   const st = loanStats(terms, sats, px);
@@ -795,7 +795,7 @@ reg("pusaka_deals", {
   description: "Scan every Pusaka for sale for Bitcoin cheaper than it really sells for: each listing's price now (Dutch auctions fall over time) against a live, solver-signed NEAR Intents quote for selling the verified BTC inside into USDC. A negative discount means the NFT costs less than its BTC's exit value. Sorted best deal first.",
   inputSchema: { max_price_near: z.number().positive().optional() },
 }, tool(async ({ max_price_near }) => {
-  const px = await prices();
+  const px = await prices().catch((e) => { throw new Error(`Deals need live prices: ${e.message}. Try again in a minute.`); });
   const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
   const rows = (await Promise.all(toks.map(async (t) => {
     const i = await view("token_info", { token_id: t.token_id });
