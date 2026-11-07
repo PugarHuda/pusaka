@@ -14,7 +14,7 @@ import Field from "./Field.jsx";
 import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, celebrate, watched, WatchStar, Tilt } from "./extras.jsx";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
-import { call, callGasless, callRaw, connector, near, provider, view, yocto } from "./near.js";
+import { call, callGasless, callRaw, connector, forgetViews, near, provider, view, yocto } from "./near.js";
 import { loadInfos, loadMine } from "./mine.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
@@ -778,6 +778,7 @@ function ProveDeposits({ t, accountId, onDone }) {
     setBusy("free"); setMsg(automatic ? { ok: true, text: "Proving the new deposit on NEAR, gas paid by Pusaka's relayer…" } : null);
     try {
       const r = await fetch("/api/prove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_id: id }) });
+      forgetViews();
       const body = await r.json().catch(() => ({}));
       if (r.status === 503) throw new Error("The relayer isn't set up on this deployment. Connect a wallet and prove from it instead.");
       if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);

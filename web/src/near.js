@@ -6,9 +6,21 @@ import { CONTRACT, NETWORK, NEAR_RPCS, nearProvider } from "@pusaka/shared";
 export const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 export const connector = new NearConnector({ network: NETWORK, providers: { [NETWORK]: NEAR_RPCS } });
 
+// One read per method and args for a few seconds, shared by every component that asks: the market page made
+// 96 RPC calls for 21 tokens and tripped the RPCs' rate limits. A failure isn't kept, and every transaction clears it.
+const views = new Map();
+const VIEW_TTL_MS = 4000;
+export const forgetViews = () => views.clear();
 // optimistic: right after a wallet transaction the UI must see its result, not a block or two behind
-export const view = (method, args = {}) =>
-  provider.callFunction({ contractId: CONTRACT, method, args, blockQuery: { finality: "optimistic" } });
+export const view = (method, args = {}) => {
+  const key = `${method} ${JSON.stringify(args)}`;
+  const hit = views.get(key);
+  if (hit && Date.now() - hit.at < VIEW_TTL_MS) return hit.p;
+  const p = provider.callFunction({ contractId: CONTRACT, method, args, blockQuery: { finality: "optimistic" } });
+  views.set(key, { p, at: Date.now() });
+  p.catch(() => views.get(key)?.p === p && views.delete(key));
+  return p;
+};
 
 /** Signs with the connected wallet and returns the decoded result of the whole receipt chain. */
 export async function call(method, args = {}, opts = {}) {
@@ -18,6 +30,7 @@ export async function call(method, args = {}, opts = {}) {
 /** Like call(), but returns the full outcome (logs, receipts). */
 export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100, receiver = CONTRACT } = {}) {
   const wallet = await connector.wallet();
+  forgetViews();
   const outcome = await wallet.signAndSendTransaction({
     receiverId: receiver,
     actions: [{
@@ -25,6 +38,7 @@ export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100, rec
       params: { methodName: method, args, gas: (BigInt(tgas) * 10n ** 12n).toString(), deposit: deposit.toString() },
     }],
   });
+  forgetViews();
   const failure = outcome?.status?.Failure ?? outcome?.receipts_outcome?.find((r) => r.outcome.status.Failure)?.outcome.status.Failure;
   if (failure) throw new Error(contractError(failure));
   return outcome;
@@ -69,6 +83,7 @@ export async function callGasless(method, args = {}) {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ signed_delegate: signedDelegateActions[0] }),
   });
+  forgetViews();
   const body = await r.json().catch(() => ({}));
   if (r.status === 429) return fallback(); // relayer's free quota used up: the user pays their own gas
   if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);
