@@ -11,7 +11,8 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
-import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, celebrate, watched, WatchStar, Tilt } from "./extras.jsx";
+import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt } from "./extras.jsx";
+import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, forgetViews, near, provider, view, yocto } from "./near.js";
@@ -244,6 +245,7 @@ function auctionCurve(l) {
 }
 
 function Scenes({ tokens, px, sats }) {
+  const now = useNow(60_000);
   const infos = tokens?.map((t) => t.info) ?? [];
   const holding = infos.filter((i) => Number(i.verified_sats) > 0);
   const busy = (i) => !!i.listing || !!i.loan;
@@ -277,8 +279,8 @@ function Scenes({ tokens, px, sats }) {
           </div>
           <div className="widget-right">
             <div className="tiles">{infos.map((i) => (
-              <a key={i.token.token_id} href={`#/pusaka/${i.token.token_id}`} aria-label={`Pusaka #${i.token.token_id}: ${stateOf(i, Date.now())}`}
-                title={`Pusaka #${i.token.token_id}: ${stateOf(i, Date.now())}`}
+              <a key={i.token.token_id} href={`#/pusaka/${i.token.token_id}`} aria-label={`Pusaka #${i.token.token_id}: ${stateOf(i, now)}`}
+                title={`Pusaka #${i.token.token_id}: ${stateOf(i, now)}`}
                 className={`tile ${busy(i) ? "tile-busy" : Number(i.verified_sats) > 0 ? "tile-full" : ""}`}><span /></a>
             ))}</div>
             <p className="legend"><span><i className="tile-busy" /> for sale or lent</span> <span><i className="tile-full" /> holds Bitcoin</span> <span><i /> empty</span></p>
@@ -311,7 +313,6 @@ function useTokens() {
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    setError("");
     loadInfos()
       .then((infos) => {
         const ts = infos.map((info) => ({
@@ -323,13 +324,14 @@ function useTokens() {
       })
       .catch((e) => setError(`Couldn't read the contract: ${e.message}`));
   }, [attempt]);
-  return { tokens, error, retry: () => setAttempt((n) => n + 1) };
+  return { tokens, error, retry: () => { setError(""); setAttempt((n) => n + 1); } };
 }
 
 /** The landing page: what a Pusaka is, with live readings; the market itself is #/market. */
 function Home() {
   const { tokens, error, retry } = useTokens();
   const px = usePrices();
+  const now = useNow(60_000);
   const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
   return (
     <>
@@ -385,7 +387,7 @@ function Home() {
         {tokens?.length > 0 && (
           <div className="shelf" aria-label="Every Pusaka, as the vessel it is">
             {[...tokens].sort((a, b) => Number(a.id) - Number(b.id)).map((t) => (
-              <a key={t.id} href={`#/pusaka/${t.id}`} title={`Pusaka #${t.id}: ${stateOf(t.info, Date.now())}`}>
+              <a key={t.id} href={`#/pusaka/${t.id}`} title={`Pusaka #${t.id}: ${stateOf(t.info, now)}`}>
                 <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} size={72} label={`Pusaka #${t.id}`} />
               </a>
             ))}
@@ -748,7 +750,7 @@ function Detail({ id, accountId }) {
 
         <HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} />
 
-        <HolderRoom id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />
+        <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />
 
         <section>
           <h2>History</h2>
@@ -1011,9 +1013,10 @@ function StakeSection({ t, canStake, onDone }) {
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
+  const addr = a?.address;
   const load = useCallback(() => view("staking_pools_of", { token_id: id })
-    .then((ps) => stakeBalances(a.address, ps)).then(setStakes, () => setStakes([])), [id, a?.address]);
-  useEffect(() => { if (a?.address) load(); }, [load, a?.address]);
+    .then((ps) => stakeBalances(addr, ps)).then(setStakes, () => setStakes([])), [id, addr]);
+  useEffect(() => { if (addr) load(); }, [load, addr]);
   useEffect(() => { if (canStake && a?.yocto > 0n && !pools) stakingPools().then((ps) => { setPools(ps); setPool((x) => x || ps[0]?.pool || ""); }, () => setPools([])); }, [canStake, a?.yocto, pools]);
   if (!a?.address || (!stakes?.length && !(canStake && a.yocto > 0n))) return null;
 
@@ -1268,7 +1271,6 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
   const [text, setText] = useState("");
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
-  useEffect(() => { setRoom(null); }, [id, accountId]);
 
   const ask = async (body) => {
     const r = await fetch("/api/holder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -1893,6 +1895,7 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
   const { id, info } = t;
   const loan = info.loan;
   const funded = !!loan?.lender;
+  const now = useNow(60_000);
   const [offers, setOffers] = useState([]);
   const [ext, setExt] = useState(null);
   const [a, setA] = useState(""); // principal / new repay / part / extra days
@@ -1911,7 +1914,7 @@ function LoanMarket({ t, accountId, isOwner, busy, run }) {
   );
   const sats = Number(info.verified_sats);
   const due = Number(loan?.due_ms);
-  if (funded && Date.now() >= due) return null;
+  if (funded && now >= due) return null;
   const borrower = accountId === loan?.borrower, lender = accountId === loan?.lender;
   const owed = funded ? BigInt(loan.repay) : 0n; // a refinance pays this to the current lender first
 

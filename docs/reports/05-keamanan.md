@@ -15,7 +15,7 @@ Acuan: `03-kontrak.md`, `04-dapp.md`. Threat model lengkap (T1–T27, tiap baris
 | Kelas | Status di Pusaka | Tes / bukti |
 |---|---|---|
 | Reentrancy (async NEAR) | state dicatat sebelum promise; token dikunci `SignPending`; callback gagal → pulih | `a3_…`, `s3_…`, `x2_…`, T2, T9 |
-| Access control | `assert_owner` + `assert_free` di setiap jalur keluar; upgrade DAO+timelock; 0 access key | `t5_…`, `sk5_…`, `up…`, `verify.mjs` |
+| Access control | `assert_owner` + `assert_free` di setiap jalur keluar; upgrade di-renounce (dulu DAO+timelock); 0 access key | `t5_…`, `sk5_…`, `up…`, `verify.mjs` |
 | Integer | u128/checked; lelang tanpa overflow | `m…` |
 | Oracle / harga | kontrak tidak memakai harga; harga hanya di klien/MCP dengan cross-check 2 sumber (>5 % selisih → tolak) | `shared/prices.test.mjs` |
 | Front-running | pembeli/pemberi pinjaman mengikat `expected_sign_epoch` dan syarat pinjaman | T4, T11, T22 |

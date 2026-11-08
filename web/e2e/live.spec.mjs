@@ -343,7 +343,7 @@ test("For AI agents lists the live MCP endpoint's tools, prompts and resources, 
   await expect(page.getByRole("heading", { name: /^\d+ tools on this endpoint$/ })).toBeVisible({ timeout: 30_000 });
   for (const t of ["pusaka_audit", "pusaka_contract_trust", "pusaka_deals", "due_diligence", "pusaka://token/{token_id}"]) await expect(page.getByText(t, { exact: true }).first()).toBeVisible();
   await expect(page.getByText("pusaka_buy", { exact: true })).toHaveCount(0); // nothing that signs is remote
-  await expect(page.getByText(/^nobody can sign as the contract.*timelock\.$/)).toBeVisible();
+  await expect(page.getByText(/^nobody can sign as the contract.*Code changes: none, ever \(renounced\)\.$/)).toBeVisible(); // proposal 7: the code is final
   await expect(page.getByText(/claude mcp add --transport http pusaka https?:\/\//)).toBeVisible();
 });
 

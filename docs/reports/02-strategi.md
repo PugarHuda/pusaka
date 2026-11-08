@@ -11,7 +11,7 @@ HACKATHON.md tidak punya rubrik angka. Kriteria di bawah diturunkan dari teks re
 | Klaim terverifikasi on-chain | 6 | 10 | — (`verify.mjs`, 8 cek, di CI harian) |
 | Kedalaman integrasi NEAR | 6 | 9 | belum mainnet; TLA hanya mainnet |
 | Kesesuaian brief track `nfts` | 7 | 9 | NFT memakai akun implicit turunan MPC, bukan sub-account |
-| Keamanan / threat model | 6 | 9 | DAO council masih akun demo sendiri (renounce direncanakan ~13 Nov) |
+| Keamanan / threat model | 6 | 9 | council DAO akun demo sendiri, tapi upgrade sudah di-renounce 8 Nov: tidak ada pihak yang bisa mengubah kode |
 | Demo & presentasi | 5 | 6 | **video + post X belum ada** (syarat wajib) |
 | Polish UI/a11y/perf | 6 | 9 | Lighthouse mobile perf 87–88 |
 

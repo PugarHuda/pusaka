@@ -29,7 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      # GitHub's release CDN sometimes answers 504: retry the whole install, then fail loudly if cargo-near is still missing
+      - run: |
+          for i in 1 2 3; do
+            curl --proto '=https' --tlsv1.2 -LsSf --retry 3 --retry-all-errors https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh && break
+            sleep 20
+          done
+          cargo near --version
       - run: cargo near build reproducible-wasm
         working-directory: contract
       - run: sha256sum contract/target/near/pusaka.wasm | tee -a "$GITHUB_STEP_SUMMARY"

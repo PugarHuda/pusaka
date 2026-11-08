@@ -9,7 +9,7 @@ Rust, `near-sdk` 5, `near-contract-standards` (NEP-171/177/178/181/199/297), `om
 |---|---|
 | Custom error | panic dengan kode tetap (`NotOwner`, `Listed`, `SignPending`, `TooEarly`, `CodeMismatch`, `Collateralised`, `NotDueYet`…), diuji per kode |
 | Event untuk setiap perubahan state penting | NEP-297 `nft_mint`, `nft_transfer`, `nft_metadata_update`, plus event Pusaka (`Withdraw*`, `Staking`, loan, heir, gift, upgrade) — dipakai History per NFT |
-| Access control | `assert_owner` + `assert_free` di setiap jalur keluar; upgrade hanya DAO → timelock; akun kontrak 0 key |
+| Access control | `assert_owner` + `assert_free` di setiap jalur keluar; upgrade dulu hanya DAO → timelock, kini di-renounce (proposal 7, final); akun kontrak 0 key |
 | Emergency / pause | sengaja tidak ada: pause oleh admin = kustodian. Penggantinya: `unlock_stale` (pemilik), timelock upgrade agar pemegang bisa keluar dulu, `renounce_upgrades` |
 | CEI / reentrancy | NEAR async: state dicatat **sebelum** promise (outpoint & nonce floor dicatat sebelum MPC diminta tanda tangan; token dikunci `SignPending`), callback memulihkan saat gagal (`a3_…`, `s3_…`, `x2_…`) |
 | Overflow | aritmatika checked/u128; lelang Dutch bebas overflow (tes `m…`) |

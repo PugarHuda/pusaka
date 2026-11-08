@@ -644,7 +644,7 @@ reg("pusaka_audit", {
 }));
 
 reg("pusaka_contract_trust", {
-  description: "Should an agent trust the Pusaka contract itself? Reads from NEAR: the deployed code's sha256 and the reproducible-build source it names (NEP-330), every access key on the contract account (none but one-use gift-link keys means nobody can sign as the contract), who can change the code (a Sputnik DAO council, its members and vote threshold), the timelock, and any upgrade pending with the time it becomes deployable.",
+  description: "Should an agent trust the Pusaka contract itself? Reads from NEAR: the deployed code's sha256 and the reproducible-build source it names (NEP-330), every access key on the contract account (none but one-use gift-link keys means nobody can sign as the contract), whether the code is final (upgrades renounced) or, if not, who can change it (a Sputnik DAO council, its members and vote threshold), the timelock, and any upgrade pending with the time it becomes deployable.",
   inputSchema: {},
 }, tool(() => contractTrust()));
 
@@ -892,7 +892,7 @@ server.registerResource("pusaka-token", new ResourceTemplate("pusaka://token/{to
 
 const ask = (text) => ({ messages: [{ role: "user", content: { type: "text", text } }] });
 server.registerPrompt("due_diligence", { title: "Due diligence on a Pusaka", argsSchema: { token_id: z.string() } }, ({ token_id }) => ask(
-  `Do due diligence on Pusaka #${token_id} before any money moves. 1) pusaka_contract_trust: is anyone able to sign as the contract or change its code without a vote and a timelock? 2) pusaka_audit ${token_id}: are the reserves real on Bitcoin? 3) pusaka_inspect ${token_id}: value, exit quote, listing premium, loan terms. 4) pusaka_history ${token_id} and, if it has a loan, pusaka_credit_record for the borrower. Finish with a one-paragraph verdict and the single biggest risk.`));
+  `Do due diligence on Pusaka #${token_id} before any money moves. 1) pusaka_contract_trust: is anyone able to sign as the contract, and is the code final or changeable only by a vote and a timelock? 2) pusaka_audit ${token_id}: are the reserves real on Bitcoin? 3) pusaka_inspect ${token_id}: value, exit quote, listing premium, loan terms. 4) pusaka_history ${token_id} and, if it has a loan, pusaka_credit_record for the borrower. Finish with a one-paragraph verdict and the single biggest risk.`));
 server.registerPrompt("lender_round", { title: "A lender's round", argsSchema: { max_ltv: z.string().optional() } }, ({ max_ltv = "0.5" }) => ask(
   `Run a lender's round on Pusaka. 1) pusaka_loan_watch: claim any overdue collateral you are owed (pusaka_claim_collateral). 2) pusaka_overview and pusaka_loan_offers: find loan requests; for each, pusaka_audit the collateral and pusaka_credit_record the borrower. 3) Fund only requests with audited reserves, no defaults, and LTV under ${max_ltv} (pusaka_fund_loan with max_ltv ${max_ltv}). Report what you did and why.`));
 server.registerPrompt("buy_btc_below_exit", { title: "Buy Bitcoin below its exit value", argsSchema: { budget_near: z.string() } }, ({ budget_near }) => ask(

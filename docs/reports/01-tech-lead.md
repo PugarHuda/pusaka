@@ -71,17 +71,17 @@ Semua klaim README punya tx atau tes. `verify.mjs` mengecek ulang 56 tx dan sald
 | SocialDB notify, Mintbase | Sedang | README |
 
 ## Tabel temuan putaran 2
-| ID | Kategori | Severity | Lokasi | Deskripsi | Penanggung jawab |
-|---|---|---|---|---|---|
-| B1 | QA / CI | **Kritis** | `web/e2e/live.spec.mjs:346` | Tes halaman "For AI agents" masih mengharapkan teks berakhir "…timelock." Sejak renounce (`6477539`) aplikasi dengan benar menampilkan "Code changes: none, ever (renounced)", jadi tes gagal di setiap run. Akibatnya badge CI di README baris 3 merah, dan langkah setelahnya (`receipt-monitor`, `verify.mjs`, MCP smoke, due diligence) **tidak lagi berjalan di CI**. Aplikasinya benar; tesnya yang basi | QA |
-| B2 | Submission | Tinggi | `docs/reports/07-submission.md:57`, slide 8 | Teks "What they built" berbunyi "code changes only through a Sputnik DAO vote and a timelock", padahal sekarang tidak bisa diubah sama sekali. Slide 8 masih menulis "Next: renounce upgrade". AI penyaring membandingkan klaim dengan chain | Submission |
-| B3 | Dokumentasi | Sedang | `README.md:450` (baris DAO), `JUDGES.md:64` | Ditulis dalam bentuk sekarang ("New contract code needs a council proposal…"); perlu "dulu…, di-renounce lewat proposal 7" | Submission |
-| B4 | MCP | Rendah | `mcp/tools.mjs:647`, prompt `due_diligence` `:895` | Deskripsi tool menyebut DAO/timelock sebagai kondisi kini. Output tool sudah benar (`upgrades: {final: true}`); hanya teks deskripsinya | Backend |
-| B5 | CI | Sedang | `.github/workflows/ci.yml` job `reproducible-wasm` | Installer cargo-near di-curl tanpa retry; run terjadwal 09:54 merah karena GitHub 504 (`no such command: near`). Flaky eksternal | DevOps |
-| B6 | Dokumentasi | Rendah | `docs/REPORT.md`, `02`/`03`/`05` | Masih menulis "upgrade DAO + timelock" sebagai kondisi kini; REPORT blocker 5 masih $23–37 (MAINNET.md terukur: ~$35 minimum / ~$47 penuh); blocker 6 (firewall publish) sudah selesai | Semua role, saat menulis laporannya |
-| B7 | Kualitas FE | Rendah | `web/src/App.jsx:388,1914` (`Date.now` saat render), `:314,1271` (setState di effect) + 11 lainnya | 15 peringatan oxlint React. Tidak ada bug teramati; risiko render tak stabil | Frontend |
-| B8 | Performa | Rendah | `dist/assets/index-*.js` | Chunk utama 985 kB (306 kB gzip). LCP sudah 2,7 s; pemisahan per route (market/token/agents) masih bisa mengurangi | Frontend |
-| B9 | Performa | Rendah | build | Tanpa source map (A17); menunggu repo publik | DevOps (setelah user mempublikasikan repo) |
+| ID | Kategori | Severity | Lokasi | Deskripsi | Penanggung jawab | Status (8 Nov, malam) |
+|---|---|---|---|---|---|---|
+| B1 | QA / CI | **Kritis** | `web/e2e/live.spec.mjs:346` | Tes halaman "For AI agents" masih mengharapkan teks berakhir "…timelock." Sejak renounce (`6477539`) aplikasi dengan benar menampilkan "Code changes: none, ever (renounced)", jadi tes gagal di setiap run. Akibatnya badge CI di README baris 3 merah, dan langkah setelahnya (`receipt-monitor`, `verify.mjs`, MCP smoke, due diligence) **tidak lagi berjalan di CI**. Aplikasinya benar; tesnya yang basi | QA | Fixed: assertion → "Code changes: none, ever (renounced)."; tes lulus terhadap produksi |
+| B2 | Submission | Tinggi | `docs/reports/07-submission.md:57`, slide 8 | Teks "What they built" berbunyi "code changes only through a Sputnik DAO vote and a timelock", padahal sekarang tidak bisa diubah sama sekali. Slide 8 masih menulis "Next: renounce upgrade". AI penyaring membandingkan klaim dengan chain | Submission | Fixed: "its code is final: a Sputnik DAO vote renounced upgrades" (1.592 karakter); slide 7/8 diperbarui |
+| B3 | Dokumentasi | Sedang | `README.md:450` (baris DAO), `JUDGES.md:64` | Ditulis dalam bentuk sekarang ("New contract code needs a council proposal…"); perlu "dulu…, di-renounce lewat proposal 7" | Submission | Fixed: README paragraf keamanan + baris DAO (link proposal 7), JUDGES |
+| B4 | MCP | Rendah | `mcp/tools.mjs:647`, prompt `due_diligence` `:895` | Deskripsi tool menyebut DAO/timelock sebagai kondisi kini. Output tool sudah benar (`upgrades: {final: true}`); hanya teks deskripsinya | Backend | Fixed: deskripsi tool + prompt `due_diligence` |
+| B5 | CI | Sedang | `.github/workflows/ci.yml` job `reproducible-wasm` | Installer cargo-near di-curl tanpa retry; run terjadwal 09:54 merah karena GitHub 504 (`no such command: near`). Flaky eksternal | DevOps | Fixed: install diulang 3× (`curl --retry 3 --retry-all-errors`), lalu `cargo near --version` gagal keras |
+| B6 | Dokumentasi | Rendah | `docs/REPORT.md`, `02`/`03`/`05` | Masih menulis "upgrade DAO + timelock" sebagai kondisi kini; REPORT blocker 5 masih $23–37 (MAINNET.md terukur: ~$35 minimum / ~$47 penuh); blocker 6 (firewall publish) sudah selesai | Semua role, saat menulis laporannya | Fixed: 02, 03, 05, REPORT (biaya mainnet dari MAINNET.md, firewall selesai) |
+| B7 | Kualitas FE | Rendah | `web/src/App.jsx:388,1914` (`Date.now` saat render), `:314,1271` (setState di effect) + 11 lainnya | 15 peringatan oxlint React. Tidak ada bug teramati; risiko render tak stabil | Frontend | Fixed: 15 → 0 peringatan. `useNow` (jam sebagai state) menggantikan `Date.now()` saat render; reset error di handler Try again; HolderRoom di-reset lewat `key`; helper non-komponen pindah ke `web/src/util.js`. `ui.spec` chromium 18/18 |
+| B8 | Performa | Rendah | `dist/assets/index-*.js` | Chunk utama 985 kB (306 kB gzip). LCP sudah 2,7 s; pemisahan per route (market/token/agents) masih bisa mengurangi | Frontend | Diterima, tidak dikerjakan: memecah `App.jsx` (≈2.000 baris) per route berisiko regresi 6 hari sebelum deadline; LCP terukur sudah 2,7 s (Lighthouse 87) |
+| B9 | Performa | Rendah | build | Tanpa source map (A17); menunggu repo publik | DevOps (setelah user mempublikasikan repo) | Blocker user: repo publik dulu |
 
 Putaran 1 (A1–A18): 16 fixed dan terverifikasi; A16 (typecheck) tidak dipasang dengan alasan; A17 = B9. Rinciannya ada di git history file ini (`git log -p docs/reports/01-tech-lead.md`).
 
@@ -93,6 +93,7 @@ Putaran 1 (A1–A18): 16 fixed dan terverifikasi; A16 (typecheck) tidak dipasang
 - **DX**: `npm run demo`, `.env.example`, JUDGES.md 5 menit. Pemeriksaan otomatisnya (CI) saat ini merah (B1).
 
 ## Prioritas (dampak ke penyaringan AI + juri)
+B1–B7 sudah diperbaiki di putaran yang sama atas permintaan user (lihat kolom Status). Urutan aslinya:
 1. **B1**: perbarui satu assertion di `live.spec.mjs` ke teks "none, ever (renounced)" → CI hijau, badge hijau, `verify.mjs` kembali jalan harian. (QA, ~5 menit)
 2. **B2 + B3**: teks submission, slide 8, README baris DAO, JUDGES. Klaim harus sama dengan chain. (Submission)
 3. **B5**: retry pada unduhan cargo-near (`curl --retry 3`). (DevOps)

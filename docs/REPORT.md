@@ -29,7 +29,7 @@ Chain Signatures: Dalam → + FunctionCall staking · Light client: Sedang → D
 ## 5. Pembeda yang sulit ditiru (bukti on-chain)
 1. Light client Bitcoin di kontrak: `prove_deposit` `EYLPHJGX…`; kembalian terbukti #10 (proposal 5).
 2. Satu NFT banyak chain: Sepolia `0x85a7466d…`, Solana (finalized), akun NEAR `3npsdnYo…`, nBTC, stake `4yQWgGG4…`.
-3. Kontrak tanpa key + DAO + timelock: DeleteKey `3mNiGWfH…`, TooEarly `EHX5b1cp…`, deploy `67hUwJuA…`.
+3. Kontrak tanpa key dan kode final: DeleteKey `3mNiGWfH…`; dulu DAO + timelock (TooEarly `EHX5b1cp…`, deploy `67hUwJuA…`), di-renounce `GdASfxh5…`.
 
 ## 6. Fitur baru putaran ini
 Staking NEAR milik NFT (`#/pusaka/2`), bukti kembalian gratis (`#/pusaka/10`), judul halaman token sebelum JS (LCP 8,4 → 2,7 s), error kontrak manusiawi, `.env.example`, `cargo audit` di CI.
@@ -45,5 +45,5 @@ Demo: https://pusaka-two.vercel.app · Kontrak: https://testnet.near.rocks/accou
 2. **Repo publik** sebelum 14 Nov 23:59 UTC (saran 13 Nov); lalu source map produksi (1 baris).
 3. ~~Renounce upgrade~~ — **selesai 8 Nov** (proposal 7, `GdASfxh5…`).
 4. **Akun payout mainnet** dan data form (nama, email, ukuran tim, persetujuan); submit setelah payload ditunjukkan.
-5. **Dana mainnet** (~$23–37 di `pugarhuda.near`) bila ingin deploy mainnet / nama TLA.
-6. Opsional: `vercel firewall publish --yes`; JWT 1Click dari partners.near-intents.org (tanpa fee 0,2 %).
+5. **Dana mainnet** (~$35 minimum / ~$47 penuh, terukur 8 Nov, `docs/MAINNET.md`; di `pugarhuda.near`) bila ingin deploy mainnet / nama TLA.
+6. ~~Firewall publish~~ — selesai 8 Nov (429 setelah 20 POST/menit/IP). Opsional: JWT 1Click dari partners.near-intents.org (tanpa fee 0,2 %).

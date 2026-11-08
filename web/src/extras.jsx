@@ -1,19 +1,10 @@
 // Small UI pieces around the core flows: the Dutch auction clock, the deposit QR code, the holder's notifications,
 // and loading skeletons. All of them read the contract; nothing here is decorative data.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { renderSVG } from "uqr";
 import { near, view } from "./near.js";
 import { loadInfos } from "./mine.js";
-
-function useNow(ms = 1000, on = true) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!on) return;
-    const t = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(t);
-  }, [ms, on]);
-  return now;
-}
+import { useNow, watched, WATCH_KEY } from "./util.js";
 
 const span = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -22,7 +13,7 @@ const span = (ms) => {
 };
 
 /** A listing's price right now: the same straight line from price to floor that the contract's price_at follows. */
-export function priceAt(l, now) {
+function priceAt(l, now) {
   const [p, f, s, e] = [BigInt(l.price), BigInt(l.floor), BigInt(l.start_ms), BigInt(l.end_ms)];
   const t = BigInt(Math.floor(now));
   if (t >= e || e <= s) return f;
@@ -254,31 +245,7 @@ export function ThemeToggle() {
   );
 }
 
-/** A short burst of Bitcoin-orange and lavender when something lands (a purchase, a claim, an inheritance). */
-export function celebrate() {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const box = document.createElement("div");
-  box.className = "confetti";
-  box.setAttribute("aria-hidden", "true");
-  const colors = ["#f7931a", "#ffd77a", "#b48cf0", "#a9c98b", "#57bcee"];
-  for (let i = 0; i < 60; i++) {
-    const p = document.createElement("i");
-    p.style.setProperty("--x", `${(Math.random() - 0.5) * 120}vw`);
-    p.style.setProperty("--y", `${60 + Math.random() * 50}vh`);
-    p.style.setProperty("--r", `${Math.random() * 720 - 360}deg`);
-    p.style.background = colors[i % colors.length];
-    p.style.animationDelay = `${Math.random() * 0.15}s`;
-    if (i % 3 === 0) p.style.borderRadius = "50%";
-    box.appendChild(p);
-  }
-  document.body.appendChild(box);
-  setTimeout(() => box.remove(), 2200);
-}
-
-/** Pusakas you're keeping an eye on, kept in this browser only. */
-const WATCH_KEY = "pusaka:watch";
-export const watched = () => new Set(JSON.parse(localStorage.getItem(WATCH_KEY) ?? "[]"));
-export function useWatch(id) {
+function useWatch(id) {
   const [on, setOn] = useState(() => watched().has(String(id)));
   const toggle = (e) => {
     e?.preventDefault(); e?.stopPropagation();
@@ -300,18 +267,18 @@ export function WatchStar({ id }) {
 }
 
 /** Browser alerts for new notifications while Pusaka is open in a tab (the Notification API; no server keeps your address). */
-export function useBrowserAlerts(items, seen) {
-  const shown = useMemo(() => new Set(), []);
+function useBrowserAlerts(items, seen) {
+  const shown = useRef(new Set());
   useEffect(() => {
     if (!items || typeof Notification === "undefined" || Notification.permission !== "granted") return;
     for (const x of items) {
       const k = `${x.id}:${x.at}:${x.text}`;
-      if (x.at > seen && !shown.has(k) && Date.now() - x.at < 10 * 60_000) {
-        shown.add(k);
+      if (x.at > seen && !shown.current.has(k) && Date.now() - x.at < 10 * 60_000) {
+        shown.current.add(k);
         new Notification("Pusaka", { body: x.text, icon: "/icon-192.png", tag: k });
       }
     }
-  }, [items, seen, shown]);
+  }, [items, seen]);
 }
 
 /** A gentle 3D tilt that follows the pointer: the vessel turns in the light. */
