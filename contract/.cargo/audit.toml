@@ -1,0 +1,9 @@
+# cargo audit (CI). Each ignore says why it can't reach the deployed contract.
+[advisories]
+ignore = [
+  # crypto-bigint 0.5.5 timing variability (RUSTSEC-2026-0387). Pulled in only by near-vm-runner, the VM that
+  # near-sdk's `unit-testing` dev-dependency uses to run tests on the host; `cargo tree -i crypto-bigint
+  # --target wasm32-unknown-unknown -e normal` is empty, so it is not in the wasm. The contract holds no secret
+  # for a timing attack to recover either: its keys are the MPC network's. Fixed upstream only in 0.7.6.
+  "RUSTSEC-2026-0387",
+]
