@@ -360,7 +360,7 @@ test("a Pusaka's share link carries an Open Graph card drawn from its on-chain i
 
 test("Refused lists real attacks the deployed contract turned down, each confirmed failed on NEAR just now", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Refused" }).click();
+  await page.getByRole("link", { name: "Refused", exact: true }).click(); // the nav item, not the hero's "See what the contract refused"
   await expect(page).toHaveTitle("What the contract refused — Pusaka");
   const cards = page.locator(".refused li");
   await expect(cards.first()).toBeVisible({ timeout: 30_000 });
