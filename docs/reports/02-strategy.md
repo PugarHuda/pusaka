@@ -98,9 +98,9 @@ Tidak ada bounty sponsor terpisah; "sponsor" = NEAR.
 ## 7. Kandidat fitur / integrasi
 | # | Kandidat | Nilai tambah | Dampak skor | Kompetitor punya? | Effort | Risiko | Referensi | Keputusan |
 |---|---|---|---|---|---|---|---|---|
-| F1 | **Deploy mainnet** (`pusaka.near` / akun user) + satu Pusaka hidup | `defi` 6→8, impact 6→8; "nobody to switch it off" terbukti | Tinggi | Warrant, setllend | 3–4 j | Butuh dana user (~$35 minimum / ~$47 penuh, `docs/MAINNET.md`); tidak bisa di-undo | `docs/MAINNET.md` | **BANGUN jika user setuju dan mendanai** (keputusan besar → ditanyakan) |
-| F2 | **Refusal room**: halaman `#/refused` berisi tx gagal nyata dari chain (NotOwner, TooEarly, CodeMismatch, front-run sign epoch, …), masing-masing dengan link explorer dan tes yang menjaganya | Polish + "trust" terlihat dalam 10 detik; pola pemenang no. 4 | Sedang–Tinggi | Warrant | 3 j | Rendah: read-only, data sudah ada | README threat model, `receipt-monitor.mjs` | **BANGUN** |
-| F3 | **Ubah framing Shade Agent → "deposit prover in a TEE (Phala TDX)"**, plus catatan bahwa framework-nya deprecated | Menghindari kesan tooling usang | Sedang | — | 30 menit | Nol | docs.near.org (lihat §4) | **BANGUN** |
+| F1 | **Deploy mainnet** (`pusaka.near` / akun user) + satu Pusaka hidup | `defi` 6→8, impact 6→8; "nobody to switch it off" terbukti | Tinggi | Warrant, setllend | 3–4 j | Butuh dana user (~$35 minimum / ~$47 penuh, `docs/MAINNET.md`); tidak bisa di-undo | `docs/MAINNET.md` | **Ditunda** (user, 8 Nov: "nanti"); diputuskan sebelum 13 Nov |
+| F2 | **Refusal room**: halaman `#/refused` berisi tx gagal nyata dari chain (NotOwner, TooEarly, CodeMismatch, front-run sign epoch, …), masing-masing dengan link explorer dan tes yang menjaganya | Polish + "trust" terlihat dalam 10 detik; pola pemenang no. 4 | Sedang–Tinggi | Warrant | 3 j | Rendah: read-only, data sudah ada | README threat model, `receipt-monitor.mjs` | **BANGUN — selesai 8 Nov**: `#/refused`, 11 tx nyata (dipilih dari 441 tx kontrak), `live.spec` + axe + overflow lulus |
+| F3 | **Ubah framing Shade Agent → "deposit prover in a TEE (Phala TDX)"**, plus catatan bahwa framework-nya deprecated | Menghindari kesan tooling usang | Sedang | — | 30 menit | Nol | docs.near.org (lihat §4) | **BANGUN — selesai 8 Nov** (README 6 tempat, teks submission 1.620 karakter) |
 | F4 | Eksekusi Intents/1Click nyata untuk keluar dari BTC | `defi` +1 | Sedang | Warrant, setllend | 4 j setelah F1 | Likuiditas mainnet saja | 1Click API | **TIDAK** di testnet; ikut F1 jika didanai |
 | F5 | Akun deterministik (state-init) / global contract per NFT | "NFT sebagai akun" versi terbaru | Rendah–Sedang | Deed, Sealed | 1–2 hari | Ganti arsitektur inti 6 hari sebelum deadline; kontrak sudah final (renounced) | docs.near.org deterministic accounts | **TIDAK** (kontrak final, tidak bisa diubah) |
 | F6 | Kunci post-quantum ML-DSA | — | Nol | — | — | — | — | **TIDAK** (tidak relevan) |
@@ -128,6 +128,6 @@ Langkah ada di `docs/MAINNET.md`: deploy wasm reproducible yang sama, mint 1 Pus
 
 ## 9. Copy UI / landing (10 detik)
 Hero sekarang: "NFTs that hold real Bitcoin." + lede (satu transaksi, tanpa bridge atau kustodian, tanpa key tersisa di penjual) + total sats terverifikasi dari kontrak. Copy ini sudah menyatakan pembeda 1. Rekomendasinya hanya menambah bukti, bukan klaim:
-1. Di bawah angka sats terverifikasi: "**proven by NEAR's Bitcoin light client — not an indexer**" (sudah benar secara teknis; satu baris).
-2. Satu baris trust: "Contract has no keys and its code is final (renounced 8 Nov) · [See what it refused →]" yang mengarah ke F2.
+1. Di bawah angka sats terverifikasi: "proven by NEAR's Bitcoin light client". **Sudah ada:** "Every satoshi is proven by NEAR's Bitcoin light client, not reported by us."
+2. Tautan trust ke F2. **Selesai:** pill "See what the contract refused" di hero, di samping "Open the market" dan "Connect an AI agent".
 3. Tidak ada tabel "kami vs mereka" di app atau README (HACKATHON.md: "no marketing"). Perbandingannya cukup di laporan ini.

@@ -441,6 +441,11 @@ footer p { max-width: var(--measure); margin: 0; }
 .mine { padding-top: 2.5rem; max-width: 820px; margin: 0 auto; }
 .mine h1 { font: 400 clamp(2.4rem, 5vw, 3.4rem)/1.02 var(--serif); letter-spacing: -0.02em; margin: 0 0 0.6rem; }
 .mine h2 { font-size: 1.05rem; font-weight: 600; margin: 2.2rem 0 0.6rem; }
+.refused { list-style: none; padding: 0; margin: 1.6rem 0 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; }
+.refused code { white-space: normal; overflow-wrap: anywhere; }
+.mine .refused li { display: block; border: 1px solid var(--line); border-radius: 14px; padding: 1rem 1.2rem; overflow-wrap: anywhere; }
+.refused h2 { margin: 0 0 0.4rem; }
+.refused p { margin: 0.25rem 0; }
 .mine ul { list-style: none; padding: 0; margin: 0; }
 .mine li { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; padding: 0.65rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .mine li a { font-weight: 600; }

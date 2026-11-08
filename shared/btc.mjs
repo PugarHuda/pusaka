@@ -449,6 +449,32 @@ export function crossCheck(px, cg) {
   return { ...px, crossChecked: true, secondSource: "CoinGecko" };
 }
 
+/**
+ * What the contract refused in each of these transactions, read from FastNear's archival index:
+ * Map(hash → { signer, method, panic, at }) for every hash whose call into the contract panicked.
+ * A hash that is missing from the map was not found or did not fail: callers show that, never a refusal.
+ */
+export async function refusals(hashes) {
+  const r = await fetch(`${CONFIG.txApi}/v0/transactions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tx_hashes: hashes }), signal: AbortSignal.timeout(15_000) });
+  if (!r.ok) throw new Error(`FastNear ${r.status}`);
+  const out = new Map();
+  for (const t of (await r.json()).transactions) {
+    for (const rc of t.receipts) {
+      const err = rc.execution_outcome.outcome.status.Failure?.ActionError?.kind?.FunctionCallError?.ExecutionError;
+      if (!err || rc.receipt.receiver_id !== CONTRACT) continue;
+      const a = rc.receipt.receipt?.Action?.actions?.[0];
+      out.set(t.transaction.hash, {
+        signer: t.transaction.signer_id,
+        method: a?.FunctionCall?.method_name ?? a?.Delegate?.delegate_action?.actions?.[0]?.FunctionCall?.method_name,
+        panic: err.replace(/^Smart contract panicked: /, "").replace(/^panicked at \S+\n?/, "").trim(),
+        at: Math.round(t.execution_outcome.block_timestamp / 1e6),
+      });
+      break;
+    }
+  }
+  return out;
+}
+
 /** Loan economics from contract terms and live prices. */
 /**
  * Latest transactions touching the contract, newest first, from FastNear's indexer:

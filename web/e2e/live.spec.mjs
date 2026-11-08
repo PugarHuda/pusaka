@@ -357,3 +357,16 @@ test("a Pusaka's share link carries an Open Graph card drawn from its on-chain i
   expect((await png.body()).subarray(1, 4).toString()).toBe("PNG");
   expect((await request.get("/api/og?id=abc")).status()).toBe(400);
 });
+
+test("Refused lists real attacks the deployed contract turned down, each confirmed failed on NEAR just now", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "Refused" }).click();
+  await expect(page).toHaveTitle("What the contract refused — Pusaka");
+  const cards = page.locator(".refused li");
+  await expect(cards.first()).toBeVisible({ timeout: 30_000 });
+  const n = await cards.count();
+  expect(n).toBeGreaterThanOrEqual(6);
+  await expect(page.getByText("Refused:", { exact: true })).toHaveCount(n); // every hash really failed inside the contract
+  await expect(page.getByText("Couldn't confirm a refusal")).toHaveCount(0);
+  await expect(page.getByText(/Only the current holder of this Pusaka can do that\. \(NotOwner\)/)).toBeVisible(); // the panic, read from chain, in words
+});

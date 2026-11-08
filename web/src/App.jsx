@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CONTRACT, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
-  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity,
+  balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity, refusals,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
   nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances, stakingPools, stakeBalances,
@@ -17,6 +17,7 @@ import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, forgetViews, near, provider, view, yocto } from "./near.js";
 import { loadInfos, loadMine } from "./mine.js";
+import { explain } from "./errors.js";
 
 const btc = (sats) => (sats / 1e8).toFixed(8);
 const satsLabel = (sats) => `${Number(sats).toLocaleString("en-US")} sats`;
@@ -140,6 +141,7 @@ function useRoute() {
   if (/^#?\/?$/.test(hash)) return null; // home
   if (/^#\/mine\/?$/.test(hash)) return "mine";
   if (/^#\/agents\/?$/.test(hash)) return "agents";
+  if (/^#\/refused\/?$/.test(hash)) return "refused";
   if (/^#\/market\/?$/.test(hash)) return "market";
   const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
   if (gift) return `gift:${gift[1]}`;
@@ -153,7 +155,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -180,6 +182,7 @@ export default function App() {
           <a href="#/market" className={`nav-link${tokenId === "market" ? " is-here" : ""}`}>Market</a>
           {accountId && <a href="#/mine" className={`nav-link${tokenId === "mine" ? " is-here" : ""}`}>Your Pusakas</a>}
           <a href="#/agents" className={`nav-link${tokenId === "agents" ? " is-here" : ""}`}>For AI agents</a>
+          <a href="#/refused" className={`nav-link${tokenId === "refused" ? " is-here" : ""}`}>Refused</a>
         </nav>
         <ThemeToggle />
         {accountId ? (
@@ -198,6 +201,7 @@ export default function App() {
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
         : tokenId === "agents" ? <Agents />
+        : tokenId === "refused" ? <Refused />
         : tokenId === "market" ? <Market accountId={accountId} />
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
@@ -345,6 +349,7 @@ function Home() {
         <p className="cta-row">
           <a className="pill" href="#/market">Open the market</a>
           <a className="pill pill-soft" href="#/agents">Connect an AI agent</a>
+          <a className="pill pill-soft" href="#/refused">See what the contract refused</a>
         </p>
       </section>
 
@@ -1489,6 +1494,54 @@ function GiftClaim({ secret, accountId }) {
         <p className="gift-link"><code>{newKey.key}</code> <CopyButton text={newKey.key} label="Copy key" what="private key" /></p>
         <p><a href={`#/pusaka/${tokenId}`}>See your Pusaka</a></p>
       </div>}
+    </section>
+  );
+}
+
+// ---------- #/refused: attacks the deployed contract turned down, read live from NEAR ----------
+
+/** Real transactions on testnet. Only the hashes are fixed here: who sent them, what they called and why the contract
+ * said no are read from NEAR's archive on every visit, so a card can't claim a refusal that didn't happen. */
+const REFUSED = [
+  { hash: "6PrmsY8yFfFJvkCWNuySZoaLvdqgYTXcvfvwMyDcCBe6", attack: "The seller tries to withdraw the Bitcoin after selling the NFT", test: "seller_cannot_withdraw_after_sale" },
+  { hash: "wS4qnqmcM3YqXPwXFcJzcVLGnfGt6okL9ubnCuLrVZi", attack: "The seller tries to empty the Pusaka while it is listed (the token-bound wallet “drain before sale”)", test: "t1_withdraw_while_listed_fails" },
+  { hash: "Hq9ojtmWBPTsta4Stb4pSNrGk2rN1oMjzTiXj4zHf9NJ", attack: "A signature was requested between the counterparty's check and their transaction (front-running)", test: "t4_buy_with_stale_count_fails" },
+  { hash: "2ZNyhGMG4cn1gS897XC24RVrqiaUJCCuQ4XyCYk9gGam", attack: "A withdrawal while an outside marketplace still holds an approval to sell it", test: "m1_withdraw_while_approved_fails" },
+  { hash: "3GN75VgGEtyFgdm7yQS7k5ZaLZnXmwofXgmDTeV7n5A8", attack: "A borrower tries to withdraw the Bitcoin pledged as loan collateral", test: "l1_borrower_cannot_withdraw_collateral" },
+  { hash: "ANbwMLtnfYMbMvtvbhwix6gd5LrVCAV9pDUk6AK7q1Um", attack: "A lender tries to seize the collateral before the loan is due", test: "l3_lender_cannot_claim_before_due" },
+  { hash: "BGbWaeD2UZEeZEorpeV9AfKbWuuFhMM6r9iU68VDfcwU", attack: "Loan terms changed after the borrower read them", test: "o14_borrower_accepts_only_the_extension_they_saw" },
+  { hash: "CoteHaM8auJ2AVqLqP67yEWcaDpnDUT7NgVpwRkN2Rfh", attack: "An heir claims while the holder is still around", test: "h9_any_holder_action_is_proof_of_life" },
+  { hash: "2nimDRKnoTmddgnfTytjWPXySts41iktJhJPZg248Ywp", attack: "Dust sent to farm proof fees from the relayer", test: "ch2_the_same_small_amount_from_any_other_transaction_is_dust" },
+  { hash: "EHX5b1cpU4pzpfu4DA5TEZL3db95dQ5NqSRRdgtQuqoh", attack: "New contract code deployed before its public delay ran out", test: "up3_announced_code_waits_for_the_delay" },
+  { hash: "25pi2EER5uaAZ93Ph5eCnwboPiTmi1ocd8SEr5gD5ZEX", attack: "Different code deployed in place of the announced bytes", test: "up4_only_the_announced_bytes_deploy" },
+];
+
+function Refused() {
+  const [seen, setSeen] = useState(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    refusals(REFUSED.map((r) => r.hash)).then(setSeen, (e) => setSeen({ error: e.message }));
+  }, [attempt]);
+  return (
+    <section className="mine">
+      <h1>What the contract refused</h1>
+      <p className="lede">Real attempts against <code>{CONTRACT}</code>, each turned down by the contract itself. Who sent it, what it called and the contract's reason are read from NEAR just now, not stored on this page.</p>
+      <p className="muted">The contract holds no key and its code is final (upgrades renounced 8 Nov), so these rules can't be switched off. Each one also has a test named after the attack in <code>contract/src/tests.rs</code>.</p>
+      {!seen ? <p className="muted">Reading NEAR…</p>
+        : seen.error ? <p className="error" role="alert">Couldn't read NEAR's archive: {seen.error}. <button className="ghost" onClick={() => { setSeen(null); setAttempt((n) => n + 1); }}>Try again</button></p>
+        : <ol className="refused">{REFUSED.map((r) => {
+          const x = seen.get(r.hash);
+          return (
+            <li key={r.hash}>
+              <h2>{r.attack}</h2>
+              {x ? <p><strong>Refused:</strong> {explain(x.panic)}</p> : <p className="error">Couldn't confirm a refusal in this transaction.</p>}
+              <p className="muted">
+                {x && <><code>{x.method}</code> from {x.signer}, {new Date(x.at).toLocaleString()} · </>}
+                <a href={`${NEAR_EXPLORER}/tx/${r.hash}`} target="_blank" rel="noreferrer">{r.hash.slice(0, 8)}… on NEAR</a> · test <code>{r.test}</code>
+              </p>
+            </li>
+          );
+        })}</ol>}
     </section>
   );
 }

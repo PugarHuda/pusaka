@@ -57,8 +57,9 @@ test("pages that need a wallet ask to connect instead of failing", async ({ page
 });
 
 test("no horizontal scroll on any key page", async ({ page }) => {
-  for (const r of ["/#/", "/#/market", "/#/pusaka/2", "/#/agents", "/#/mine"]) {
+  for (const r of ["/#/", "/#/market", "/#/pusaka/2", "/#/agents", "/#/mine", "/#/refused"]) {
     await page.goto(r);
+    if (r === "/#/refused") await page.locator(".refused li, [role=alert]").first().waitFor({ timeout: 30_000 }); // cards hold long account names and hashes
     await page.waitForTimeout(3000);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     expect(over, `${r} overflows by ${over}px`).toBeLessThanOrEqual(1);
@@ -140,6 +141,7 @@ for (const [name, path, ready] of [
   ["market", "/#/market", "a[href^='#/pusaka/']"],
   ["a Pusaka", "/#/pusaka/2", "section[aria-label='Staking'], .ledger"],
   ["for AI agents", "/#/agents", "h1, h2"],
+  ["refused", "/#/refused", ".refused li, [role=alert]"],
   ["not found", "/#/nope", "text=nothing at"],
 ]) {
   test(`axe: no serious or critical accessibility violations on ${name}`, async ({ page }) => {
