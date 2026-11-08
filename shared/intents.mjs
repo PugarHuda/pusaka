@@ -23,7 +23,7 @@ export function exitQuoteRequest(sats, evm, now = Date.now()) {
 export async function exitQuote(sats, evm) {
   const r = await fetch(`${ONECLICK}/quote`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify(exitQuoteRequest(sats, evm)), signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify(exitQuoteRequest(sats, evm)), signal: AbortSignal.timeout(30_000), // 1Click gives up on its solvers after 25 s
   });
   const body = await r.json().catch(() => ({}));
   if (!r.ok || !body.quote) throw new Error(`NEAR Intents: ${body.message ?? `HTTP ${r.status}`}`);

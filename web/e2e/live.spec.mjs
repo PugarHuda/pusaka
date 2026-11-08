@@ -3,7 +3,7 @@
 //   E2E_URL=http://localhost:5173 npm run e2e -w web
 // Read-only: no wallet, no transactions. Wallet flows were exercised by hand with Meteor (see README).
 import { test, expect } from "@playwright/test";
-import { nearFetch } from "@pusaka/shared";
+import { nearFetch, exitQuoteRequest } from "@pusaka/shared";
 
 // The app reads Bitcoin from mempool.space then Blockstream, and NEAR from FastNear then dRPC then NEAR's RPC;
 // a refused or rate-limited request to one of them is that failover working (CI runners get 429s without CORS
@@ -278,9 +278,19 @@ test("the README's try-it stock is there and the relayer can pay for it", async 
 });
 
 test("a Pusaka's BTC has a live NEAR Intents exit quote, and a loan says how often it covers the loan", async ({ page }) => {
+  // 1Click itself is asked first: while its quote service is down the page must say so and show no number
+  const up = await fetch("https://1click.chaindefuser.com/v0/quote", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(exitQuoteRequest(101_446, "0x50d7d5e7a9d8b12b0a0b0e6e4c4c1e8f2e9de795")), signal: AbortSignal.timeout(35_000) })
+    .then((r) => r.ok, () => false);
   await page.goto("/#/pusaka/12");
-  await expect(page.locator(".exit-quote")).toContainText(/fetches [\d.]+ USDC on Base \(at least [\d.]+\)/, { timeout: 40_000 });
-  await expect(page.locator(".actions .stats")).toContainText(/NEAR Intents solvers pay \$[\d.,]+ for its BTC right now, [\d.]+× the loan/, { timeout: 40_000 });
+  if (!up) {
+    test.info().annotations.push({ type: "1Click down", description: "NEAR Intents quote service unavailable during this run; checked the honest fallback" });
+    await expect(page.locator(".exit-quote")).toContainText(/No NEAR Intents quote right now/, { timeout: 45_000 });
+    await expect(page.locator(".actions .stats")).not.toContainText(/solvers pay/);
+    return;
+  }
+  await expect(page.locator(".exit-quote")).toContainText(/fetches [\d.]+ USDC on Base \(at least [\d.]+\)/, { timeout: 45_000 });
+  await expect(page.locator(".actions .stats")).toContainText(/NEAR Intents solvers pay \$[\d.,]+ for its BTC right now, [\d.]+× the loan/, { timeout: 45_000 });
 });
 
 test("Your Pusakas without a wallet asks to connect, and fits a phone", async ({ page }) => {
