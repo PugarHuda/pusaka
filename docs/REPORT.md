@@ -1,9 +1,9 @@
 # Pusaka — laporan akhir (8 Nov 2026)
 
-Rincian per fase: [`reports/01-tech-lead.md`](reports/01-tech-lead.md) · [`02-strategi`](reports/02-strategi.md) · [`03-kontrak`](reports/03-kontrak.md) · [`04-dapp`](reports/04-dapp.md) · [`05-keamanan`](reports/05-keamanan.md) · [`06-qa`](reports/06-qa.md) · [`07-submission`](reports/07-submission.md).
+Rincian per fase: [`reports/01-tech-lead.md`](reports/01-tech-lead.md) · [`02-strategy`](reports/02-strategy.md) · [`03-kontrak`](reports/03-kontrak.md) · [`04-dapp`](reports/04-dapp.md) · [`05-keamanan`](reports/05-keamanan.md) · [`06-qa`](reports/06-qa.md) · [`07-submission`](reports/07-submission.md).
 
 ## 1. Scorecard & checklist
-HACKATHON.md tidak memberi rubrik angka; kriteria diturunkan dari Q-012, Q-017 dan brief track (`02-strategi.md`).
+HACKATHON.md tidak memberi rubrik angka; kriteria diturunkan dari Q-012, Q-017 dan brief track (`02-strategy.md`).
 
 | Kriteria | 2 Nov | 8 Nov |
 |---|---|---|
@@ -24,7 +24,7 @@ Tidak ada bounty sponsor terpisah di hackathon ini; "sponsor" = NEAR. Checklist 
 Chain Signatures: Dalam → + FunctionCall staking · Light client: Sedang → Dalam (kembalian) · RPC: failover sederhana → per panggilan + cooldown + cache · 1Click: quote → + timeout benar & fallback teruji · Staking pool: — → Dalam · Error kontrak: kode mentah → kalimat. Lengkap: `04-dapp.md`, README "Every NEAR primitive".
 
 ## 4. Kompetitor & positioning
-19 proyek di `nfts` (dari 266). "NFT yang membawa dompet" kini paritas (Handover, Deed, Torch, Logen, Outlive). Hanya Pusaka yang memegang **Bitcoin asli yang dibuktikan on-chain** dan memindahkan BTC + EVM + SOL + NEAR sekaligus. Positioning dan tabel 8 kompetitor: `02-strategi.md`.
+19 proyek di `nfts` (dari 266). "NFT yang membawa dompet" kini paritas (Handover, Deed, Torch, Logen, Outlive). Hanya Pusaka yang memegang **Bitcoin asli yang dibuktikan on-chain** dan memindahkan BTC + EVM + SOL + NEAR sekaligus. Positioning dan tabel 8 kompetitor: `02-strategy.md`.
 
 ## 5. Pembeda yang sulit ditiru (bukti on-chain)
 1. Light client Bitcoin di kontrak: `prove_deposit` `EYLPHJGX…`; kembalian terbukti #10 (proposal 5).

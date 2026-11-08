@@ -23,7 +23,7 @@ Acuan: `01`–`06`. Aturan resmi: https://nearhackathon.com/HACKATHON.md.
 - Setup dari nol: dilakukan 4 Nov dari clone bersih (perbaikan: tes yang butuh key yang di-gitignore kini memakai akun faucet sekali pakai); `npm run demo` tidak lagi menunggu faucet BTC (fallback 3 menit).
 
 ## README untuk juri
-Sudah ada: one-liner di baris pertama, link demo, try-it "do X → see Y", JUDGES.md (5 menit), arsitektur (diagram ASCII "How it works"), tabel akun kontrak + explorer, threat model T1–T27 → tes, tabel "Every NEAR primitive", "Measured on testnet" dengan tx hash, cara menjalankan tes. Sesuai HACKATHON.md ("no marketing"), tidak ada tabel "kami vs kompetitor" di README; perbandingan ada di `02-strategi.md`.
+Sudah ada: one-liner di baris pertama, link demo, try-it "do X → see Y", JUDGES.md (5 menit), arsitektur (diagram ASCII "How it works"), tabel akun kontrak + explorer, threat model T1–T27 → tes, tabel "Every NEAR primitive", "Measured on testnet" dengan tx hash, cara menjalankan tes. Sesuai HACKATHON.md ("no marketing"), tidak ada tabel "kami vs kompetitor" di README; perbandingan ada di `02-strategy.md`.
 Belum ada (butuh user): link video demo dan post X.
 
 ## Naskah video demo (2:30)

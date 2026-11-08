@@ -1,6 +1,6 @@
 # 04 — dApp & integrasi (Full-Stack Engineer)
 
-Acuan: `01-tech-lead.md` (A3–A12, A14), `02-strategi.md`.
+Acuan: `01-tech-lead.md` (A3–A12, A14), `02-strategy.md`.
 
 ## Temuan yang di-fix
 | ID | Fix | Verifikasi |
