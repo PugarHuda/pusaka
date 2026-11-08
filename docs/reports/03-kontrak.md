@@ -1,6 +1,6 @@
 # 03 — Smart contract (Smart Contract Engineer)
 
-Acuan: `01-audit.md` (A1, A2, A13), `02-strategi.md` (staking: BANGUN).
+Acuan: `01-tech-lead.md` (A1, A2, A13), `02-strategi.md` (staking: BANGUN).
 
 ## Stack
 Rust, `near-sdk` 5, `near-contract-standards` (NEP-171/177/178/181/199/297), `omni-transaction` untuk membangun transaksi BTC/EVM/NEAR. Padanan "library teruji" di NEAR: `near-contract-standards` dan crate resmi Near-One/omni. Build reproducible NEP-330 (`cargo near build reproducible-wasm`, image tersemat digest) di CI.

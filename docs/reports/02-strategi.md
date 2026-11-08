@@ -1,6 +1,6 @@
 # 02 — Strategi & diferensiasi (Hackathon Strategist)
 
-Acuan: `01-audit.md`. Data kompetitor: `nearhackathon.com/api/projects` (8 Nov: 266 proyek; `nfts` 19, `defi` 40, `open` 44), post X lewat fxtwitter, repo dibaca statis (tidak dijalankan) pada 6 Nov.
+Acuan: `01-tech-lead.md`. Data kompetitor: `nearhackathon.com/api/projects` (8 Nov: 266 proyek; `nfts` 19, `defi` 40, `open` 44), post X lewat fxtwitter, repo dibaca statis (tidak dijalankan) pada 6 Nov.
 
 ## Scorecard
 HACKATHON.md tidak punya rubrik angka. Kriteria di bawah diturunkan dari teks resminya: Q-017 (penyaring AI: reproduksibilitas, verifikasi fitur), Q-012 (demo hosted, video), "do X → see Y, no marketing", dan brief track `nfts` ("NFT sebagai akun: memegang uang, royalti, inventaris, kredensial/akses"; NEP-171, dynamic NFT, sub-account).
