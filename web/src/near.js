@@ -1,6 +1,7 @@
 import { NearConnector } from "@hot-labs/near-connect";
 import { FailoverRpcProvider, JsonRpcProvider, getTransactionLastResult } from "near-api-js";
 import { CONTRACT, NETWORK, NEAR_RPCS, nearProvider } from "@pusaka/shared";
+import { explain } from "./errors.js";
 
 // near-api-js would retry one endpoint 12 times (~2 min of "Loading…" when FastNear rate-limits).
 export const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
@@ -47,7 +48,8 @@ export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100, rec
 /** Pulls the panic message (e.g. "NotOwner") out of a NEAR failure object. */
 function contractError(f) {
   const s = JSON.stringify(f);
-  return s.match(/Smart contract panicked: ([^"\\]+)/)?.[1] ?? s.match(/"(\w+Error[^"]*)"/)?.[1] ?? "The transaction failed on NEAR.";
+  const panic = s.match(/Smart contract panicked: ([^"\\]+)/)?.[1];
+  return panic ? explain(panic.trim()) : s.match(/"(\w+Error[^"]*)"/)?.[1] ?? "The transaction failed on NEAR.";
 }
 
 export const yocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 18n;
