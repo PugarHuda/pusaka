@@ -61,7 +61,7 @@ Belum ada (butuh user): link video demo dan post X.
 ## Checklist final
 - [x] Kode, tes, CI hijau, demo hosted (tetap hidup sampai ≥ 25 Nov)
 - [x] LICENSE (MIT)
-- [ ] Renounce upgrade lewat DAO setelah deploy terakhir (~13 Nov) — butuh OK user
+- [x] Renounce upgrade lewat DAO (8 Nov, proposal 7, `GdASfxh5…`)
 - [ ] Repo publik (≤ 14 Nov 23:59 UTC; disarankan 13 Nov) — user
 - [ ] Video demo + post X (@NEARProtocol, #NEARHackathon) — user
 - [ ] Akun payout mainnet (`pugarhuda.near`?) — user mengonfirmasi

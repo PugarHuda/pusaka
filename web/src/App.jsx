@@ -790,6 +790,7 @@ function ProveDeposits({ t, accountId, onDone }) {
       forgetViews();
       const body = await r.json().catch(() => ({}));
       if (r.status === 503) throw new Error("The relayer isn't set up on this deployment. Connect a wallet and prove from it instead.");
+      if (r.status === 429) throw new Error("Too many free proofs from your network in the last minute. Try again shortly, or connect a wallet and prove it yourself.");
       if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);
       const n = body.results.filter((x) => x.proven).length;
       if (!body.results.length) throw new Error(`Nothing the light client can prove yet (it's at Bitcoin block ${body.light_client_height}).`);

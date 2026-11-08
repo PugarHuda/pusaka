@@ -22,7 +22,7 @@ Acuan: `03-kontrak.md`, `04-dapp.md`. Threat model lengkap (T1–T27, tiap baris
 | Replay tanda tangan | outpoint BTC dicatat sebelum signing; nonce floor EVM/NEAR; Solana tanpa durable nonce | T3, T10, T14, T16 |
 | DoS loop/gas | daftar dibatasi (maks 3 pool, 4 bukti USDC, history 32) | `sk7_…` |
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
-| Sentralisasi | council DAO masih 3 akun demo sendiri — dinyatakan jujur di README; rencana renounce setelah deploy terakhir | known issue, butuh keputusan user |
+| Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
 PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (225 tes).
 
@@ -33,11 +33,9 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 | CORS | `relay`, `prove`, `holder`: preflight lintas-origin 405 (tidak dibuka); `/api/mcp` `*` karena read-only |
 | Validasi input server | `/api/relay` menolak non-borsh (400 "not a borsh SignedDelegate"), memverifikasi tanda tangan NEP-366, hanya method whitelist tanpa deposit; `live.spec` "APIs answer bad input with 4xx, never 500" |
 | Padanan SIWE | holder room: NEP-413, pesan terikat situs, maks 5 menit, harus full-access key akun pemilik, kepemilikan dicek tiap permintaan (T17) |
-| Rate limiting | relayer: 1 bukti/menit/token, dedupe in-flight, still_here 1/jam, 429 → klien membayar gas sendiri. Aturan Vercel Firewall disiapkan dalam mode LOG (publish butuh user) |
+| Rate limiting | relayer: 1 bukti/menit/token, dedupe in-flight, still_here 1/jam, 429 → klien membayar gas sendiri. Vercel Firewall (live 8 Nov): 20 POST/menit/IP ke `/api/prove` + `/api/relay`, lalu 429 — diuji: 20× 400 lalu 5× 429 |
 | Approval tersembunyi | tidak ada ERC-20 approve; transaksi EVM dibangun kontrak (transfer saja), detail ditampilkan sebelum tanda tangan |
 | MCP agen | batas belanja per sesi, outflow mati default, allowlist penerima, elicitation (persetujuan manusia) sebelum belanja |
 
 ## Known issues
-1. Council DAO = akun demo sendiri sampai `renounce_upgrades` (~13 Nov, butuh OK user).
-2. Vercel Firewall rate-limit masih LOG mode (user: `vercel firewall publish --yes`).
 3. Coverage kontrak tidak diukur.

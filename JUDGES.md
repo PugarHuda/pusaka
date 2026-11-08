@@ -25,9 +25,10 @@ Expect `all checks passed`, with these lines (numbers move as the demo is used):
 What each line means:
 - **Deployed code**: the contract's on-chain code hash equals the sha256 of the wasm CI built in a pinned Docker
   image (`reproducible-wasm` job), and the contract's NEP-330 metadata names that commit.
-- **No access key**: nobody, including us, can sign as `pusaka-btc.testnet`. Code changes only through
-  `apply_upgrade`, and only bytes whose sha256 the admin announced at least 10 minutes earlier (7 days on mainnet),
-  so every holder can withdraw or sell first (`contract/src/upgrade.rs`).
+- **No access key, and the code is final**: nobody, including us, can sign as `pusaka-btc.testnet`, and since 8 Nov
+  upgrades are renounced (DAO proposal 7, tx `GdASfxh5…`): `apply_upgrade` refuses everything, so the code judges
+  read is the code that runs, for good. Before that, code changed only through a DAO vote plus a 10-minute timelock
+  (7 days on mainnet) on announced sha256 bytes (`contract/src/upgrade.rs`).
 - **MPC derivation**: for each Pusaka the script asks the MPC signer itself for `derived_public_key(path, predecessor
   = the contract)` and compares it with the key the token's Bitcoin address comes from. Only this contract can ask
   the MPC to sign with it, and the contract only asks for the current NFT owner.

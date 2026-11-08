@@ -18,7 +18,7 @@ HACKATHON.md tidak memberi rubrik angka; kriteria diturunkan dari Q-012, Q-017 d
 Tidak ada bounty sponsor terpisah di hackathon ini; "sponsor" = NEAR. Checklist submission: `07-submission.md`.
 
 ## 2. Temuan audit & keamanan
-18 temuan putaran 7–8 Nov (A1–A18): 1 Kritis, 6 Tinggi, 8 Sedang, 3 Rendah. 16 fixed dan terverifikasi; A16 (typecheck) diputuskan tidak dipasang dengan alasan; A17 (source map) menunggu repo publik. Keamanan: `cargo audit` di CI (1 advisory dev-only, di-ignore dengan alasan), `npm audit` 0, git history & bundle bebas secret, header & CORS benar. Known issues: council DAO masih akun sendiri, Firewall LOG mode, coverage tak diukur.
+18 temuan putaran 7–8 Nov (A1–A18): 1 Kritis, 6 Tinggi, 8 Sedang, 3 Rendah. 16 fixed dan terverifikasi; A16 (typecheck) diputuskan tidak dipasang dengan alasan; A17 (source map) menunggu repo publik. Keamanan: `cargo audit` di CI (1 advisory dev-only, di-ignore dengan alasan), `npm audit` 0, git history & bundle bebas secret, header & CORS benar. Upgrade di-renounce 8 Nov; rate limit Firewall aktif (429). Known issue: coverage tak diukur.
 
 ## 3. Integrasi (sebelum → sesudah putaran ini)
 Chain Signatures: Dalam → + FunctionCall staking · Light client: Sedang → Dalam (kembalian) · RPC: failover sederhana → per panggilan + cooldown + cache · 1Click: quote → + timeout benar & fallback teruji · Staking pool: — → Dalam · Error kontrak: kode mentah → kalimat. Lengkap: `04-dapp.md`, README "Every NEAR primitive".
@@ -43,7 +43,7 @@ Demo: https://pusaka-two.vercel.app · Kontrak: https://testnet.near.rocks/accou
 ## 9. Blocker (butuh user)
 1. **Video demo + post X** (syarat wajib; naskah siap).
 2. **Repo publik** sebelum 14 Nov 23:59 UTC (saran 13 Nov); lalu source map produksi (1 baris).
-3. **Renounce upgrade** lewat DAO setelah deploy terakhir — OK dari user.
+3. ~~Renounce upgrade~~ — **selesai 8 Nov** (proposal 7, `GdASfxh5…`).
 4. **Akun payout mainnet** dan data form (nama, email, ukuran tim, persetujuan); submit setelah payload ditunjukkan.
 5. **Dana mainnet** (~$23–37 di `pugarhuda.near`) bila ingin deploy mainnet / nama TLA.
 6. Opsional: `vercel firewall publish --yes`; JWT 1Click dari partners.near-intents.org (tanpa fee 0,2 %).
