@@ -18,6 +18,10 @@ jobs:
         working-directory: contract
       - run: cargo test --features mainnet   # the mainnet build: light client, confirmations, chain allowlist
         working-directory: contract
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-audit }
+      - run: cargo audit   # RustSec advisories for every crate in Cargo.lock
+        working-directory: contract
 
   # NEP-330: the wasm deployed to pusaka-btc.testnet comes from here; anyone can rebuild it with
   # `cargo near verify` / the same image and compare the hash.
