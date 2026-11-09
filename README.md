@@ -274,6 +274,12 @@ generated in the browser, downloaded and registered, then an unlock signed in th
 ([5s1ew31N…](https://testnet.near.rocks/tx/5s1ew31NnoG3rrrVoak4v5StTZEAhgS571AxyhyRQoVW)). A second run (#7) pasted the key back from the file (the page keeps no copy), unlocked, and turned the lock off
 ([BhhLV72u…](https://testnet.near.rocks/tx/BhhLV72uQVs4Cn4B6RJSCxFfmwvohnYwGeDzGwREeE9C)), which itself needs a fresh unlock.
 
+**The whole app runs on v2 too.** [`?contract=pusaka-v2.testnet`](https://pusaka-two.vercel.app/?contract=pusaka-v2.testnet#/market)
+opens every page (Bitcoin address, sale, loans, heir) on the v2 contract; only that allowlisted sibling is accepted. Free
+relayed gas and the holder room serve the original contract, so they are off there. A v2 sale, live: #7 listed
+([4k352mCY…](https://testnet.near.rocks/tx/4k352mCYEqzNbG7LfNQsrrXiPhiCmzKAonC52oHNJSv9)) and bought
+([DFTiRPwq…](https://testnet.near.rocks/tx/DFTiRPwq7NnQSTKitpF2kLxsmYfsQuh1tWBDKezHKHTH)); its `0s…` account now answers to the buyer.
+
 Costs on testnet:
 - Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.
 - A token's `0s` account is a zero-balance account (203 bytes).
