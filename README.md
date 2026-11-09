@@ -249,7 +249,7 @@ account can create names under 65 characters.
 | The new holder uses the same account | [36RLmrAL…](https://testnet.near.rocks/tx/36RLmrALsb8NYmPJqeNNh5BucVb1Ud6tkCjQtWeF3y9y) |
 | The old holder tries: `NotOwner` | [FF9c2dPy…](https://testnet.near.rocks/tx/FF9c2dPyjZtXKja7VfgeGGeoee9LiwaBYE5aDezYqT8K) |
 
-Tests: 18 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`), with real ML-DSA-65 keys and signatures from
+Tests: 19 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`), with real ML-DSA-65 keys and signatures from
 `@noble/post-quantum` (`scripts/pq-fixture.mjs`), and 3 in `token-account/`.
 
 **Upgraded through the DAO, as designed (9 Nov).** A security review of v2 found three holes, fixed with tests:
@@ -261,6 +261,17 @@ The fixed build (sha256 `4dd2473b…fab849`) went through the upgrade path: prop
 (2 of 3 votes) announced it, and after the 10-minute timelock `apply_upgrade` deployed it
 ([C2Dgr5iW…](https://testnet.near.rocks/tx/C2Dgr5iW4wX41XfXFMagCgn3Jzj5jE1ji4RfYKaWC1v3)); the account's code hash is now
 `6EnN75u5…`, the base58 of that sha256.
+
+A second automated review then caught a narrower race: a callback arriving after `unlock_stale` could free a newer
+lock. `on_account_call` now frees only the lock its own call set (tagged with the block height; regression test
+`a_late_callback_leaves_a_newer_lock_alone`), and the web page no longer keeps the ML-DSA seed in browser storage.
+Same path again: proposal 9 (2 of 3), timelock, `apply_upgrade`
+([DbaTmJfi…](https://testnet.near.rocks/tx/DbaTmJfisAmDZWUd4NeUZfG4LvchNLUP6FRbLeXDMzv5)), sha256 `d6c183da…788741`.
+
+**Through the web app with a real wallet** (Intear, `web/e2e/wallet-qa.mjs v2`, 9 Nov): Pusaka v2 #6 was minted on
+[`#/v2`](https://pusaka-two.vercel.app/#/v2), its account created and funded, NEAR sent from it, an ML-DSA-65 key
+generated in the browser, downloaded and registered, then an unlock signed in the page and verified on-chain
+([5s1ew31N…](https://testnet.near.rocks/tx/5s1ew31NnoG3rrrVoak4v5StTZEAhgS571AxyhyRQoVW)).
 
 Costs on testnet:
 - Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.

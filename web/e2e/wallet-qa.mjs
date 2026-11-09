@@ -327,13 +327,14 @@ try {
     await p.getByRole("button", { name: "Create an ML-DSA-65 key" }).click();
     const dl = p.waitForEvent("download");
     await p.getByRole("link", { name: "Download the key file" }).click();
-    const file = await (await dl).path();
-    console.log("key file saved:", JSON.parse(fs.readFileSync(file, "utf8")).ml_dsa65_seed_hex.length === 64);
+    const seedHex = JSON.parse(fs.readFileSync(await (await dl).path(), "utf8")).ml_dsa65_seed_hex;
+    console.log("key file saved:", seedHex.length === 64);
     await approve(() => p.getByRole("button", { name: /register the key/ }).click());
     console.log("pq set:", (await result()).replace(/\s+/g, " "));
     await p.waitForTimeout(4000);
     await p.reload(); await p.getByText("Post-quantum lock").waitFor({ timeout: 60_000 });
     console.log("lock:", (await p.locator("section.v2 p").filter({ hasText: /^On:/ }).innerText()).replace(/\s+/g, " "));
+    await p.getByLabel(/^Key \(from your key file/).fill(seedHex); // the page keeps no copy: the holder pastes it from the file
     await approve(() => p.getByRole("button", { name: "Sign an unlock" }).click());
     console.log("unlock:", (await result()).replace(/\s+/g, " "));
     console.log(await p.getByRole("status").last().locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")));
