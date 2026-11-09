@@ -77,6 +77,51 @@ Tidak ada bounty sponsor terpisah; "sponsor" = NEAR.
 
 Pelajaran untuk video Pusaka: juri menghargai **layar nyata + explorer**, bukan motion graphics. Minimal tampilkan deposit BTC yang terbukti on-chain, jual-beli NFT, tx serangan yang ditolak (`#/refused`), dan `verify.mjs` hijau. Demo 9 menaikkan Pusaka ke 8,7.
 
+### Pembaruan 9 Nov malam: 380 proyek, 46 baru di track kita
+
+Dua audit ulang dengan rubrik yang sama: proyek baru (repo, kontrak on-chain, demo X) dan rival teratas sejak 9 Nov. Detail per proyek ada di folder analisis kompetitor (tidak di repo).
+
+| Track | Proyek (tanpa Pusaka) | Baru |
+|---|---|---|
+| nfts | 29 | +10 |
+| defi | 63 | +23 |
+| open | 69 | +24 |
+
+**Rival lama hampir diam.** Tidak ada deploy mainnet baru dan tidak ada key yang dihapus. GetLeash naik 8,3 → 8,5 karena README-nya dilatih ulang lewat fresh clone.
+
+**Proyek baru yang masuk top 5:**
+| Proyek | Track | Skor | Kenapa kuat | Kelemahan |
+|---|---|---|---|---|
+| Contri | nfts | 8,2–8,7 (dua penilai) | Arisan di **mainnet**, `circles.contring.near` 0 key, hash = build CI, bayar lewat Intents 1Click, ~104 tes Rust | NFT-nya sampingan: NEP-171 read-only, tanpa `nft_transfer` |
+| Hallmark | defi | 8,8 | Batas harga agen untuk Intents, quote dicek `ed25519_verify` on-chain, mainnet (68 tx), 61 Rust + 71 JS tes | Kontrak masih punya full-access key |
+| Veto | open | 8,7 | Penanda tangan kedua di TEE, `ecrecover`, Chain Signatures ke Base, vault tanpa key dari global contract | Klaim Intents mainnet tidak terbukti, tidak ada CI |
+| Priced In | defi / open | 8,2 | Pasar prediksi fakta, 3 juri AI di TEE NEAR AI, mainnet (231 tx) | — |
+| Seats | nfts | 7,7 | NFT keanggotaan + Sputnik DAO + delegasi AI di OutLayer, CI hijau | — |
+
+**Paling mirip Pusaka: Torch baru (6,8).** NFT warisan yang memegang alamat BTC testnet4 dan ETH Sepolia lewat Chain Signatures, dengan ahli waris. Bedanya dengan Pusaka:
+- tidak ada bukti deposit on-chain (tanpa light client, tanpa `verified_sats`);
+- tanda tangan BTC/ETH hanya dari CLI;
+- tidak ada pasar dan pinjaman.
+
+Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", baris "Sell it as Bitcoin").
+
+**Posisi Pusaka (dengan asumsi repo publik + video + CI hijau):**
+| Track | Pusaka | Di atas Pusaka |
+|---|---|---|
+| nfts | 8,3–8,5 | Contri 8,7 (penilai pertama); setara Contri 8,2 (penilai kedua) |
+| defi | 8,2 | Warrant 8,8, Hallmark 8,8 |
+| open | 8,3 | Sealed Exploit 8,8, Veto 8,7, Writ 8,5, GetLeash 8,5 |
+
+**Sekarang (repo private, tanpa video, CI merah karena billing): 6,2.** Penilai luar memberi Repro 1 selama repo tidak bisa dibuka.
+
+**Aksi, urut kenaikan skor per jam:**
+1. Repo publik (user), paling lambat 12 Nov. Repro 1 → 9, dan CI jadi gratis lagi sehingga badge hijau.
+2. Video 2–2,5 menit + post X (user). Kalimat pembuka: "BTC native, dibuktikan light client". Tunjukkan layar nyata + explorer, bukan animasi.
+3. ~~Samakan angka tes~~: selesai (265 di semua dokumen).
+4. ~~Kotak "What's real / not"~~: selesai, di atas README.
+5. ~~`verify.mjs` mengecek v2~~: selesai. Hapus key v2 pada 13 Nov.
+6. Mainnet (user, butuh dana) adalah satu-satunya cara mengejar Contri, Hallmark dan Warrant di "impact".
+
 ## 4. Jujur: paritas, yang harus dikejar, celah
 **Paritas (bukan pembeda):**
 - NFT yang membawa dompet: Handover, Deed, Torch, Logen, Outlive.

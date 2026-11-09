@@ -32,12 +32,13 @@ holding UTXOs, with no wrapper. The contract itself knows how much is inside: `v
 client, net of everything it has ever signed away. So a price, a loan or an inheritance can be set against BTC the
 chain has verified, not BTC someone says is there.
 
-| | NFT with a NEAR sub-account | NFT with an EVM address (Chain Signatures) | **Pusaka** |
+| | NFT with a NEAR sub-account | NFT with a BTC/EVM address (Chain Signatures) | **Pusaka** |
 |---|---|---|---|
-| Bitcoin inside | wrapped token only | no | **native UTXOs at its own address** |
+| Bitcoin inside | wrapped token only | native, but nothing on NEAR knows how much | **native UTXOs at its own address** |
 | Contents provable on NEAR | NEAR assets only | no: the balance is read off-chain from the other chain | **yes: `verified_sats`, light-client proven** |
 | Seller can't keep a way back in | keyless account | sign log | **sign epoch: a buy fails if anything was signed since the buyer looked; outside markets wait 1 h (mainnet 24 h) after the last signature** |
 | Borrow against what's inside | — | — | **BTC-collateral loans, enforced by the contract** |
+| Sell it as Bitcoin | — | price set blind, or trust the seller | **market price shown against the proven BTC inside; signing from the web app, not a CLI** |
 
 One NFT is a whole set of wallets: the same MPC key that holds its Bitcoin also controls one address on every EVM
 chain (ETH and USDC on Ethereum, Base and Arbitrum), and a second, Ed25519 MPC key is both a **Solana address** and the
