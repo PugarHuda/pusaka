@@ -40,7 +40,7 @@ Brief track, dikutip:
 Tidak ada bounty sponsor terpisah; "sponsor" = NEAR.
 
 ## 2. Riset: apa yang menang
-1. **Bukti bahwa produknya jalan.** Penyaring AI NEAR menguji "runs and does what the README says". Shortlist Colosseum juga lewat review kode ([FAQ](https://superteamcan.notion.site/Colosseum-1ae380b97c4681cabad4e7f85ae0af7b)). Pesaing teratas di sini (Warrant 8,7; Sealed Exploit 8,7) sama-sama punya `verify` satu perintah, kontrak tanpa key, dan CI hijau.
+1. **Bukti bahwa produknya jalan.** Penyaring AI NEAR menguji "runs and does what the README says". Shortlist Colosseum juga lewat review kode ([FAQ](https://superteamcan.notion.site/Colosseum-1ae380b97c4681cabad4e7f85ae0af7b)). Pesaing teratas di sini (Warrant 8,8; Sealed Exploit 8,8 setelah video dinilai) sama-sama punya `verify` satu perintah, kontrak tanpa key, dan CI hijau.
 2. **Chain Signatures mengendalikan akun di chain tanpa smart contract.** Bounty NEAR di ETHGlobal meminta persis ini: "DeFi… on non-smart contract chains… controlling externally-owned accounts on chains like Bitcoin" ([Brussels](https://ethglobal.com/events/brussels/prizes/near-protocol), [London 2024](https://ethglobal.com/events/london2024/prizes/near-protocol)).
 3. **AI + DeFi.** DeFiBrain memenangkan bounty Chain Signatures dan juara 1 ETH Seoul ([NEAR](https://pages.near.org/?p=21306)).
 4. **Cerita keamanan dan perlindungan user.** Contoh: juara Colosseum 2025, Unrugable ([Solana Compass](https://ee.solanacompass.com/learn/breakpoint-25/winners-of-the-colosseum-cypherpunk-hackathon)). Di hackathon ini: Warrant dengan "refusal room" berisi 31 tx gagal nyata, dan Sealed Exploit dengan 21 klaim palsu yang ditolak on-chain.
@@ -59,13 +59,23 @@ Tidak ada bounty sponsor terpisah; "sponsor" = NEAR.
 ### Pesaing di hackathon ini (dinilai dengan rubrik yang sama; detail di folder analisis kompetitor)
 | Proyek (track) | Inti | Teknologi NEAR | Traction (testnet/mainnet) | Kelebihan | Kelemahan | Sumber |
 |---|---|---|---|---|---|---|
-| Warrant (defi) 8,7 | Opsi physically-settled, agunan di dalam `intents.near`, NEP-245 | Intents, 1Click, relayer, reproducible build | **Mainnet**, 0 key, 90 tx | Refusal room 31 tx, `verify.mjs` | Satu produk sempit (opsi) | [repo](https://github.com/emmanuelist/warrant) |
-| Sealed Exploit (open) 8,7 | Bounty exploit yang diverifikasi di TEE (OutLayer) | Global contract, akun keyless, OutLayer | testnet, 84 tx hunter | 21 klaim palsu ditolak on-chain | Pasar niche | [repo](https://github.com/edycutjong/sealed) |
+| Warrant (defi) 8,8 | Opsi physically-settled, agunan di dalam `intents.near`, NEP-245 | Intents, 1Click, relayer, reproducible build | **Mainnet**, 0 key, 90 tx | Refusal room 31 tx, `verify.mjs` | Satu produk sempit (opsi) | [repo](https://github.com/emmanuelist/warrant) |
+| Sealed Exploit (open) 8,8 | Bounty exploit yang diverifikasi di TEE (OutLayer) | Global contract, akun keyless, OutLayer | testnet, 84 tx hunter | 21 klaim palsu ditolak on-chain | Pasar niche | [repo](https://github.com/edycutjong/sealed) |
 | setllend (defi) 8,2 | Pinjaman USDC bunga tetap (order book) | Intents `auth_call`, 1Click, oracle Rhea | **Mainnet**, 1 FA key | Desain kredit matang | Layar app di video adalah "animated recreation"; owner bisa ubah parameter | [repo](https://github.com/TarasBrilian/setllend) |
-| Handover (nfts) 7,7 | NFT = dompet ETH; penjual tak bisa simpan kunci | Chain Signatures (ETH), 0 key | testnet, 23 tx | Klaim→file:line→tes | 1 chain; saldo dicek off-chain; tanpa CI | [repo](https://github.com/AlphaTechini/handover) |
+| Handover (nfts) 8,2 | NFT = dompet ETH; penjual tak bisa simpan kunci | Chain Signatures (ETH), 0 key | testnet, 23 tx | Klaim→file:line→tes | 1 chain; saldo dicek off-chain; tanpa CI | [repo](https://github.com/AlphaTechini/handover) |
 | OneUp (defi/nfts) 7,7 | Pasar prediksi + NFT "extra life" | NEP-171, 0 key | testnet, ±25k tx (bot sendiri) | Volume, CI | Oracle mock; Intents/DAO hanya lokal | [repo](https://github.com/ethboi/oneup) |
 | Outlive (nfts) 7,5 | NFT memiliki vault bisnis API (402, kuitansi) | vault NEAR, NEP-413 | testnet, 1 FA key | Cerita bisnis jelas | "demand unproven", kontrak masih punya key | [repo](https://github.com/itsolaph/outlive) |
-| Heir (open) 7,2 | Dead-man's switch, ahli waris ETH lewat Chain Signatures | Chain Signatures, relayer gas-free | testnet, 1 FA key | Paling mirip Pusaka secara substansi | Lebih sempit (NEAR + ETH), tanpa CI | [repo](https://github.com/ZSP111/Heir) |
+| Heir (open) 7,3 | Dead-man's switch, ahli waris ETH lewat Chain Signatures | Chain Signatures, relayer gas-free | testnet, 1 FA key | Paling mirip Pusaka secara substansi | Lebih sempit (NEAR + ETH), tanpa CI | [repo](https://github.com/ZSP111/Heir) |
+
+
+### Setelah menonton semua video demo (9 Nov)
+
+81 video/foto dari post X dinilai ulang (contact sheet 12 frame + transkrip). Yang mengubah posisi Pusaka:
+- **Handover 7,7 → 8,2 (nfts).** Video 3:32 menunjukkan wallet ETH milik NFT didanai dan membelanjakan di Sepolia (Etherscan), lalu penjual yang menahan tx bertanda tangan diblokir sampai tx itu dibersihkan. Selisihnya dengan Pusaka (8,3) tinggal 0,1, dan nilai Demo Pusaka masih 7 karena videonya belum ada.
+- **Sealed Exploit 8,8 dan Warrant 8,8.** Video keduanya hampir seluruhnya terminal/UI nyata dengan tx di explorer.
+- **setllend 8,2 → 8,0, Loca 8,2 → 8,0.** Videonya hanya animasi, tanpa tx nyata.
+
+Pelajaran untuk video Pusaka: juri menghargai **layar nyata + explorer**, bukan motion graphics. Minimal tampilkan deposit BTC yang terbukti on-chain, jual-beli NFT, tx serangan yang ditolak (`#/refused`), dan `verify.mjs` hijau. Demo 9 menaikkan Pusaka ke 8,7.
 
 ## 4. Jujur: paritas, yang harus dikejar, celah
 **Paritas (bukan pembeda):**
