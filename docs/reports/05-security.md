@@ -63,7 +63,7 @@ Scanner dijalankan ulang di semua komponen.
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
-PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (246 tes, termasuk fuzz dan invariant).
+PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (265 tes, termasuk fuzz dan invariant).
 
 ## Frontend / backend
 | Pemeriksaan | Hasil |
@@ -78,7 +78,7 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 
 ## Catatan verifikasi
 Run GitHub Actions untuk commit putaran ini tidak dimulai karena kuota menit Actions repo private habis atau batas belanja tercapai, jadi bukan karena kegagalan kode. Verifikasinya dijalankan lokal:
-- `cargo test` (246) dan unit Node;
+- `cargo test` (265) dan unit Node;
 - `node api/_nearai.test.mjs` dan `node api/_holder.test.mjs`;
 - 11 tes `live.spec` yang relevan, terhadap produksi.
 

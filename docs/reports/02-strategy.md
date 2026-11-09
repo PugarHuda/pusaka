@@ -22,7 +22,7 @@ Brief track, dikutip:
 |---|---|---|
 | Reproduksibilitas (penyaring AI) | 9 | Repo publik. Sisanya sudah ada: `npm run demo`, `verify.mjs`, JUDGES.md, CI hijau lagi sejak `44bda6a` |
 | Klaim = kenyataan on-chain | 10 | Pertahankan: `verify.mjs` harian di CI |
-| Technical implementation | 9 | — (246 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
+| Technical implementation | 9 | — (265 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
 | Kesesuaian `nfts` ("NFT sebagai akun yang memiliki uang") | 9 | Brief track praktis mendeskripsikan Pusaka |
 | Kesesuaian `defi` ("settle… through NEAR Intents", "nobody to switch it off") | 6 | Intents di Pusaka hanya **quote dry-run**: likuiditas 1Click hanya ada di mainnet. Pemimpin `defi` (Warrant, setllend) **di mainnet**, dan Warrant menyelesaikan transaksinya di dalam `intents.near`. Untuk naik: deploy mainnet + satu jalur keluar Intents yang benar-benar dieksekusi |
 | Kesesuaian `open` | 8 | Kombinasi BTC × agen AI (MCP) × pewarisan sudah unik |

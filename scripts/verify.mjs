@@ -88,5 +88,31 @@ for (let i = 0; i < hashes.length; i += 20) {
 const missing = hashes.filter((h) => !found.has(h));
 ok(missing.length === 0, `all ${hashes.length} NEAR transactions cited in the README are on chain`, missing.length ? `not found: ${missing.join(", ")}` : "via FastNear's archival index");
 
+// 7. Pusaka v2 (testnet): the code is the recorded build, changes only via the DAO + timelock, and every NFT's own
+//    account is keyless and runs the token-account global contract published by hash.
+const V2 = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}-v2.json`);
+if (fs.existsSync(V2)) {
+  const d = JSON.parse(fs.readFileSync(V2, "utf8")), v2 = d.contract;
+  console.log(`\nPusaka v2: ${v2}`);
+  const a2 = await rpc("query", { request_type: "view_account", finality: "final", account_id: v2 });
+  ok(hex(base58.decode(a2.code_hash)) === d.code.wasm_sha256, "v2 code = the build recorded in deployments", `${d.code.wasm_sha256.slice(0, 16)}…`);
+  const up2 = await view("upgrade_status", {}, v2);
+  ok(up2.admin === d.accounts.upgrade_dao && Number(up2.delay_ms) >= 600_000, "v2 changes only through the DAO and a timelock", `${up2.admin}, ${Number(up2.delay_ms) / 60_000} min`);
+  const k2 = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: v2 })).keys;
+  console.log(`${k2.length ? "ℹ" : "✓"} v2 account keys: ${k2.length ? `${k2.length} (deleted at the final deploy, 13 Nov)` : "none"}`);
+  const toks = await view("nft_tokens", { from_index: "0", limit: 100 }, v2);
+  const bad = [];
+  let opened = 0;
+  for (const t of toks) {
+    const id = await view("account_of", { token_id: t.token_id }, v2);
+    const acc = await rpc("query", { request_type: "view_account", finality: "final", account_id: id }).catch(() => null);
+    if (!acc) continue;
+    opened++;
+    const ks = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: id })).keys;
+    if (ks.length || acc.global_contract_hash !== d.token_account.global_contract_hash_base58) bad.push(`#${t.token_id}`);
+  }
+  ok(!bad.length, `every opened v2 NFT account (${opened} of ${toks.length}) is keyless and runs token-account ${d.token_account.global_contract_hash_base58.slice(0, 8)}…`, bad.join(", "));
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

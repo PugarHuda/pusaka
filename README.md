@@ -14,6 +14,16 @@ And the Bitcoin inside is **proven, not claimed**: every deposit is checked on N
 headers by NEAR's on-chain Bitcoin light client, and the contract subtracts every output it ever signed away. A buyer,
 a lender or an agent reads `verified_sats` from the contract and needs no indexer, no oracle and no trust in us.
 
+> **What's real, and what isn't (yet).**
+> - **Real, on NEAR testnet, every claim with a tx hash:** native BTC (testnet), the Bitcoin light-client proofs, MPC signing
+>   for BTC/EVM/Solana/NEAR, sales, loans, inheritance, gift links, the MCP agent tools, and Pusaka v2 (the NFT's own account,
+>   post-quantum lock). `node scripts/verify.mjs` checks the contract's state against chain with no wallet.
+> - **Testnet only.** No mainnet deployment; mainnet needs funds (runbook: `docs/MAINNET.md`).
+> - **The NEAR Intents exit executes on Tidepool**, a 1Click-compatible testnet sandbox (unmodified `defuse` verifier); 1Click's
+>   real liquidity is mainnet-only. On the original contract, the exit is a live 1Click quote.
+> - **The DAO council that could upgrade v2 is our own three demo accounts.** It shows the mechanism, not independence. The
+>   original contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
+
 **How this differs from other "the NFT is a wallet" designs.** The common design gives each NFT its own NEAR
 (sub-)account. That account can hold NEAR and NEP-141 tokens, so Bitcoin can only be there as a wrapped token, and
 someone has to vouch for the wrapper. A Chain Signatures design that gives the NFT an EVM address does better, but a
@@ -74,7 +84,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `246 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
+See: `265 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -600,7 +610,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Same, on a second chain (Arbitrum Sepolia, 20 USDC) | [89W2pDYE…](https://testnet.near.rocks/tx/89W2pDYEx6M1kGBZMfMgm5MhHauEQNAoQN48k5PCruzo): attested in 7.3 s; `usdc_info(5)` verified 20 USDC on Arbitrum |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
 | A withdrawal's change below 10,000 sats, proven for free (proposal 5) | #10 held 8,700 sats it could never count again (change of an earlier withdrawal); after the deploy its holder withdrew 1,000 ([22907ae1…](https://mempool.space/testnet/tx/22907ae13f07e4da75e7de3c89c99ae81f2f86d2d90e5380e62df3a8d67629f7)), and the public `/api/prove` proved output 1 (7,400 sats): `verified_sats` 0 → 7,400 |
-| Unit tests | 246 / 246 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
+| Unit tests | 265 / 265 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
 | Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192840b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | The README's try-it path through the web app with a real wallet (Intear, driven by Playwright: `node web/e2e/wallet-qa.mjs <profile> judge 10 12`, then `repay pusaka-buyer.testnet 12`), current build | *Buy* #10: one wallet approval, "You own Pusaka #10…" in 9 s; *Lend* on #12: "Loan funded. The NEAR went to the borrower." in 8 s; the borrower's *Repay*: "Loan repaid. The Pusaka is unlocked." in 7 s. It also showed the old demo terms as 1,217% a year, so the asks now repay 0.501 for 0.5 (about 24% a year) |
 | The loan market's web forms with a real wallet (Intear, `node web/e2e/wallet-qa.mjs <profile> offer pusaka-seller.testnet 15`, then `refinance pusaka-buyer.testnet 15`) | a lender posted a standing offer through the form and cancelled it (8 s each); the borrower of a funded loan saw a cheaper-per-day offer "pays off the 0.102 NEAR owed to pusaka-seller.testnet; 0.008 NEAR comes to you" and clicked Refinance: one wallet approval, `LoanRefinanced` [4HiEGnAW…](https://testnet.near.rocks/tx/4HiEGnAWEvAj8bcZTYTtG2vdhd8pkMQQQxAnLZ11zfoe). This QA found the amount inputs refusing 0.501-style values (`step=0.01`), fixed |
