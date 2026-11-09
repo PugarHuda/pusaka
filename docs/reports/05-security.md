@@ -16,6 +16,7 @@ Scanner dijalankan ulang di semua komponen.
 | R5-1 | Verifikasi TEE NEAR AI (`api/_nearai.mjs`) | **Tinggi** | Quote yang ternyata bukan laporan TDX hanya mencatat cek TCB; kalau cek itu lulus, laporan dianggap `ok` dan penandatangannya diterima. Akibatnya jawaban AI bisa ditandai "Verified" tanpa bukti TEE | `api/_nearai.test.mjs`: quote sampah → `ok=false`, `signer=null` | **Fixed** `34b723e`: fail closed (tanpa TD report, tidak ada cek yang lolos), signer hanya dikembalikan kalau report data mengikatnya |
 | R5-2 | Verifikasi TEE NEAR AI | Sedang | Bukti GPU (NVIDIA NRAS) diperiksa tapi tidak ikut menentukan status "verified" | review kode | **Fixed** `34b723e`: model dihitung hanya kalau TDX **dan** GPU lulus |
 | R5-3 | Holder room (`api/_holder.mjs`, padanan SIWE) | Sedang | Nonce NEP-413 tidak sekali pakai. Tanda tangan yang tersadap (XSS di tab lain, ekstensi jahat, log proxy) bisa membuka holder room lagi selama ≤ 5 menit | `api/_holder.test.mjs`: nonce yang sama ditolak di dalam jendela | **Fixed** (putaran ini): nonce dicatat setelah tanda tangan terverifikasi, berlaku sampai tanda tangan kedaluwarsa. Sisa: per instance serverless (lihat known issues) |
+| R5-3b | Holder room (perbaikan R5-3) | Sedang | Decoder base64 Node longgar: ejaan lain dari nonce yang sama (spasi, tanpa padding, huruf url-safe) lolos dari pengecekan berbasis string | `api/_holder.test.mjs` (varian ejaan) | **Fixed** `e282809`: hanya base64 kanonik yang diterima, dan catatan replay memakai byte nonce |
 | R5-4 | Sealed files (CKD) | Sedang | Kunci file mengikuti *path* surat yang sedang berlaku; pemegang lama yang pernah membuka room bisa menyimpan kunci itu dan membuka file yang disegel setelah NFT dijual | review keamanan otomatis | **Fixed (UI)** `204f1cb`: halaman menyebut pembuat kunci, memperingatkan kalau bukan pemegang sekarang, dan meminta segel surat baru (memutar kunci MPC). Kontrak final, jadi pemutaran otomatis saat transfer tidak mungkin |
 | R5-5 | Appraisal AI (integritas tampilan) | Rendah | LLM salah hitung ("21.5% discount" padahal 78.5% di bawah nilai) | appraisal live #4 | **Fixed** `7ef6ffe`: persentase dan LTV dihitung server, model hanya mengutip; live #10 benar ("67.7% below") |
 | R5-6 | `/api/appraise` (biaya) | Rendah | Pemanggilan berulang menghabiskan kredit NEAR AI | `live.spec` "refuses bad ids before spending anything" | **Mitigated**: id divalidasi (400) dan dicek ada (404) sebelum model dipanggil; cache 15 menit per status token; maks 60/jam per instance; ±$0,0002 per appraisal |
@@ -63,6 +64,14 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 | Rate limiting | relayer: 1 bukti/menit/token, dedupe in-flight, still_here 1/jam, 429 → klien membayar gas sendiri. Vercel Firewall (live 8 Nov): 20 POST/menit/IP ke `/api/prove` + `/api/relay`, lalu 429 — diuji: 20× 400 lalu 5× 429 |
 | Approval tersembunyi | tidak ada ERC-20 approve; transaksi EVM dibangun kontrak (transfer saja), detail ditampilkan sebelum tanda tangan |
 | MCP agen | batas belanja per sesi, outflow mati default, allowlist penerima, elicitation (persetujuan manusia) sebelum belanja |
+
+## Catatan verifikasi
+Run GitHub Actions untuk commit putaran ini tidak dimulai karena kuota menit Actions repo private habis atau batas belanja tercapai, jadi bukan karena kegagalan kode. Verifikasinya dijalankan lokal:
+- `cargo test` (246) dan unit Node;
+- `node api/_nearai.test.mjs` dan `node api/_holder.test.mjs`;
+- 11 tes `live.spec` yang relevan, terhadap produksi.
+
+CI kembali jalan otomatis setelah repo dibuka public (menit Actions gratis) atau batas belanja dinaikkan.
 
 ## Known issues (belum di-fix, dengan alasan)
 1. **CSP `script-src` penuh tidak dipasang.** `@hot-labs/near-connect` menjalankan kode wallet di iframe `srcdoc`, yang mewarisi CSP halaman induk, sehingga CSP ketat mematikan semua wallet. Yang terpasang: `frame-ancestors 'none'` + XFO DENY. Permukaan XSS-nya kecil: React tanpa `dangerouslySetInnerHTML` dari input pengguna (QR SVG dibuat dari alamat turunan kontrak).
