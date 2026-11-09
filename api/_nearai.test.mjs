@@ -22,6 +22,11 @@ assert.ok(!all(await checkSignature(null, ctx)));                               
 assert.ok(!all(await checkSignature(await sig(tee), { ...ctx, verifiedSigners: [tee.address.toLowerCase(), tee.address.toLowerCase()] }))); // ambiguous
 console.log("response signatures: accepted only from the one attested model key over our exact bytes");
 
+const { verifyNearReport } = await import("./_nearai.mjs");
+const junk = await verifyNearReport({ intel_quote: "00".repeat(100), signing_address: tee.address, signing_algo: "ecdsa", request_nonce: "00".repeat(32) }, "00".repeat(32));
+assert.equal(junk.ok, false); assert.equal(junk.signer, null); // fail closed: no verified TD report, no signer
+console.log("a quote that doesn't verify yields no signer");
+
 const a = await attest();
 for (const [name, r] of [["gateway", a.gateway], ...a.models.map((m, i) => [`model ${i}`, m])]) {
   for (const c of r.checks) console.log(`  ${c.ok ? "✓" : "✗"} ${name}: ${c.what}`);
@@ -29,4 +34,5 @@ for (const [name, r] of [["gateway", a.gateway], ...a.models.map((m, i) => [`mod
 }
 assert.ok(a.models.length > 0, "no model attestation returned");
 for (const m of a.models) { console.log(`  ${m.gpu.ok ? "✓" : "✗"} ${m.gpu.what}`); assert.ok(m.gpu.ok); }
+for (const w of [a.gateway, ...a.models].flatMap((r) => r.warnings)) console.log(`  ! ${w}`);
 console.log(`NEAR AI Cloud ${NEARAI_MODEL}: gateway and ${a.models.length} model report(s) verified for nonce ${a.nonce.slice(0, 12)}…`);

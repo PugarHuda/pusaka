@@ -381,6 +381,7 @@ export function Appraisal({ id }) {
             <ul className="checks">{evidence.map((c, i) => (
               <li key={i} className={c.ok ? "ok" : "bad"}><span aria-hidden="true">{c.ok ? "✓" : "✗"}</span> {c.what}</li>
             ))}</ul>
+            {[res.attestation.gateway, ...res.attestation.models].flatMap((r) => r.warnings ?? []).map((w, i) => <p key={i} className="warn"><small>Provenance note: {w}</small></p>)}
             <p className="muted"><small>Nonce {res.attestation.nonce} · request sha256 {res.request_sha256.slice(0, 16)}… · response sha256 {res.response_sha256.slice(0, 16)}… · signer {res.signature?.signer ?? "none"}</small></p>
           </details>
         </>}

@@ -374,6 +374,14 @@ trust (`api/_nearai.mjs`, `api/appraise.mjs`), following NEAR AI's verification 
 2. **After it**, the model TEE's signature (`/v1/signature`) must be of kind `provider_tee`, over
    `model:sha256(our exact request bytes):sha256(the exact response bytes)`, and must recover (EIP-191) to exactly one
    of the model keys verified in step 1. Anything less is shown as *not verified*, with the failing check.
+   A model counts only when both its TDX quote and its GPU evidence pass; a quote that isn't a verified TD report
+   yields no signer at all (fail closed).
+
+**Limits, shown on the page.** Provenance of the container images (were these digests built from published source?)
+is not checked: the page lists any image in the measured config that isn't a fixed `@sha256` digest. Today the model's
+config lets an environment variable replace one image (`${COMPOSE_MANAGER_IMAGE:-nearaidev/compose-manager@sha256:…}`),
+so that line appears as a provenance note. NVIDIA's GPU evidence is tied to our request by the same nonce, not by the
+TDX report data.
 
 **Verified on every CI run (no key needed):** `node api/_nearai.test.mjs` verifies the live gateway and
 `Qwen/Qwen3.8-27B` attestations end to end (quote, nonce and signer binding, config, RTMR3, GPU) and checks that the

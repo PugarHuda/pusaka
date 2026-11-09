@@ -43,20 +43,31 @@ export async function verifyNearReport(report, nonceHex) {
     td = v.report.asTd10() ?? v.report.asTd15()?.base ?? null;
     add(ACCEPTED_TCB.has(tcb), `Intel TDX quote verified against Intel's collateral (TCB ${tcb})`);
   } catch (e) { add(false, `Intel TDX quote verification failed: ${String(e.message ?? e).slice(0, 120)}`); }
+  let images = [], bindsSigner = false;
+  if (!td) add(false, "the quote is a TDX TD report"); // fail closed: no TD report, no other check can stand
   if (td) {
     add(!(td.tdAttributes[0] & 1), "not a debug-mode TD");
     const id = unhex(report.signing_address);
     add(report.signing_algo === "ecdsa" && id.length === 20, "signer is an ECDSA (Ethereum-style) address");
     const bound = cat(id, new Uint8Array(32 - id.length), unhex(nonceHex));
-    add(eq(td.reportData, bound), "quote's report data = this signer + our fresh nonce");
+    bindsSigner = add(eq(td.reportData, bound), "quote's report data = this signer + our fresh nonce");
     add(report.request_nonce?.toLowerCase() === nonceHex, "the report echoes our nonce");
     const compose = json(report.info?.tcb_info)?.app_compose;
     add(typeof compose === "string" && eq(td.mrConfigId, cat(Uint8Array.of(1), sha256(enc.encode(compose)), new Uint8Array(15))),
       "MRCONFIGID = sha256 of the measured app config");
+    // Image provenance is our policy to apply (docs.near.ai, image provenance). Reported, not enforced: each image in the
+    // measured config should be an immutable @sha256 digest; one that an environment variable can replace at runtime
+    // (${VAR:-default}) is listed as a warning. Sigstore provenance of the digests is not checked here.
+    const refs = [...String(compose ?? "").matchAll(/image:\s*(\$\{[^}]*\}|[^\s\\"]+)/g)].map((m) => m[1]);
+    images = refs.map((ref) => ({ ref, pinned: /^[^$]*@sha256:[0-9a-f]{64}$/.test(ref) }));
     try { add(eq(replayRtmr3(report.event_log), td.rtMr3), "event log replays to the quote's RTMR3"); }
     catch (e) { add(false, `event log: ${e.message}`); }
   }
-  return { ok: checks.length > 0 && checks.every((c) => c.ok), signer: report.signing_address?.toLowerCase(), tcb, checks };
+  const ok = !!td && checks.length >= 7 && checks.every((c) => c.ok);
+  // a signer is only returned when the quote itself binds it
+  const unpinned = images.filter((i) => !i.pinned).map((i) => i.ref);
+  const warnings = unpinned.length ? [`${unpinned.length} of ${images.length} image(s) in the measured config aren't fixed digests: ${unpinned.join(", ").slice(0, 300)}`] : [];
+  return { ok, signer: ok && bindsSigner ? report.signing_address?.toLowerCase() : null, tcb, checks, images, warnings };
 }
 
 /** NVIDIA's attestation service on the model's GPU evidence (when the report carries any). */
@@ -105,7 +116,7 @@ export async function checkSignature(sig, { model, reqBytes, resBytes, verifiedS
 export async function verifiedCompletion(messages, { apiKey = process.env.NEARAI_API_KEY, model = NEARAI_MODEL, maxTokens = 700 } = {}) {
   if (!apiKey) throw new Error("NEARAI_API_KEY is not set");
   const pre = await attest(model);
-  const verifiedModels = pre.models.filter((m) => m.ok);
+  const verifiedModels = pre.models.filter((m) => m.ok && m.gpu?.ok); // CPU TEE and GPU evidence both
   const reqBytes = enc.encode(JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.2, stream: false }));
   const r = await fetch(`${NEARAI}/chat/completions`, {
     method: "POST", body: reqBytes, signal: AbortSignal.timeout(90_000),
