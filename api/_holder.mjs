@@ -24,6 +24,18 @@ export function nep413Hash({ message, nonce, recipient }) {
  * Who is asking, proven: the signature verifies for `publicKey`, that key is a full-access key
  * of `accountId` right now, and the message is ours, for this token, and fresh. Returns accountId.
  */
+// A signed message opens the room once: its nonce is remembered until the signature would expire anyway.
+// ponytail: per serverless instance; a replay that lands on another warm instance within 5 minutes still gets in.
+// The upgrade path is a shared store (e.g. Upstash Redis SET NX with a 5-minute TTL).
+const usedNonces = new Map();
+/** True the first time a (verified) nonce is seen inside its validity window, false on a replay. */
+export function claimNonce(nonce, ts, now = Date.now()) {
+  for (const [n, exp] of usedNonces) if (exp < now) usedNonces.delete(n);
+  if (usedNonces.has(nonce)) return false;
+  usedNonces.set(nonce, ts + MAX_AGE_MS);
+  return true;
+}
+
 export async function verifyHolder(tokenId, auth, recipient) {
   const { accountId, publicKey, signature, message, nonce, at } = auth ?? {};
   if (!accountId || !publicKey?.startsWith("ed25519:") || !signature || !nonce) throw fail(400, "sign in with your NEAR wallet first");
@@ -40,6 +52,7 @@ export async function verifyHolder(tokenId, auth, recipient) {
   if (!ed25519.verify(sig, hash, base58.decode(publicKey.slice(8)))) throw fail(401, "signature doesn't match");
   const key = await provider.query({ request_type: "view_access_key", finality: "optimistic", account_id: accountId, public_key: publicKey }).catch(() => null);
   if (key?.permission !== "FullAccess") throw fail(401, `${publicKey} is not a full-access key of ${accountId}`);
+  if (!claimNonce(nonce, ts)) throw fail(401, "this signature was already used; sign in again");
   return accountId;
 }
 

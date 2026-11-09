@@ -232,6 +232,16 @@ test("security headers: the wallet page can't be framed", async ({ request }) =>
   expect(r.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(r.headers()["x-frame-options"]).toBe("DENY");
   expect(r.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(r.headers()["strict-transport-security"]).toContain("max-age=");
+  expect(r.headers()["permissions-policy"]).toContain("camera=()");
+});
+
+test("the appraisal endpoint refuses bad ids before spending anything", async ({ request }) => {
+  for (const [id, code] of [["abc", 400], ["1;drop", 400], ["", 400], ["999999", 404]]) {
+    const r = await request.get(`/api/appraise?id=${encodeURIComponent(id)}`);
+    if (r.status() === 503) test.skip(true, "no NEAR AI key on this deployment");
+    expect(r.status(), id).toBe(code);
+  }
 });
 
 test("APIs answer bad input with 4xx, never 500 or internals", async ({ request }) => {

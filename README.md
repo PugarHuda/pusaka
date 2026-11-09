@@ -347,6 +347,11 @@ BTC deposits are trusted through NEAR's Bitcoin light client. USDC deposits get 
    buyer or lender can rely on without any EVM RPC.
 
 **Verified live (4 Nov 2026):** 0.01 USDC sent to Pusaka #5 on Base Sepolia ([0xbdf0f548…](https://sepolia.basescan.org/tx/0xbdf0f54808b9950544750853392c6b83913c3dad59e240c0c057acc3164b84b7)) was proven with `node scripts/prove-usdc.mjs`, once Base finalized the block (~70 min): [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m) runs `prove_usdc_deposit` → `v1.signer-prod.testnet.verify_foreign_transaction` → `on_usdc_proven` = `true`, and `usdc_info(5)` shows 0.01 USDC verified on Base.
+**Second chain (9 Nov 2026):** 20 USDC from Circle's faucet to the same Pusaka on Arbitrum Sepolia
+([0x3875b06d…](https://sepolia.arbiscan.io/tx/0x3875b06dcbcc206f402020110dc751d6e71946f5c80a9551fbdee9d7a44a7983), log 4)
+was attested by the MPC in 7.3 s once the block was final:
+[89W2pDYE…](https://testnet.near.rocks/tx/89W2pDYEx6M1kGBZMfMgm5MhHauEQNAoQN48k5PCruzo). `usdc_info(5)` now shows
+0.01 USDC verified on Base and 20 USDC on Arbitrum.
 
 Only chains the MPC verifies count (Base and Arbitrum; Ethereum L1 isn't among them). The encoding is pinned to a live
 answer: the MPC verified a Base Sepolia USDC transfer ([BKeg9y2v…](https://testnet.near.rocks/tx/BKeg9y2vhjfYKggRj7Y5PLiFgPTsxHmE7havcxaKchk4))
@@ -386,8 +391,14 @@ TDX report data.
 **Verified on every CI run (no key needed):** `node api/_nearai.test.mjs` verifies the live gateway and
 `Qwen/Qwen3.8-27B` attestations end to end (quote, nonce and signer binding, config, RTMR3, GPU) and checks that the
 response-signature rules reject another key, other bytes, a gateway-only signature, a mismatched signer, a missing or
-an ambiguous one. The appraisal itself needs a NEAR AI Cloud key on the deployment (`NEARAI_API_KEY`). The section
-only appears once that key is set; spend is capped at 60 appraisals an hour, and answers are cached for 15 minutes.
+an ambiguous one. The appraisal itself needs a NEAR AI Cloud key on the deployment (`NEARAI_API_KEY`, set since
+9 Nov), and `live.spec` runs one verified appraisal on every CI run. Spend is capped at 60 appraisals an hour per
+instance, unknown ids are refused before the model is called, and answers are cached for 15 minutes. Percentages and
+loan-to-value are computed on the server and only quoted by the model (an early run had it miscompute a discount).
+
+**Try it:** open [#/pusaka/10](https://pusaka-two.vercel.app/#/pusaka/10) and click *Appraise this Pusaka*. **See:**
+six short lines from the facts, "Verified: N of N checks passed", and under *Evidence* each check (TDX quote, nonce
+and signer binding, config, RTMR3, GPU, the model TEE's signature over our exact bytes).
 
 ## Prices: what a lender or buyer is actually getting
 
@@ -470,6 +481,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Verifiable build (NEP-330): `contract_source_metadata` names the repo, NEP-171/177/178/181/199/297/330 and `build_info` (image `sourcescan/cargo-near:0.21.1-rust-1.96.1@sha256:86bd…`, commit `4bf36b2`); the deployed wasm is the one CI's `reproducible-wasm` job built | sha256 `ac16e80e928ba6a2f1e67fc358a8f5d8db7de83779a70514aaffdceb1bceac60`, approved by the DAO (proposal 6: 2 of 3 votes) and deployed through the timelock [67hUwJuA…](https://testnet.near.rocks/tx/67hUwJuAe98wKNAyjQeMkjD8vYe4SJHeEzzUc188x3Jf) |
 | Provenance on Bitcoin: every contract-built withdrawal ends with `OP_RETURN pusaka:<id>` | [1a22075f…](https://mempool.space/testnet/tx/1a22075fb9c04bcef4e413ba01c2c91fe1b658665a32807f24261e9dcb68e5e1): 5,000 sats from #5 to #2, change back, `OP_RETURN 707573616b613a35` = `pusaka:5` |
 | USDC attested by NEAR MPC foreign-transaction verification (Base Sepolia, finalized block) | [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m): `on_usdc_proven` true; `usdc_info(5)` verified 0.01 USDC |
+| Same, on a second chain (Arbitrum Sepolia, 20 USDC) | [89W2pDYE…](https://testnet.near.rocks/tx/89W2pDYEx6M1kGBZMfMgm5MhHauEQNAoQN48k5PCruzo): attested in 7.3 s; `usdc_info(5)` verified 20 USDC on Arbitrum |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
 | A withdrawal's change below 10,000 sats, proven for free (proposal 5) | #10 held 8,700 sats it could never count again (change of an earlier withdrawal); after the deploy its holder withdrew 1,000 ([22907ae1…](https://mempool.space/testnet/tx/22907ae13f07e4da75e7de3c89c99ae81f2f86d2d90e5380e62df3a8d67629f7)), and the public `/api/prove` proved output 1 (7,400 sats): `verified_sats` 0 → 7,400 |
 | Unit tests | 246 / 246 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |

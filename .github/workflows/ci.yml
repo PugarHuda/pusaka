@@ -69,6 +69,7 @@ jobs:
       - run: node shared/intents.test.mjs  # NEAR Intents exit quote: dry run only, refusals keep their reason
       - run: node api/_prices.test.mjs  # a price-source failure serves the last good answer, marked stale
       - run: node api/_relayer.test.mjs  # gas-free loan acceptance only when the contract would take it
+      - run: node api/_holder.test.mjs  # NEP-413 holder signatures are single use (nonce replay refused)
       - run: node api/_nearai.test.mjs  # NEAR AI Cloud: response-signature checks, then live TDX quote + nonce/signer + RTMR3 + GPU attestation (no key)
       - run: node web/src/errors.test.mjs  # contract panic codes read as sentences, unknown ones pass through
       - run: node web/src/ics.test.mjs  # calendar reminders are valid RFC 5545 (CRLF, folding, escaping, alarm)

@@ -1,6 +1,6 @@
 # Pusaka — laporan akhir (8 Nov 2026)
 
-Rincian per fase: [`reports/01-tech-lead.md`](reports/01-tech-lead.md) · [`02-strategy`](reports/02-strategy.md) · [`03-contracts`](reports/03-contracts.md) · [`04-dapp`](reports/04-dapp.md) · [`05-keamanan`](reports/05-keamanan.md) · [`06-qa`](reports/06-qa.md) · [`07-submission`](reports/07-submission.md).
+Rincian per fase: [`reports/01-tech-lead.md`](reports/01-tech-lead.md) · [`02-strategy`](reports/02-strategy.md) · [`03-contracts`](reports/03-contracts.md) · [`04-dapp`](reports/04-dapp.md) · [`05-security`](reports/05-security.md) · [`06-qa`](reports/06-qa.md) · [`07-submission`](reports/07-submission.md).
 
 ## 1. Scorecard & checklist
 HACKATHON.md tidak memberi rubrik angka; kriteria diturunkan dari Q-012, Q-017 dan brief track (`02-strategy.md`).
