@@ -3,7 +3,7 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "d6c183da958efd3fca3547b81d38c6bd58e1fd6d2d2da0196cdd05eb4e788741",
+    "wasm_sha256": "86180591a701e193045ebdec5eda3050ff601a7749f79e8fdf1d75e5db777d12",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
@@ -24,6 +24,11 @@
         "sha256": "d6c183da958efd3fca3547b81d38c6bd58e1fd6d2d2da0196cdd05eb4e788741",
         "tx": "DbaTmJfisAmDZWUd4NeUZfG4LvchNLUP6FRbLeXDMzv5",
         "how": "DAO proposal 9 + timelock: account_call callback frees only its own lock"
+      },
+      {
+        "sha256": "86180591a701e193045ebdec5eda3050ff601a7749f79e8fdf1d75e5db777d12",
+        "tx": "GLiiH86JNick5MPpyh4sHudQJPsQDuKQABvnUM2pS92c",
+        "how": "DAO proposal 10 + timelock: F8 agent budget (set_agent, agent_send, agent_of)"
       }
     ]
   },

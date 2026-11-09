@@ -146,7 +146,7 @@ export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_
   "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
-const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send"]);
+const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -597,14 +597,15 @@ reg("pusaka_withdraw_sol", {
 const V2C = IS_SIBLING ? CONTRACT : SIBLINGS[0];
 const v2view = (method, args) => { if (!V2C) throw new Error(`No Pusaka v2 on ${NETWORK}.`); return provider.callFunction({ contractId: V2C, method, args, blockQuery: { finality: "optimistic" } }); };
 reg("pusaka_token_account", {
-  description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, and whether the post-quantum (ML-DSA-65) lock is on and open.",
+  description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, whether the post-quantum (ML-DSA-65) lock is on and open, and any agent's on-chain daily budget.",
   inputSchema: { token_id: z.string() },
 }, tool(async ({ token_id }) => {
-  const [acct, alias, pq, info] = await Promise.all([v2view("account_of", { token_id }), v2view("alias_of", { token_id }), v2view("pq_key_of", { token_id }), v2view("token_info", { token_id })]);
+  const [acct, alias, pq, info, agent] = await Promise.all([v2view("account_of", { token_id }), v2view("alias_of", { token_id }), v2view("pq_key_of", { token_id }), v2view("token_info", { token_id }), v2view("agent_of", { token_id })]);
   const bal = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "final" } }).then((a) => toNear(a.amount), () => null);
   const [a, b] = await Promise.all([bal(acct), bal(alias)]);
   return { token_id, holder: info.token.owner_id, account: { id: acct, near: a, exists: a !== null }, alias: { id: alias, near: b, exists: b !== null },
     pq_lock: pq ? { on: true, open: pq.open, unlocks_used: pq.nonce, open_until_block: pq.unlocked_until_block } : { on: false },
+    agent_budget: agent ? { agent: agent.agent, daily_near: toNear(agent.daily), left_today_near: toNear(agent.left_today), only_to: agent.to.length ? agent.to : "anyone" } : null,
     can_move_now: !info.pending && !info.price_now && !info.loan && (!pq || pq.open) };
 }));
 
@@ -619,6 +620,31 @@ reg("pusaka_account_send", {
   const o = await account.callFunctionRaw({ contractId: V2C, methodName: "account_call", gas: teraToGas(300), deposit: 1n,
     args: { token_id, alias, receiver_id: receiver, method_name: "", args: "", deposit: toYocto(near).toString(), gas_tgas: 0 } });
   return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, from: await v2view(alias ? "alias_of" : "account_of", { token_id }) };
+}));
+
+reg("pusaka_set_agent", {
+  description: "Pusaka v2, holder: give an agent account an on-chain daily budget to send NEAR from the NFT's own account (at most `daily_near` per UTC day, only to `only_to` if given, up to 5). The contract enforces it, so a compromised agent loses at most a day's budget. `daily_near: 0` revokes. Ends when the NFT changes hands.",
+  inputSchema: { token_id: z.string(), agent: z.string(), daily_near: z.number().min(0), only_to: z.array(z.string()).max(5).optional() },
+}, tool(async ({ token_id, agent, daily_near, only_to = [] }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const a = agent.trim().toLowerCase();
+  if (daily_near > 0) await outflow(a, `let ${a} spend up to ${daily_near} NEAR a day from Pusaka v2 #${token_id}'s account`);
+  const o = await account.callFunctionRaw({ contractId: V2C, methodName: "set_agent", gas: teraToGas(30), deposit: toYocto(0.01),
+    args: { token_id, agent: a, daily: daily_near > 0 ? toYocto(daily_near).toString() : null, to: daily_near > 0 ? only_to.map((x) => x.trim().toLowerCase()) : [] } });
+  return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, budget: await v2view("agent_of", { token_id }) };
+}));
+
+reg("pusaka_agent_send", {
+  description: "Pusaka v2, as the holder's agent: send NEAR from the NFT's own account within the daily budget the holder set on-chain (pusaka_set_agent). The contract refuses anything over budget, to an unlisted receiver, or while the Pusaka is listed, pledged or signing.",
+  inputSchema: { token_id: z.string(), to: z.string(), near: z.number().positive() },
+}, tool(async ({ token_id, to, near }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const receiver = to.trim().toLowerCase();
+  if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
+  // ponytail: no off-chain spend guard here, the holder's on-chain budget is the guard
+  const o = await account.callFunctionRaw({ contractId: V2C, methodName: "agent_send", gas: teraToGas(100),
+    args: { token_id, receiver_id: receiver, amount: toYocto(near).toString() } });
+  return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, budget: await v2view("agent_of", { token_id }) };
 }));
 
 reg("pusaka_pq_unlock", {

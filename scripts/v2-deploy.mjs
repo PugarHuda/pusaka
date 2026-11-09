@@ -4,11 +4,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { KeyPair } from "near-api-js";
-import { CONTRACT, MPC, account, call, exists, keyFile, saveKey, view, provider } from "./lib.mjs";
+import { CONTRACT, MPC, account, call, exists, saveKey, view, provider } from "./lib.mjs";
 
 const funders = process.argv.slice(2);
 if (CONTRACT === "pusaka-btc.testnet") throw new Error("set PUSAKA_CONTRACT to the v2 account");
-const DAO = "pusaka-council.sputnikv2.testnet";
 const NEAR = (n) => BigInt(Math.round(n * 1000)) * 10n ** 21n;
 const balance = async (id) => Number(BigInt((await provider.viewAccount({ accountId: id, blockQuery: { finality: "final" } })).amount) / 10n ** 21n) / 1000;
 

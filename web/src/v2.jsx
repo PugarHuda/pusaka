@@ -63,9 +63,9 @@ function V2Token({ id, accountId }) {
     (async () => {
       const info = await view("token_info", { token_id: id });
       if (!info) return { error: `There is no Pusaka v2 #${id}.` };
-      const [acct, alias, pq] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id })]);
+      const [acct, alias, pq, ag] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }), view("agent_of", { token_id: id })]);
       const [a, b] = await Promise.all([accountOf(acct), accountOf(alias)]);
-      return { info, acct, alias, pq, a, b };
+      return { info, acct, alias, pq, ag, a, b };
     })().catch((e) => ({ error: e.message })).then((x) => live && setS(x));
     return () => { live = false; };
   }, [id, tick]);
@@ -92,7 +92,14 @@ function V2Token({ id, accountId }) {
         {s.pq.open ? <> (<strong>open now</strong>, until block {s.pq.unlocked_until_block})</> : <> (<strong>locked</strong>)</>}. Unlocks used: {s.pq.nonce}.</p>
         : <p className="muted">Off. The holder can register an ML-DSA-65 key; from then on a stolen NEAR key alone can't move or drain this Pusaka.</p>}
       <p className="muted">It guards the NEAR side. The Bitcoin, EVM and Solana keys are NEAR MPC keys, which have no post-quantum scheme yet.</p>
+      <h2>Agent budget</h2>
+      {s.ag ? <p><strong>{s.ag.agent}</strong> may send up to {near(s.ag.daily)} NEAR a day from its account
+        {s.ag.to.length ? <> to {s.ag.to.join(", ")} only</> : <> to anyone</>}; <strong>{near(s.ag.left_today)} NEAR left today</strong>.</p>
+        : <p className="muted">None. The holder can give an AI agent a daily budget from the NFT's account.</p>}
+      <p className="muted">The contract enforces the budget, not the agent's software: a hacked agent loses at most a day's budget,
+        only to the listed accounts, never while the Pusaka is for sale or pledged, and the budget ends when it changes hands.</p>
       {isOwner && <Owner id={id} s={s} owner={owner} reload={reload} />}
+      {!isOwner && s.ag && accountId === s.ag.agent && <AgentSend id={id} s={s} reload={reload} />}
       <h2>History</h2>
       <ol className="v2-history">{s.info.history.map((e, i) => <li key={i}>{e.event.kind}</li>)}</ol>
     </section>
@@ -107,6 +114,9 @@ function Owner({ id, s, owner, reload }) {
   const [useAlias, setUseAlias] = useState(false);
   const [seed, setSeed] = useState(""); // memory only, never web storage: the key file is the copy
   const [newSeed, setNewSeed] = useState(null);
+  const [agent, setAgent] = useState(s.ag?.agent ?? "");
+  const [daily, setDaily] = useState("0.05");
+  const [agentTo, setAgentTo] = useState("");
 
   async function run(label, fn) {
     setBusy(label); setMsg(null);
@@ -143,6 +153,18 @@ function Owner({ id, s, owner, reload }) {
         <label className="row"><input type="checkbox" checked={useAlias} onChange={(e) => setUseAlias(e.target.checked)} /> from the named account</label>
         <button disabled={!!busy}>{busy === "send" ? "Sending…" : "Send"}</button>
       </form>
+      <form className="stack" onSubmit={(e) => { e.preventDefault(); run("agent", async () => {
+        const off = !Number(daily);
+        const o = await tx("set_agent", { token_id: id, agent: agent.trim().toLowerCase(), daily: off ? null : yocto(daily).toString(),
+          to: off ? [] : agentTo.split(/[\s,]+/).filter(Boolean).map((x) => x.toLowerCase()) }, yocto(0.01), 30);
+        return <>{off ? "Agent budget revoked." : `${agent} may now spend up to ${daily} NEAR a day.`} {link(o.transaction.hash)}</>;
+      }); }}>
+        <h3>Give an agent a daily budget</h3>
+        <label>Agent account <input value={agent} onChange={(e) => setAgent(e.target.value)} placeholder="my-agent.testnet" required spellCheck="false" autoCapitalize="none" /></label>
+        <label>Per day <span className="row"><input type="number" min="0" step="any" value={daily} onChange={(e) => setDaily(e.target.value)} required /> NEAR (0 revokes)</span></label>
+        <label>Only to (optional, up to 5) <input value={agentTo} onChange={(e) => setAgentTo(e.target.value)} placeholder="shop.testnet, rent.testnet" spellCheck="false" autoCapitalize="none" /></label>
+        <button disabled={!!busy}>{busy === "agent" ? "Saving…" : "Save the budget (0.01 NEAR storage)"}</button>
+      </form>
       {!s.pq ? (
         <div className="stack">
           <h3>Turn on the post-quantum lock</h3>
@@ -177,5 +199,27 @@ function Owner({ id, s, owner, reload }) {
       )}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </div>
+  );
+}
+
+function AgentSend({ id, s, reload }) {
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("0.01");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  return (
+    <form className="stack actions" onSubmit={async (e) => {
+      e.preventDefault(); setBusy(true); setMsg(null);
+      try {
+        const o = await callRaw("agent_send", { token_id: id, receiver_id: to.trim().toLowerCase(), amount: yocto(amount).toString() }, { deposit: 0n, tgas: 100, receiver: V2 });
+        setMsg({ ok: true, text: <>Sent {amount} NEAR within your budget. {link(o.transaction.hash)}</> }); await reload();
+      } catch (err) { setMsg({ ok: false, text: err.message }); } finally { setBusy(false); }
+    }}>
+      <h3>You are this Pusaka's agent: send within your budget</h3>
+      <label>To <input value={to} onChange={(e) => setTo(e.target.value)} required spellCheck="false" autoCapitalize="none" /></label>
+      <label>Amount <span className="row"><input type="number" min="0.001" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} required /> NEAR</span></label>
+      <button disabled={busy}>{busy ? "Sending…" : `Send (${near(s.ag.left_today)} NEAR left today)`}</button>
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </form>
   );
 }

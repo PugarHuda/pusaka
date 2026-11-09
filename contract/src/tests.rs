@@ -3301,6 +3301,112 @@ mod v2_tests {
     }
 }
 
+// ---------- v2: an agent with an on-chain daily budget (F8) ----------
+mod f8_agent {
+    use super::*;
+
+    const DAY: u64 = 86_400_000;
+    fn at(caller: &str, deposit: NearToken, ms: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_timestamp(ms * 1_000_000).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+    /// alice lets agent.testnet send up to 10 yocto a day, to bob only.
+    fn with_agent(to: Vec<&str>) -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), DAY);
+        c.set_agent("1".into(), acc("agent.testnet"), Some(U128(10)), to.into_iter().map(acc).collect());
+        c
+    }
+    fn send(c: &mut Pusaka, who: &str, to: &str, amount: u128, ms: u64) {
+        at(who, NearToken::from_yoctonear(0), ms);
+        let _ = c.agent_send("1".into(), acc(to), U128(amount));
+        // the callback releases the in-flight lock, as on chain
+        let since = env::block_height();
+        as_contract(vec![PromiseResult::Successful(vec![])]);
+        c.on_account_call("1".into(), since);
+    }
+
+    #[test]
+    fn f8_agent_spends_within_its_budget_and_epoch_moves() {
+        let mut c = with_agent(vec!["bob.testnet"]);
+        let e = c.token_info("1".into()).unwrap().sign_epoch;
+        send(&mut c, "agent.testnet", "bob.testnet", 4, DAY + 1);
+        send(&mut c, "agent.testnet", "bob.testnet", 6, DAY + 2);
+        assert_eq!(c.token_info("1".into()).unwrap().sign_epoch, e + 2, "a buyer who looked before must look again");
+        at("bob.testnet", NearToken::from_yoctonear(0), DAY + 3);
+        assert_eq!(c.agent_of("1".into()).unwrap()["left_today"], json!("0"));
+    }
+
+    #[test]
+    #[should_panic(expected = "AgentBudget: 6 yoctoNEAR left today")]
+    fn f8_agent_cannot_overspend_its_day() {
+        let mut c = with_agent(vec![]);
+        send(&mut c, "agent.testnet", "bob.testnet", 4, DAY + 1);
+        send(&mut c, "agent.testnet", "bob.testnet", 7, DAY + 2);
+    }
+
+    #[test]
+    fn f8_budget_resets_the_next_day() {
+        let mut c = with_agent(vec![]);
+        send(&mut c, "agent.testnet", "bob.testnet", 10, DAY + 1);
+        send(&mut c, "agent.testnet", "bob.testnet", 10, 2 * DAY + 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "AgentBudget")]
+    fn f8_regranting_does_not_reset_todays_spending() {
+        let mut c = with_agent(vec![]);
+        send(&mut c, "agent.testnet", "bob.testnet", 10, DAY + 1);
+        at("alice.testnet", NearToken::from_yoctonear(0), DAY + 2);
+        c.set_agent("1".into(), acc("agent.testnet"), None, vec![]);
+        at("alice.testnet", NearToken::from_millinear(10), DAY + 3);
+        c.set_agent("1".into(), acc("agent.testnet"), Some(U128(10)), vec![]);
+        send(&mut c, "agent.testnet", "bob.testnet", 1, DAY + 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "AgentReceiver")]
+    fn f8_agent_pays_only_listed_receivers() {
+        let mut c = with_agent(vec!["bob.testnet"]);
+        send(&mut c, "agent.testnet", "mallory.testnet", 1, DAY + 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "NotAgent")]
+    fn f8_stranger_is_not_the_agent() {
+        let mut c = with_agent(vec![]);
+        send(&mut c, "mallory.testnet", "mallory.testnet", 1, DAY + 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Listed")]
+    fn f8_agent_cannot_empty_the_account_while_listed() {
+        let mut c = with_agent(vec![]);
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.list("1".into(), NearToken::from_near(5), None, None);
+        send(&mut c, "agent.testnet", "bob.testnet", 1, DAY + 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "NoAgent")]
+    fn f8_allowance_ends_when_the_nft_changes_hands() {
+        let mut c = with_agent(vec![]);
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        assert!(c.agent_of("1".into()).is_none());
+        send(&mut c, "agent.testnet", "bob.testnet", 1, DAY + 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f8_only_the_holder_grants_a_budget() {
+        let mut c = setup();
+        at("agent.testnet", NearToken::from_millinear(10), DAY);
+        c.set_agent("1".into(), acc("agent.testnet"), Some(U128(10)), vec![]);
+    }
+}
+
 mod v2_review_fixes {
     use super::*;
     use base64::Engine;

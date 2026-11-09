@@ -34,7 +34,8 @@ Scanner dijalankan ulang di semua komponen.
 | V2-4 | Callback `on_account_call` | Rendah | Callback yang datang terlambat (setelah `unlock_stale`, >600 blok) bisa melepas kunci operasi yang lebih baru | tes `a_late_callback_leaves_a_newer_lock_alone` | **Fixed**, proposal 9 (`DbaTmJfi…`): kunci ditandai block height, callback hanya melepas kuncinya sendiri |
 | V2-5 | Web `#/v2` | Rendah | Seed ML-DSA disimpan di `sessionStorage`, jadi terbaca oleh XSS di origin yang sama | review keamanan otomatis | **Fixed** `5f1b0a4`: seed hanya di memori komponen; pemegang menempel dari file kunci |
 | V2-6 | Cakupan PQ | Info | Kunci BTC/EVM/SOL (MPC secp256k1/Ed25519) dan kunci surat (CKD/BLS) belum post-quantum | dokumentasi | **Known issue**: MPC NEAR belum punya skema PQ; BIP-360 masih draft |
-| V2-7 | Kunci akses penuh `pusaka-v2.testnet` | Sedang | Selama kunci masih ada, pemiliknya bisa deploy kode tanpa DAO/timelock | `viewAccessKeyList` | **Open, menunggu keputusan user** (penghapusan tidak bisa dibatalkan) |
+| V2-7 | Kunci akses penuh `pusaka-v2.testnet` | Sedang | Selama kunci masih ada, pemiliknya bisa deploy kode tanpa DAO/timelock | `viewAccessKeyList` | **Dijadwalkan 13 Nov** (keputusan user; tidak bisa dibatalkan) |
+| V2-8 | F8: agen menghabiskan isi akun NFT, atau reset budget dengan revoke lalu grant ulang | Sedang | Kontrak membatasi per hari UTC + daftar penerima + token harus bebas; revoke menyimpan catatan pengeluaran hari itu (bug ini ditemukan tes `f8_regranting_does_not_reset_todays_spending` sebelum deploy); budget hilang saat NFT pindah tangan | 9 tes `f8_*` + 4 tolakan live di `#/refused` | **Fixed** (proposal 10) |
 
 ## Scanner: sebelum vs sesudah
 | Alat | Putaran 1 (8 Nov) | Putaran 2 (9 Nov) |
@@ -63,7 +64,7 @@ Scanner dijalankan ulang di semua komponen.
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
-PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (265 tes, termasuk fuzz dan invariant).
+PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (274 tes, termasuk fuzz dan invariant).
 
 ## Frontend / backend
 | Pemeriksaan | Hasil |
@@ -78,7 +79,7 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 
 ## Catatan verifikasi
 Run GitHub Actions untuk commit putaran ini tidak dimulai karena kuota menit Actions repo private habis atau batas belanja tercapai, jadi bukan karena kegagalan kode. Verifikasinya dijalankan lokal:
-- `cargo test` (265) dan unit Node;
+- `cargo test` (274) dan unit Node;
 - `node api/_nearai.test.mjs` dan `node api/_holder.test.mjs`;
 - 11 tes `live.spec` yang relevan, terhadap produksi.
 

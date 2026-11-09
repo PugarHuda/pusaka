@@ -78,10 +78,31 @@ pub fn assert_pq(token_id: &str, owner: &AccountId) {
     }
 }
 
-/// Every change of owner: the new holder starts without the old holder's PQ key.
+/// Every change of owner: the new holder starts without the old holder's PQ key or agent allowance.
 pub fn clear_pq(token_id: &str) {
     env::storage_remove(pq_key(token_id).as_bytes());
+    env::storage_remove(agent_key(token_id).as_bytes());
 }
+
+/// F8, an agent with a budget: the holder lets one account (an AI agent) send NEAR out of the NFT's own
+/// account, at most `daily` yoctoNEAR per UTC day and only to `to` (if non-empty). Enforced here, on-chain,
+/// not by the agent's own software: a compromised agent can lose at most a day's budget.
+#[near(serializers = [borsh])]
+struct AgentAllowance {
+    owner: AccountId,
+    agent: AccountId,
+    daily: u128,
+    to: Vec<AccountId>,
+    day: u64,
+    spent: u128,
+}
+
+fn agent_key(token_id: &str) -> String {
+    format!("agent:{token_id}")
+}
+
+const DAY_MS: u64 = 86_400_000;
+pub const MAX_AGENT_RECEIVERS: usize = 5;
 
 #[near]
 impl Pusaka {
@@ -149,9 +170,14 @@ impl Pusaka {
         self.assert_free(&token_id);
         require!(gas_tgas <= MAX_CALL_TGAS, "gas_tgas: at most 200");
         let account = if alias { self.alias_of(token_id.clone()) } else { self.account_of(token_id.clone()) };
-        self.bump_epoch(&token_id, 1);
         self.log(&token_id, Event::AccountCall { account: account.clone(), receiver: receiver_id.clone(), method: method_name.clone(), deposit });
-        let args = near_sdk::borsh::to_vec(&(receiver_id, method_name, args.0, deposit.0, gas_tgas)).unwrap();
+        self.forward(token_id, account, receiver_id, method_name, args.0, deposit.0, gas_tgas)
+    }
+
+    fn forward(&mut self, token_id: TokenId, account: AccountId, receiver_id: AccountId, method_name: String,
+               args: Vec<u8>, deposit: u128, gas_tgas: u64) -> Promise {
+        self.bump_epoch(&token_id, 1);
+        let args = near_sdk::borsh::to_vec(&(receiver_id, method_name, args, deposit, gas_tgas)).unwrap();
         // Locked until the account has acted, like a signature in flight: no sale, loan or approval can start
         // while the call is still on its way (it would land after the buyer paid).
         let since = env::block_height();
@@ -169,6 +195,63 @@ impl Pusaka {
         env::promise_result_checked(0, 4096).is_ok()
     }
 
+    // ---------- F8: an agent with an on-chain budget ----------
+
+    /// Owner: lets `agent` send NEAR from the NFT's `0s…` account, at most `daily` yoctoNEAR per UTC day,
+    /// only to `to` (empty = anyone; at most 5). `daily: None` revokes. Cleared when the NFT changes hands.
+    /// Attach ~0.01 NEAR for storage (refunded beyond cost).
+    #[payable]
+    pub fn set_agent(&mut self, token_id: TokenId, agent: AccountId, daily: Option<U128>, to: Vec<AccountId>) {
+        self.assert_owner(&token_id);
+        let owner = env::predecessor_account_id();
+        let daily = daily.map_or(0, |d| d.0); // 0 = revoked; the record stays so today's spending is kept
+        require!(daily > 0 || to.is_empty(), "to: empty when revoking");
+        require!(to.len() <= MAX_AGENT_RECEIVERS, "to: at most 5 accounts");
+        require!(agent != owner, "agent: not the holder (the holder uses account_call)");
+        let prev: Option<AgentAllowance> = raw_get::<AgentAllowance>(&agent_key(&token_id)).filter(|p| p.owner == owner);
+        if prev.is_none() {
+            charge_storage(400, 0);
+        }
+        // Revoking and re-granting (to any agent) can't reset today's budget.
+        let (day, spent) = prev.map(|p| (p.day, p.spent)).unwrap_or((0, 0));
+        raw_put(&agent_key(&token_id), &AgentAllowance { owner, agent: agent.clone(), daily, to: to.clone(), day, spent });
+        self.log(&token_id, Event::AgentSet { agent, daily: U128(daily), to });
+    }
+
+    /// The agent: sends `amount` yoctoNEAR from the NFT's `0s…` account to `receiver_id`, within today's
+    /// budget, while the token is free (no sale, loan, approval or call in flight). Bumps `sign_epoch`.
+    pub fn agent_send(&mut self, token_id: TokenId, receiver_id: AccountId, amount: U128) -> Promise {
+        let owner = self.owner_of(&token_id);
+        let mut a: AgentAllowance = raw_get(&agent_key(&token_id)).unwrap_or_else(|| env::panic_str("NoAgent"));
+        require!(a.owner == owner && a.daily > 0, "NoAgent");
+        require!(a.agent == env::predecessor_account_id(), "NotAgent");
+        require!(!in_transfer_call(&token_id), "TransferCallPending");
+        self.assert_free(&token_id);
+        require!(amount.0 > 0, "amount: more than 0");
+        require!(a.to.is_empty() || a.to.contains(&receiver_id), "AgentReceiver: not on the holder's list");
+        let today = env::block_timestamp_ms() / DAY_MS;
+        if a.day != today {
+            a.day = today;
+            a.spent = 0;
+        }
+        let spent = a.spent.saturating_add(amount.0);
+        require!(spent <= a.daily, format!("AgentBudget: {} yoctoNEAR left today", a.daily - a.spent));
+        a.spent = spent;
+        raw_put(&agent_key(&token_id), &a);
+        let account = self.account_of(token_id.clone());
+        self.log(&token_id, Event::AgentSend { agent: a.agent, receiver: receiver_id.clone(), amount, spent_today: U128(spent) });
+        self.forward(token_id, account, receiver_id, String::new(), vec![], amount.0, 5)
+    }
+
+    /// The agent allowance of the current holder, with what is left today.
+    pub fn agent_of(&self, token_id: TokenId) -> Option<Value> {
+        let owner = self.tokens.owner_by_id.get(&token_id)?;
+        raw_get::<AgentAllowance>(&agent_key(&token_id)).filter(|a| a.owner == owner && a.daily > 0).map(|a| {
+            let spent = if a.day == env::block_timestamp_ms() / DAY_MS { a.spent } else { 0 };
+            json!({ "agent": a.agent, "daily": U128(a.daily), "to": a.to, "spent_today": U128(spent), "left_today": U128(a.daily - spent) })
+        })
+    }
+
     // ---------- F6: post-quantum (ML-DSA-65) ----------
 
     /// Owner: registers (or with `None` removes) an ML-DSA-65 public key (1952 bytes). Replacing or removing
@@ -179,7 +262,7 @@ impl Pusaka {
         let owner = env::predecessor_account_id();
         match public_key {
             None => {
-                clear_pq(&token_id);
+                env::storage_remove(pq_key(&token_id).as_bytes());
                 self.log(&token_id, Event::PqKey { set: false });
             }
             Some(pk) => {

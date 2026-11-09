@@ -257,6 +257,10 @@ pub enum Event {
     PqKey { set: bool },
     /// v2: a PQ-signed unlock was verified on-chain (`env::ml_dsa_verify`); owner actions are open until `until_block`.
     PqUnlocked { nonce: U64, until_block: U64 },
+    /// v2: the holder gave an agent a daily NEAR budget from the NFT's own account (`daily` 0 = revoked).
+    AgentSet { agent: AccountId, daily: U128, to: Vec<AccountId> },
+    /// v2: the agent sent NEAR from the NFT's own account, within its budget.
+    AgentSend { agent: AccountId, receiver: AccountId, amount: U128, spent_today: U128 },
 }
 
 /// The kinds of transaction the contract signs from a Pusaka's own NEAR account.

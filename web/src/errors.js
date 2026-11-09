@@ -4,6 +4,10 @@ const SAY = {
   NotOwner: "Only the current holder of this Pusaka can do that.",
   PqLocked: "This Pusaka has a post-quantum lock: sign an unlock with its ML-DSA-65 key first.",
   PqBadSignature: "That unlock isn't signed by the post-quantum key registered for this Pusaka.",
+  NoAgent: "This Pusaka has no agent budget (none set, or the holder revoked it).",
+  AgentBudget: "That's more than the agent's budget has left today.",
+  NotAgent: "Only the agent the holder named can spend this budget.",
+  AgentReceiver: "The holder's budget only allows paying the accounts they listed.",
   NoToken: "There is no such Pusaka.",
   TokenNotFound: "There is no such Pusaka.",
   Listed: "This Pusaka is listed for sale; cancel the listing first.",
@@ -40,5 +44,5 @@ export function explain(message) {
   const code = /^[A-Z][A-Za-z]+$/.test(message) ? message : null;
   if (code && SAY[code]) return `${SAY[code]} (${code})`;
   // "claimable from 1793986788279 ms" → a date a person can read
-  return message.replace(/\b(\d{13}) ms\b/g, (_, ms) => new Date(Number(ms)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+  return message.replace(/\b(\d+) yoctoNEAR\b/g, (_, y) => `${Number(y) / 1e24} NEAR`).replace(/\b(\d{13}) ms\b/g, (_, ms) => new Date(Number(ms)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
 }

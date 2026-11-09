@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import { base64 } from "@scure/base";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
-import { CONTRACT, MINT_DEPOSIT, NEAR_EXPLORER, account, callRaw, view, provider, mintedTokenId, sleep, keyFile } from "./lib.mjs";
+import { MINT_DEPOSIT, NEAR_EXPLORER, account, callRaw, view, provider, mintedTokenId, sleep, keyFile } from "./lib.mjs";
 
 const [holder, stranger] = process.argv.slice(2);
 const NEAR = (n) => BigInt(Math.round(n * 1e6)) * 10n ** 18n;

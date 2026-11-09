@@ -1604,6 +1604,11 @@ const REFUSED = [
   { v2: true, hash: "E9G6YzUzhwzVPFaQ1RZRwCJDnttsDuyK3yd3kVnhex7d", attack: "The holder's own NEAR key acts without a post-quantum unlock (what a stolen key would try)", test: "f6_registered_key_locks_owner_actions" },
   { v2: true, hash: "6zipnudyTvxpAWbfLoommKs4TYVJnDT9trSKzib8ENFv", attack: "An unlock signed with a different ML-DSA-65 key", test: "f6_signature_for_someone_else_is_refused" },
   { v2: true, hash: "BXM1HqBGMBRT4zv8KMYcsQskid51uYpKbxwX8r8QEMh", attack: "A used post-quantum unlock replayed", test: "f6_unlock_cannot_be_replayed" },
+  // Pusaka v2: an AI agent with a daily budget the holder set on-chain
+  { v2: true, hash: "2BCCn66qkUs3DekKoKXEs5mwRX6vrtQwYTGkRtibbgiv", attack: "An AI agent tries to spend past the holder's daily budget", test: "f8_agent_cannot_overspend_its_day" },
+  { v2: true, hash: "D1UJy78qUwm5eL1qU2cP7FJ2GuD1x9E2WFA1zM1x3CZ2", attack: "An AI agent tries to pay an account the holder didn't list", test: "f8_agent_pays_only_listed_receivers" },
+  { v2: true, hash: "D9p7ALS3XJim5Jt7HhDTdrDXhJhuHwRfkNb4gcmbhSKm", attack: "A stranger poses as the holder's agent", test: "f8_stranger_is_not_the_agent" },
+  { v2: true, hash: "7fyVPGUskcnXnAE3Kmj2EVUg31DVTwtfXuucEpxGDuqo", attack: "The agent keeps spending after the holder revoked its budget", test: "f8_regranting_does_not_reset_todays_spending" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";
 const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);
