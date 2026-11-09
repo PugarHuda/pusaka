@@ -78,6 +78,7 @@ function V2Token({ id, accountId }) {
       <p><a href="#/v2">← All v2 Pusakas</a></p>
       <h1>Pusaka v2 #{id}</h1>
       <p>Held by <strong>{owner}</strong>{isOwner && " (you)"}.</p>
+      <p><a className="pill pill-soft" href={`${location.pathname}?contract=${V2}#/pusaka/${id}`}>Open #{id} in the full app: Bitcoin, sale, loans, heir</a></p>
       <h2>Its own account</h2>
       <dl className="v2-accounts">
         <dt>Account (NEP-616)</dt><dd>{acctLink(s.acct)}: {bal(s.a)}{s.a && <span className="muted"> · no access keys · code: the token-account global contract</span>}</dd>

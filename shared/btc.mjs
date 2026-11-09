@@ -58,7 +58,12 @@ const CONFIG = {
 }[NETWORK];
 if (!CONFIG) throw new Error(`unknown network ${NETWORK}`);
 
-export const CONTRACT = env("PUSAKA_CONTRACT") ?? CONFIG.contract;
+// The web app can open a known sibling deployment with ?contract=… (allowlisted, so a link can't point it at a lookalike).
+export const SIBLINGS = { testnet: ["pusaka-v2.testnet"], mainnet: [] }[NETWORK];
+const fromUrl = (() => { try { const c = new URLSearchParams(globalThis.location?.search ?? "").get("contract"); return SIBLINGS.includes(c) ? c : null; } catch { return null; } })();
+export const CONTRACT = env("PUSAKA_CONTRACT") ?? fromUrl ?? CONFIG.contract;
+export const ORIGINAL = CONFIG.contract;
+export const IS_SIBLING = CONTRACT !== ORIGINAL;
 export const MPC = CONFIG.mpc;
 export const NEAR_RPC = env("PUSAKA_NEAR_RPC") ?? CONFIG.nearRpc;
 /** FastNear first (fast), then dRPC and NEAR's own RPC when one rate-limits (429) or is down. All send CORS headers. */

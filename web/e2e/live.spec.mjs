@@ -436,3 +436,15 @@ test("Pusaka v2 shows a token's own keyless account, its name and its post-quant
   await expect(page.getByText("There is no Pusaka v2 #99999.")).toBeVisible({ timeout: 30_000 });
   expect(errors).toEqual([]);
 });
+
+test("?contract=pusaka-v2.testnet opens the whole app on Pusaka v2, and only that allowlisted sibling", async ({ page }) => {
+  const errors = errorsOf(page);
+  await page.goto("/?contract=pusaka-v2.testnet#/pusaka/5");
+  await expect(page.getByRole("note")).toContainText("Pusaka v2");
+  await expect(page.getByRole("heading", { name: "Pusaka #5" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("footer")).toContainText("pusaka-v2.testnet");
+  await expect(page.getByText(/^tb1[a-z0-9]{20,}/).first()).toBeVisible({ timeout: 30_000 }); // its own MPC-derived Bitcoin address
+  await page.goto("/?contract=evil.testnet#/");
+  await expect(page.getByRole("note")).toHaveCount(0); // not allowlisted: the original contract
+  expect(errors).toEqual([]);
+});

@@ -1,6 +1,6 @@
 import { NearConnector } from "@hot-labs/near-connect";
 import { FailoverRpcProvider, JsonRpcProvider, getTransactionLastResult } from "near-api-js";
-import { CONTRACT, NETWORK, NEAR_RPCS, nearProvider } from "@pusaka/shared";
+import { CONTRACT, IS_SIBLING, NETWORK, NEAR_RPCS, nearProvider } from "@pusaka/shared";
 import { explain } from "./errors.js";
 
 // near-api-js would retry one endpoint 12 times (~2 min of "Loading…" when FastNear rate-limits).
@@ -65,7 +65,8 @@ const GASLESS = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_
 export async function callGasless(method, args = {}) {
   const wallet = await connector.wallet();
   const fallback = async () => { await call(method, args); return { gasless: false }; };
-  if (!GASLESS.has(method) || typeof wallet.signDelegateActions !== "function") return fallback();
+  // the relayer serves the original contract only; a sibling (v2) is always paid by the wallet
+  if (IS_SIBLING || !GASLESS.has(method) || typeof wallet.signDelegateActions !== "function") return fallback();
   // The runtime manifest doesn't always advertise the feature, so just ask; wallets that
   // can't sign delegate actions throw, and we fall back. A user rejection is not retried.
   let signedDelegateActions;

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 const V2Page = lazy(() => import("./v2.jsx")); // #/v2: Pusaka v2, loaded on demand
 import {
-  CONTRACT, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
+  CONTRACT, IS_SIBLING, ORIGINAL, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity, refusals,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
@@ -204,6 +204,7 @@ export default function App() {
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
       <CommandPalette accountId={accountId} />
+      {IS_SIBLING && <p className="sibling-banner" role="note">You're using <strong>Pusaka v2</strong> (<code>{CONTRACT}</code>): same Bitcoin, sales and loans, plus <a href="#/v2">its own account and post-quantum lock</a>. Free (relayed) gas and the holder room serve the original contract. <a href={`${location.pathname}#/`}>Back to the original</a></p>}
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
@@ -744,16 +745,16 @@ function Detail({ id, accountId }) {
           </>) : (
             <p className="muted">The Bitcoin key is still being derived by the NEAR MPC network.</p>
           )}
-          <p className="badge-line">
+          {!IS_SIBLING && <p className="badge-line">
             <img src={`/api/badge?id=${id}`} alt={`Pusaka #${id}: ${btc(Number(info.verified_sats))} BTC verified`} height="22" />
             <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id})](${location.origin}/#/pusaka/${id})`} />
-          </p>
+          </p>}
           {info.btc_pubkey && <SelfCheck id={id} explorer={EXPLORER} />}
         </section>
 
         <ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />
 
-        <Appraisal id={id} />
+        {!IS_SIBLING && <Appraisal id={id} />}
 
         {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
@@ -778,7 +779,7 @@ function Detail({ id, accountId }) {
 
         <HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} />
 
-        <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />
+        {!IS_SIBLING && <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />}
 
         <section>
           <h2>History</h2>
@@ -808,12 +809,13 @@ function ProveDeposits({ t, accountId, onDone }) {
   // Proving costs the visitor nothing (the relayer pays), so start as soon as a deposit is ready.
   const auto = useRef(false);
   useEffect(() => {
-    if (todo.length && !auto.current) { auto.current = true; proveFree(true); }
+    if (todo.length && !auto.current && !IS_SIBLING) { auto.current = true; proveFree(true); }
   }, [todo.length]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!todo.length && !unconfirmed.length && !msg) return null;
   const sum = (xs) => xs.reduce((a, u) => a + u.value, 0);
 
   async function proveFree(automatic = false) {
+    if (IS_SIBLING) { setMsg({ ok: false, text: "Free proofs serve the original contract. Connect a wallet and prove from it." }); return; }
     setBusy("free"); setMsg(automatic ? { ok: true, text: "Proving the new deposit on NEAR, gas paid by Pusaka's relayer…" } : null);
     try {
       const r = await fetch("/api/prove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_id: id }) });
@@ -1610,7 +1612,7 @@ function Refused() {
   const [seen, setSeen] = useState(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    refusals(REFUSED_HERE.map((r) => r.hash), [CONTRACT, V2_CONTRACT]).then(setSeen, (e) => setSeen({ error: e.message }));
+    refusals(REFUSED_HERE.map((r) => r.hash), [ORIGINAL, V2_CONTRACT]).then(setSeen, (e) => setSeen({ error: e.message }));
   }, [attempt]);
   return (
     <section className="mine">

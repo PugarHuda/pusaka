@@ -657,3 +657,5 @@ footer p { max-width: var(--measure); margin: 0; }
 .appraisal-text p { margin: 0.25rem 0; }
 .appraisal .checks { list-style: none; padding: 0; display: grid; gap: 0.35rem; overflow-wrap: anywhere; }
 .appraisal .checks .bad { color: var(--seal); }
+
+.sibling-banner { margin: 0 auto; max-width: 1100px; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 0.92rem; }
