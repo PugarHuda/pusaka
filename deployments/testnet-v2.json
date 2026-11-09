@@ -3,12 +3,24 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "ab6d5dcf9caffbe5e5085d680667a8dcb1bbadc01983c5f4b37fb16ad4e2a29c",
+    "wasm_sha256": "4dd2473b5fdbfb801a4cc15b8ca6202346b181464d3a7239985bcf3b45fab849",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
     "upgrade_admin_tx": "7JmL7h33raNUANbExFR6QB9AofxWqCbQyDaiEQ2mUqXQ",
-    "upgrades": "DAO proposal -> propose_upgrade(sha256) -> 10-minute timelock -> apply_upgrade"
+    "upgrades": "DAO proposal -> propose_upgrade(sha256) -> 10-minute timelock -> apply_upgrade",
+    "history": [
+      {
+        "sha256": "ab6d5dcf9caffbe5e5085d680667a8dcb1bbadc01983c5f4b37fb16ad4e2a29c",
+        "tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
+        "how": "initial deploy"
+      },
+      {
+        "sha256": "4dd2473b5fdbfb801a4cc15b8ca6202346b181464d3a7239985bcf3b45fab849",
+        "tx": "C2Dgr5iW4wX41XfXFMagCgn3Jzj5jE1ji4RfYKaWC1v3",
+        "how": "DAO proposal 8 + timelock: security review fixes"
+      }
+    ]
   },
   "token_account": {
     "source": "token-account/",

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+const V2Page = lazy(() => import("./v2.jsx")); // #/v2: Pusaka v2, loaded on demand
 import {
   CONTRACT, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity, refusals,
@@ -146,6 +147,8 @@ function useRoute() {
   if (/^#\/agents\/?$/.test(hash)) return "agents";
   if (/^#\/refused\/?$/.test(hash)) return "refused";
   if (/^#\/market\/?$/.test(hash)) return "market";
+  const v2 = hash.match(/^#\/v2(?:\/(\d{1,30}))?\/?$/);
+  if (v2) return v2[1] ? `v2:${BigInt(v2[1])}` : "v2:";
   const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
   if (gift) return `gift:${gift[1]}`;
   const m = hash.match(/^#\/pusaka\/(\d{1,30})\/?$/);
@@ -158,7 +161,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId?.startsWith("v2:") ? "Pusaka v2 — the NFT owns an account" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -186,6 +189,7 @@ export default function App() {
           {accountId && <a href="#/mine" className={`nav-link${tokenId === "mine" ? " is-here" : ""}`}>Your Pusakas</a>}
           <a href="#/agents" className={`nav-link${tokenId === "agents" ? " is-here" : ""}`}>For AI agents</a>
           <a href="#/refused" className={`nav-link${tokenId === "refused" ? " is-here" : ""}`}>Refused</a>
+          {NETWORK === "testnet" && <a href="#/v2" className={`nav-link${tokenId?.startsWith("v2:") ? " is-here" : ""}`}>v2</a>}
         </nav>
         <ThemeToggle />
         {accountId ? (
@@ -206,6 +210,7 @@ export default function App() {
         : tokenId === "agents" ? <Agents />
         : tokenId === "refused" ? <Refused />
         : tokenId === "market" ? <Market accountId={accountId} />
+        : tokenId?.startsWith("v2:") ? <Suspense fallback={<section><p className="muted">Loading Pusaka v2…</p></section>}><V2Page id={tokenId.slice(3)} accountId={accountId} /></Suspense>
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>

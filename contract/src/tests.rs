@@ -3228,6 +3228,8 @@ mod v2_tests {
     fn f6_registered_key_locks_owner_actions() {
         let mut c = with_pq();
         call(&mut c, "alice.testnet"); // block 100 is the registration block: still open
+        as_contract(vec![PromiseResult::Successful(vec![])]);
+        c.on_account_call("1".into());
         at("alice.testnet", NearToken::from_yoctonear(1), 101);
         c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
     }
@@ -3295,5 +3297,62 @@ mod v2_tests {
         c.pq_unlock("1".into(), U64(2), fx("sig2"));
         c.set_pq_key("1".into(), None);
         assert!(c.pq_key_of("1".into()).is_none());
+    }
+}
+
+mod v2_review_fixes {
+    use super::*;
+    use base64::Engine;
+
+    const PQ: &str = include_str!("fixtures/pq.json");
+    fn pk() -> near_sdk::json_types::Base64VecU8 {
+        let v: Value = serde_json::from_str(PQ).unwrap();
+        base64::engine::general_purpose::STANDARD.decode(v["public_key"].as_str().unwrap()).unwrap().into()
+    }
+
+    #[test]
+    #[should_panic(expected = "SignPending")]
+    fn account_call_locks_the_token_until_its_callback() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.account_call("1".into(), false, acc("bob.testnet"), String::new(), vec![].into(), U128(5), 0);
+        assert!(c.token_info("1".into()).unwrap().pending);
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.list("1".into(), NearToken::from_near(5), None, None); // a sale can't start while it's in flight
+    }
+
+    #[test]
+    fn account_call_callback_releases_the_lock() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.account_call("1".into(), false, acc("bob.testnet"), String::new(), vec![].into(), U128(5), 0);
+        as_contract(vec![PromiseResult::Failed]);
+        assert!(!c.on_account_call("1".into()));
+        assert!(!c.token_info("1".into()).unwrap().pending);
+    }
+
+    #[test]
+    #[should_panic(expected = "Approved")]
+    fn pq_key_needs_no_standing_approvals() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_millinear(10), vec![]);
+        let _ = c.nft_approve("1".into(), acc("market.testnet"), None);
+        ctx("alice.testnet", NearToken::from_millinear(50), vec![]);
+        c.set_pq_key("1".into(), Some(pk()));
+    }
+
+    #[test]
+    fn pq_key_survives_a_returned_transfer_call() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_millinear(50), vec![]);
+        c.set_pq_key("1".into(), Some(pk()));
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.nft_transfer_call(acc("bob.testnet"), "1".into(), None, None, String::new());
+        assert!(c.pq_key_of("1".into()).is_none(), "bob isn't bound by alice's key");
+        // bob's contract returns it
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        let _ = c.nft_resolve_transfer(acc("alice.testnet"), acc("bob.testnet"), "1".into(), None);
+        assert_eq!(c.owner_of(&"1".to_string()), acc("alice.testnet"));
+        assert!(c.pq_key_of("1".into()).is_some(), "alice's lock is still on");
     }
 }

@@ -152,8 +152,19 @@ impl Pusaka {
         self.bump_epoch(&token_id, 1);
         self.log(&token_id, Event::AccountCall { account: account.clone(), receiver: receiver_id.clone(), method: method_name.clone(), deposit });
         let args = near_sdk::borsh::to_vec(&(receiver_id, method_name, args.0, deposit.0, gas_tgas)).unwrap();
-        Promise::new(account).function_call("execute".to_string(), args, NearToken::from_yoctonear(0),
-            Gas::from_tgas(gas_tgas + EXECUTE_OVERHEAD_TGAS))
+        // Locked until the account has acted, like a signature in flight: no sale, loan or approval can start
+        // while the call is still on its way (it would land after the buyer paid).
+        self.pending.insert(token_id.clone(), env::block_height());
+        Promise::new(account)
+            .function_call("execute".to_string(), args, NearToken::from_yoctonear(0), Gas::from_tgas(gas_tgas + EXECUTE_OVERHEAD_TGAS))
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).on_account_call(token_id))
+    }
+
+    /// Callback of `account_call`: releases the lock (`unlock_stale` also does, if this ran out of gas).
+    #[private]
+    pub fn on_account_call(&mut self, token_id: TokenId) -> bool {
+        self.pending.remove(&token_id);
+        env::promise_result_checked(0, 4096).is_ok()
     }
 
     // ---------- F6: post-quantum (ML-DSA-65) ----------
@@ -171,6 +182,8 @@ impl Pusaka {
             }
             Some(pk) => {
                 require!(pk.0.len() == PQ_PK_BYTES, "public_key: 1952 bytes (ML-DSA-65)");
+                // A market approved before the lock could still transfer without a PQ unlock.
+                require!(!self.has_approvals(&token_id), "Approved: call nft_revoke_all first");
                 if !env::storage_has_key(pq_key(&token_id).as_bytes()) {
                     charge_storage((PQ_PK_BYTES + 200) as u64, 0);
                 }
@@ -202,7 +215,8 @@ impl Pusaka {
 
     /// The registered PQ key (base64) with its last nonce, and whether owner actions are open right now.
     pub fn pq_key_of(&self, token_id: TokenId) -> Option<Value> {
-        raw_get::<PqKey>(&pq_key(&token_id)).map(|k| json!({
+        let owner = self.tokens.owner_by_id.get(&token_id)?;
+        raw_get::<PqKey>(&pq_key(&token_id)).filter(|k| k.owner == owner).map(|k| json!({
             "owner": k.owner, "public_key": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &k.public_key),
             "nonce": U64(k.nonce), "unlocked_until_block": U64(k.until_block),
             "open": env::block_height() <= k.until_block,

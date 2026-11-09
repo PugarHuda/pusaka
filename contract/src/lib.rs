@@ -2060,7 +2060,8 @@ impl NonFungibleTokenCore for Pusaka {
         if sender == self.owner_of(&token_id) { v2::assert_pq(&token_id, &sender); }
         let (from, approvals) = self.tokens.internal_transfer(&sender, &receiver_id, &token_id, approval_id, memo);
         clear_heir(&token_id);
-        v2::clear_pq(&token_id);
+        // v2: the PQ key is kept: if the receiver returns the token, the lock must still be on. It binds only its
+        // own holder (assert_pq checks the owner), so the receiver is never gated by it.
         raw_put(&transfer_call_key(&token_id), &());
         // A buyer or lender who looked before the call must look again (T4/T19). Nothing was
         // signed, so no approval cooldown (signed_at) is started.

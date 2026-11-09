@@ -285,6 +285,53 @@ try {
     console.log(`swap #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     console.log(await status.locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")));
   }
+  if (step === "v2") { // as holder keyFile: Pusaka v2 through the UI. Mint, create its account, fund it, send from it, PQ lock + unlock
+    const approve = async (click) => {
+      const wp = ctx.waitForEvent("page", { timeout: 60_000 });
+      await click();
+      const w = await wp; await w.waitForLoadState(); await w.waitForTimeout(4000);
+      console.log(`  wallet: ${(await w.innerText("body")).replace(/\s+/g, " ").slice(-200)}`);
+      await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+    };
+    const result = async () => {
+      const st = p.getByRole("status").last();
+      for (let i = 0; i < 90; i++) { const t = await st.innerText().catch(() => ""); if (t && !/Confirm|…$/.test(t)) return t; await p.waitForTimeout(1000); }
+      return "(no result)";
+    };
+    await p.goto("https://pusaka-two.vercel.app/#/v2");
+    await p.waitForTimeout(6000);
+    await switchTo(keyFile);
+    await approve(() => p.getByRole("button", { name: "Mint a v2 Pusaka" }).click());
+    await p.waitForURL(/#\/v2\/\d+/, { timeout: 90_000 });
+    const id = p.url().match(/#\/v2\/(\d+)/)[1];
+    console.log(`minted v2 #${id}`);
+    await p.getByText("Its own account").waitFor({ timeout: 60_000 });
+    await approve(() => p.getByRole("button", { name: /Create its account/ }).click());
+    console.log("open:", (await result()).replace(/\s+/g, " "));
+    const acct = (await p.locator(".v2-accounts dd").first().innerText()).split(":")[0].trim();
+    console.log("account:", acct);
+    // anyone can fund the NFT's account with a plain transfer; here the holder does, from Node
+    const { account } = await import("../../scripts/lib.mjs");
+    await account(keyFile).transfer({ receiverId: acct, amount: 10n ** 22n });
+    console.log("funded the account with 0.01 NEAR");
+    await p.getByLabel("To").fill(arg2 ?? "pusaka-seller.testnet");
+    await p.getByLabel(/^Amount/).fill("0.001");
+    await approve(() => p.getByRole("button", { name: "Send", exact: true }).click());
+    console.log("send:", (await result()).replace(/\s+/g, " "));
+    await p.getByRole("button", { name: "Create an ML-DSA-65 key" }).click();
+    const dl = p.waitForEvent("download");
+    await p.getByRole("link", { name: "Download the key file" }).click();
+    const file = await (await dl).path();
+    console.log("key file saved:", JSON.parse(fs.readFileSync(file, "utf8")).ml_dsa65_seed_hex.length === 64);
+    await approve(() => p.getByRole("button", { name: /register the key/ }).click());
+    console.log("pq set:", (await result()).replace(/\s+/g, " "));
+    await p.waitForTimeout(4000);
+    await p.reload(); await p.getByText("Post-quantum lock").waitFor({ timeout: 60_000 });
+    console.log("lock:", (await p.locator("section.v2 p").filter({ hasText: /^On:/ }).innerText()).replace(/\s+/g, " "));
+    await approve(() => p.getByRole("button", { name: "Sign an unlock" }).click());
+    console.log("unlock:", (await result()).replace(/\s+/g, " "));
+    console.log(await p.getByRole("status").last().locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")));
+  }
   if (step === "remind") { // as keyFile, open token arg2 and check its calendar reminders: the .ics downloads and says the right thing
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${arg2}`);
     await p.waitForTimeout(5000);

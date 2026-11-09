@@ -199,6 +199,74 @@ NEAR: nonce floor; SOL: blockhash expiry). Any signature requested after a buyer
 `DeleteKey` or a function call, so no second key can be planted. The holder room checks ownership on every request,
 so a seller's signed-in session stops working the moment the NFT moves. The full list is in the threat model below.
 
+## Pusaka v2: the NFT owns an account, has a name, and can be locked with a post-quantum key
+
+The contract above (`pusaka-btc.testnet`) is final: no keys, upgrades renounced, nobody can change it. The next
+features need new contract code, so they run in a second deployment, **[`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet)**.
+It is the same contract plus `contract/src/v2.rs`, and it can be upgraded only through the DAO
+(`pusaka-council.sputnikv2.testnet`, 2 of 3 votes) and a 10-minute timelock (`deployments/testnet-v2.json`).
+
+**The NFT owns an account (NEP-616 deterministic accounts + NEP-591 global contracts).**
+- Every v2 token has its own NEAR account, `0s…`, whose address is fixed by its content: the
+  [`token-account`](token-account/src/lib.rs) contract plus `{nft: pusaka-v2.testnet, token_id}`.
+- `account_of(token_id)` gives the address before the account exists, so anyone can fund it early. `open_account` creates it.
+- The account has **no access keys**. It runs `token-account`, which was published once as a global contract **by hash**, so
+  its code can't change. It obeys only Pusaka, and Pusaka forwards a call (`account_call`) only from the current holder.
+- `account_call` also requires the token to be free: not listed, pledged, approved or signing. So a seller can't empty
+  the account between listing and sale, the known weakness of ERC-6551 token-bound accounts.
+- Each call bumps the sign epoch, so a buyer who looked before must look again.
+- When the NFT changes hands, the same account answers to the new holder.
+
+**A name (F7).** `name_account` gives the same NFT a readable alias, `t<id>.pusaka-v2.testnet`. It runs the same
+global contract under the same rules. A real top-level name (no dot) is impossible on NEAR: only the `registrar`
+account can create names under 65 characters.
+
+**Post-quantum lock (NEP-645, ML-DSA-65).**
+- The holder can register an ML-DSA-65 public key with `set_pq_key`.
+- From then on, every owner action (transfer, approve, list, withdraw, account calls…) needs a fresh `pq_unlock`. That is a
+  signature over `pusaka-pq-unlock:<contract>:<id>:<holder>:<nonce>`, verified **on-chain by `env::ml_dsa_verify`**
+  (3.5 TGas), and it opens owner actions for about 2 minutes.
+- Nonces only go up, so an unlock can't be replayed. The key is cleared when the NFT changes hands.
+- So a NEAR key broken by a quantum computer alone can't move or drain a Pusaka.
+- What it does **not** cover: the Bitcoin, EVM and Solana keys are NEAR MPC keys (secp256k1/Ed25519), and the letter keys come
+  from CKD (BLS). NEAR's MPC network has no post-quantum scheme yet, and Bitcoin's BIP-360 (P2MR) is still a draft.
+
+**Live on testnet (`node scripts/v2-live.mjs`, Pusaka v2 #4, 9 Nov):**
+
+| Step | Transaction |
+|---|---|
+| `open_account` created `0s19e851e4c54d38d9b35f1d6714fa4826d89b4919` (global code `3xLVdgZA…`, no keys) | [8Saz4ANr…](https://testnet.near.rocks/tx/8Saz4ANrd6EdAvPBDAhmGSHXF3gRswFuAfK8WrqiHGEK) |
+| The holder had the NFT's account send 0.05 NEAR | [Cm27BpRs…](https://testnet.near.rocks/tx/Cm27BpRs25Gf9wRwCDVeeu4WKCd5N4Wuek8eLGifEH18) |
+| A stranger tried the same: `NotOwner` | [FFhaXCx2…](https://testnet.near.rocks/tx/FFhaXCx2hJGo6m4QFmdWsWqvXCa6ETQr66ZrMEGzb4LQ) |
+| `name_account` created `t4.pusaka-v2.testnet`, then it sent NEAR | [GNhGKvA4…](https://testnet.near.rocks/tx/GNhGKvA4CV46U3h8npEpNEVH2t9qbH7jK6bqVTM7WzNp), [GAa1owK5…](https://testnet.near.rocks/tx/GAa1owK5dZ79Dw3nroR9ToGRpXNbn4aJJjS3Vt7xGGKi) |
+| ML-DSA-65 key registered | [3dSmxLeD…](https://testnet.near.rocks/tx/3dSmxLeDLbcuXUF5RbszHRkp7iR2uxudHGFbHnEdHDQ7) |
+| The holder's own call without an unlock: `PqLocked` | [E9G6YzUz…](https://testnet.near.rocks/tx/E9G6YzUzhwzVPFaQ1RZRwCJDnttsDuyK3yd3kVnhex7d) |
+| An unlock signed with another ML-DSA key: `PqBadSignature` | [6zipnudy…](https://testnet.near.rocks/tx/6zipnudyTvxpAWbfLoommKs4TYVJnDT9trSKzib8ENFv) |
+| A valid unlock, verified on-chain | [H2WfjSoV…](https://testnet.near.rocks/tx/H2WfjSoVhqzA3EHyHg35Ljk88wWX3KAjxVf8ASavLdmv) |
+| The holder's call now passes | [7w6zdtPZ…](https://testnet.near.rocks/tx/7w6zdtPZ4XVmA3VXQq2fYy6JUpbtapFwKZaHv5bqunAs) |
+| The same unlock replayed: refused | [BXM1HqBG…](https://testnet.near.rocks/tx/BXM1HqBGMBRT4zv8KMYcsQskid51uYpKbxwX8r8QEMh) |
+| NFT transferred (PQ key cleared) | [AUe4rAaW…](https://testnet.near.rocks/tx/AUe4rAaW9S5dbWxACtjLWvUwEv2garpsynUwNGjYnA3C) |
+| The new holder uses the same account | [36RLmrAL…](https://testnet.near.rocks/tx/36RLmrALsb8NYmPJqeNNh5BucVb1Ud6tkCjQtWeF3y9y) |
+| The old holder tries: `NotOwner` | [FF9c2dPy…](https://testnet.near.rocks/tx/FF9c2dPyjZtXKja7VfgeGGeoee9LiwaBYE5aDezYqT8K) |
+
+Tests: 18 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`), with real ML-DSA-65 keys and signatures from
+`@noble/post-quantum` (`scripts/pq-fixture.mjs`), and 3 in `token-account/`.
+
+**Upgraded through the DAO, as designed (9 Nov).** A security review of v2 found three holes, fixed with tests:
+- a reverted `nft_transfer_call` cleared the holder's PQ key (now it stays);
+- approvals made before the PQ key could still move the token (now `set_pq_key` requires no approvals);
+- `account_call` is async, so the token could be listed while a call was in flight (now it holds the sign lock until its callback).
+
+The fixed build (sha256 `4dd2473b…fab849`) went through the upgrade path: proposal 8 on `pusaka-council.sputnikv2.testnet`
+(2 of 3 votes) announced it, and after the 10-minute timelock `apply_upgrade` deployed it
+([C2Dgr5iW…](https://testnet.near.rocks/tx/C2Dgr5iW4wX41XfXFMagCgn3Jzj5jE1ji4RfYKaWC1v3)); the account's code hash is now
+`6EnN75u5…`, the base58 of that sha256.
+
+Costs on testnet:
+- Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.
+- A token's `0s` account is a zero-balance account (203 bytes).
+- The alias needs 0.02 NEAR.
+
 ## Holder room: gated by the NFT
 
 Each Pusaka page has a holder room. Opening it asks the wallet to sign a [NEP-413](https://github.com/near/NEPs/blob/master/neps/nep-0413.md)
