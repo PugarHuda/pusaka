@@ -18,6 +18,7 @@ import {
   MPC, btcFetch, ckdEphemeral, ckdSecret, ckdKey, ckdAppId, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
+import { pqKeys, pqSign } from "@pusaka/shared/pq";
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const ACCOUNT_ID = process.env.PUSAKA_ACCOUNT_ID;
@@ -142,10 +143,10 @@ export async function inspect(token_id) {
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
-  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status"]);
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
-const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc"]);
+const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -590,6 +591,47 @@ reg("pusaka_withdraw_sol", {
   if (signed.from !== from) throw new Error(`contract signed for ${signed.from}, expected ${from}`);
   const sig = await broadcastSol(finalizeSol(signed));
   return { tx: sig, explorer: SOL.explorer(`tx/${sig}`), from };
+}));
+
+// ---------- Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet): the NFT's own account, its name, the post-quantum lock ----------
+reg("pusaka_token_account", {
+  description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, and whether the post-quantum (ML-DSA-65) lock is on and open.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const [acct, alias, pq, info] = await Promise.all([view("account_of", { token_id }), view("alias_of", { token_id }), view("pq_key_of", { token_id }), view("token_info", { token_id })]);
+  const bal = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "final" } }).then((a) => toNear(a.amount), () => null);
+  const [a, b] = await Promise.all([bal(acct), bal(alias)]);
+  return { token_id, holder: info.token.owner_id, account: { id: acct, near: a, exists: a !== null }, alias: { id: alias, near: b, exists: b !== null },
+    pq_lock: pq ? { on: true, open: pq.open, unlocks_used: pq.nonce, open_until_block: pq.unlocked_until_block } : { on: false },
+    can_move_now: !info.pending && !info.price_now && !info.loan && (!pq || pq.open) };
+}));
+
+reg("pusaka_account_send", {
+  description: "Pusaka v2: send NEAR out of the NFT's own account (or its named alias) through the contract (account_call). Only the holder, only while the Pusaka isn't listed, pledged or signing; if its post-quantum lock is on, run pusaka_pq_unlock first.",
+  inputSchema: { token_id: z.string(), to: z.string(), near: z.number().positive(), alias: z.boolean().optional() },
+}, tool(async ({ token_id, to, near, alias = false }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const receiver = to.trim().toLowerCase();
+  await outflow(receiver, `send ${near} NEAR from Pusaka v2 #${token_id}'s ${alias ? "named " : ""}account to ${receiver}`);
+  if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
+  const o = await account.callFunctionRaw({ contractId: CONTRACT, methodName: "account_call", gas: teraToGas(300), deposit: 1n,
+    args: { token_id, alias, receiver_id: receiver, method_name: "", args: "", deposit: toYocto(near).toString(), gas_tgas: 0 } });
+  return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, from: await view(alias ? "alias_of" : "account_of", { token_id }) };
+}));
+
+reg("pusaka_pq_unlock", {
+  description: "Pusaka v2: open the holder's post-quantum lock for ~2 minutes by signing the next unlock message with ML-DSA-65 (verified on-chain by ml_dsa_verify). The key comes from PUSAKA_PQ_SEED_HEX in the server's environment, never from the conversation.",
+  inputSchema: { token_id: z.string() },
+}, tool(async ({ token_id }) => {
+  const seed = process.env.PUSAKA_PQ_SEED_HEX?.trim();
+  if (!/^[0-9a-f]{64}$/i.test(seed ?? "")) throw new Error("Set PUSAKA_PQ_SEED_HEX (64 hex, the holder's key file) on the server to unlock.");
+  const k = pqKeys(Buffer.from(seed, "hex"));
+  const pq = await view("pq_key_of", { token_id });
+  if (!pq) throw new Error(`Pusaka #${token_id} has no post-quantum lock.`);
+  if (Buffer.from(k.publicKey).toString("base64") !== pq.public_key) throw new Error("PUSAKA_PQ_SEED_HEX isn't the key registered for this Pusaka.");
+  const nonce = String(Number(pq.nonce) + 1);
+  const o = await call("pq_unlock", { token_id, nonce, signature: pqSign(k.secretKey, pq.message_for_next_unlock) }, { tgas: 30 });
+  return { unlocked: true, nonce, note: "owner actions open for ~120 blocks" , result: o ?? null };
 }));
 
 reg("pusaka_withdraw_near", {
