@@ -301,20 +301,26 @@ try {
     await p.goto("https://pusaka-two.vercel.app/#/v2");
     await p.waitForTimeout(6000);
     await switchTo(keyFile);
-    await approve(() => p.getByRole("button", { name: "Mint a v2 Pusaka" }).click());
-    await p.waitForURL(/#\/v2\/\d+/, { timeout: 90_000 });
+    if (process.env.QA_V2_ID) await p.goto(`https://pusaka-two.vercel.app/#/v2/${process.env.QA_V2_ID}`); // resume a token already minted
+    else {
+      await approve(() => p.getByRole("button", { name: "Mint a v2 Pusaka" }).click());
+      await p.waitForURL(/#\/v2\/\d+/, { timeout: 90_000 });
+    }
     const id = p.url().match(/#\/v2\/(\d+)/)[1];
     console.log(`minted v2 #${id}`);
     await p.getByText("Its own account").waitFor({ timeout: 60_000 });
-    await approve(() => p.getByRole("button", { name: /Create its account/ }).click());
-    console.log("open:", (await result()).replace(/\s+/g, " "));
+    await p.waitForTimeout(3000);
+    if (await p.getByRole("button", { name: /Create its account/ }).count()) {
+      await approve(() => p.getByRole("button", { name: /Create its account/ }).click());
+      console.log("open:", (await result()).replace(/\s+/g, " "));
+    }
     const acct = (await p.locator(".v2-accounts dd").first().innerText()).split(":")[0].trim();
     console.log("account:", acct);
     // anyone can fund the NFT's account with a plain transfer; here the holder does, from Node
     const { account } = await import("../../scripts/lib.mjs");
     await account(keyFile).transfer({ receiverId: acct, amount: 10n ** 22n });
     console.log("funded the account with 0.01 NEAR");
-    await p.getByLabel("To").fill(arg2 ?? "pusaka-seller.testnet");
+    await p.getByLabel("To", { exact: true }).fill(arg2 ?? "pusaka-seller.testnet");
     await p.getByLabel(/^Amount/).fill("0.001");
     await approve(() => p.getByRole("button", { name: "Send", exact: true }).click());
     console.log("send:", (await result()).replace(/\s+/g, " "));

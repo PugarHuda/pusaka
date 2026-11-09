@@ -154,16 +154,18 @@ impl Pusaka {
         let args = near_sdk::borsh::to_vec(&(receiver_id, method_name, args.0, deposit.0, gas_tgas)).unwrap();
         // Locked until the account has acted, like a signature in flight: no sale, loan or approval can start
         // while the call is still on its way (it would land after the buyer paid).
-        self.pending.insert(token_id.clone(), env::block_height());
+        let since = env::block_height();
+        self.pending.insert(token_id.clone(), since);
         Promise::new(account)
             .function_call("execute".to_string(), args, NearToken::from_yoctonear(0), Gas::from_tgas(gas_tgas + EXECUTE_OVERHEAD_TGAS))
-            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).on_account_call(token_id))
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).on_account_call(token_id, since))
     }
 
     /// Callback of `account_call`: releases the lock (`unlock_stale` also does, if this ran out of gas).
     #[private]
-    pub fn on_account_call(&mut self, token_id: TokenId) -> bool {
-        self.pending.remove(&token_id);
+    pub fn on_account_call(&mut self, token_id: TokenId, since: u64) -> bool {
+        // only its own lock: after `unlock_stale` a newer withdrawal or call may hold this slot
+        if self.pending.get(&token_id) == Some(&since) { self.pending.remove(&token_id); }
         env::promise_result_checked(0, 4096).is_ok()
     }
 

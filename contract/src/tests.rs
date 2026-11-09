@@ -3228,8 +3228,9 @@ mod v2_tests {
     fn f6_registered_key_locks_owner_actions() {
         let mut c = with_pq();
         call(&mut c, "alice.testnet"); // block 100 is the registration block: still open
+        let since = env::block_height();
         as_contract(vec![PromiseResult::Successful(vec![])]);
-        c.on_account_call("1".into());
+        c.on_account_call("1".into(), since);
         at("alice.testnet", NearToken::from_yoctonear(1), 101);
         c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
     }
@@ -3326,9 +3327,27 @@ mod v2_review_fixes {
         let mut c = setup();
         ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
         let _ = c.account_call("1".into(), false, acc("bob.testnet"), String::new(), vec![].into(), U128(5), 0);
+        let since = env::block_height();
         as_contract(vec![PromiseResult::Failed]);
-        assert!(!c.on_account_call("1".into()));
+        assert!(!c.on_account_call("1".into(), since));
         assert!(!c.token_info("1".into()).unwrap().pending);
+    }
+
+    #[test]
+    fn a_late_callback_leaves_a_newer_lock_alone() {
+        let mut c = setup();
+        let at = |who: &str, d: NearToken, height: u64| testing_env!(VMContextBuilder::new().current_account_id(acc("pusaka.testnet"))
+            .predecessor_account_id(acc(who)).attached_deposit(d).prepaid_gas(Gas::from_tgas(300)).block_height(height).build());
+        at("alice.testnet", NearToken::from_yoctonear(1), 100);
+        let _ = c.account_call("1".into(), false, acc("bob.testnet"), String::new(), vec![].into(), U128(5), 0);
+        at("alice.testnet", NearToken::from_yoctonear(0), 700);
+        c.unlock_stale("1".into());
+        at("alice.testnet", NearToken::from_yoctonear(1), 700);
+        let _ = c.account_call("1".into(), false, acc("bob.testnet"), String::new(), vec![].into(), U128(5), 0);
+        testing_env!(VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc("pusaka.testnet"))
+            .block_height(701).build(), test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![PromiseResult::Successful(vec![])]);
+        c.on_account_call("1".into(), 100); // the first call's callback, arriving late
+        assert!(c.token_info("1".into()).unwrap().pending, "the second call is still in flight");
     }
 
     #[test]

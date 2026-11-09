@@ -9,7 +9,6 @@ import { callRaw, connector, near, provider, yocto } from "./near.js";
 export const V2 = "pusaka-v2.testnet";
 const view = (method, args = {}) => provider.callFunction({ contractId: V2, method, args, blockQuery: { finality: "optimistic" } });
 const accountOf = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "optimistic" } }).catch(() => null);
-const SEED_KEY = (id, owner) => `pusaka-v2-pq:${owner}:${id}`; // this session only: the file is the real copy
 const link = (h) => <a href={`${NEAR_EXPLORER}/tx/${h}`} target="_blank" rel="noreferrer">view transaction</a>;
 const acctLink = (a) => <a href={`${NEAR_EXPLORER}/account/${a}`} target="_blank" rel="noreferrer"><code>{a}</code></a>;
 
@@ -105,7 +104,7 @@ function Owner({ id, s, owner, reload }) {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("0.01");
   const [useAlias, setUseAlias] = useState(false);
-  const [seed, setSeed] = useState(() => { try { return sessionStorage.getItem(SEED_KEY(id, owner)) ?? ""; } catch { return ""; } });
+  const [seed, setSeed] = useState(""); // memory only, never web storage: the key file is the copy
   const [newSeed, setNewSeed] = useState(null);
 
   async function run(label, fn) {
@@ -123,7 +122,6 @@ function Owner({ id, s, owner, reload }) {
   function createKey() {
     const sd = hex.encode(crypto.getRandomValues(new Uint8Array(32)));
     setNewSeed(sd);
-    try { sessionStorage.setItem(SEED_KEY(id, owner), sd); } catch { /* the file is the copy that matters */ }
     setSeed(sd);
   }
   const download = (sd) => URL.createObjectURL(new Blob([JSON.stringify({ pusaka: V2, token_id: id, holder: owner, ml_dsa65_seed_hex: sd }, null, 2)], { type: "application/json" }));
