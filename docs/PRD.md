@@ -18,6 +18,25 @@
 > - Tambahan dari review keamanan: txid dikanonisasi + outpoint duplikat ditolak (T3b); minter/penarik membayar storage; history dibatasi 32 entri.
 > - Hasil ukur: buy ≈ 3.0 s sampai final; tanda tangan MPC 6.8–13.7 s. Status terkini ada di README.
 
+> **Status 9 Nov 2026: semua P0 dan P1 selesai, sebagian besar P2 juga.** Dokumen di bawah tetap draf 2 Nov sebagai catatan
+> rencana awal. Yang berlaku sekarang ada di README; tabel ini merangkum perbedaannya.
+>
+> | Rencana PRD | Kenyataan | Bukti |
+> |---|---|---|
+> | F1–F11 (P0): mint, alamat BTC, saldo, withdraw, listing, buy atomik, pending lock, outpoint registry, saldo aman, history, `npm run demo` | Selesai | `cargo test` (225), `live.spec` |
+> | F12 halaman terima hadiah · F13 hosted demo · F14 gambar berubah sesuai isi BTC | Selesai: Give + gift link NEP-452 · https://pusaka-two.vercel.app · SVG on-chain berisi "cairan" setinggi saldo (`contract/src/art.rs`) | README "Try it" |
+> | Bitcoin testnet4, P2PKH | **testnet3** (jaringan yang diikuti light client NEAR), **P2WPKH** (BIP143) | README "Measured on testnet" |
+> | Frontend Next.js + wallet-selector | Vite + React + `@hot-labs/near-connect` | `web/` |
+> | Non-goal: light client on-chain (UTXO dicek klien) | **Dibangun**: `prove_deposit` lewat `btc-client-v4.testnet`, `verified_sats` di kontrak | `verify.mjs` |
+> | Non-goal: NEP-178 / marketplace luar | **Dibangun**: NEP-178 + NEP-199, terjual di Mintbase testnet | tx `CCxgRJ7i…` |
+> | P2: multi-aset (ETH/SOL), kolateral lending | **Dibangun**: ETH + USDC di 3 EVM, SOL, akun NEAR sendiri, nBTC, staking; pinjaman dan pasar penawaran pinjaman | README |
+> | P2: SegWit/Taproot | SegWit ya; **Taproot tidak mungkin**: MPC NEAR belum punya Schnorr | — |
+> | P2: bayar via NEAR Intents | **Sebagian**: quote 1Click untuk keluar dari BTC (dry-run). Likuiditas 1Click hanya ada di mainnet | `shared/intents.mjs` |
+> | §8 threat model T1–T7 | Diperluas ke T1–T27, masing-masing dengan tes bernama | README "threat model" |
+> | §8.3 full access key tim di kontrak | **Dihapus**: kontrak tanpa key, upgrade di-renounce lewat DAO (8 Nov) | `verify.mjs` |
+> | §13 video ≤ 90 s | Naskah 2:15 (batas X 2:20) di `docs/reports/08-video.md`; perekaman oleh tim | — |
+> | Mainnet (non-goal) | Belum: menunggu keputusan dan dana tim (`docs/MAINNET.md`) | — |
+
 ---
 
 ## 1. Ringkasan
