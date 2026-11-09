@@ -5,9 +5,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { base58 } from "@scure/base";
-import {
-  CONTRACT, MPC, NETWORK, BTC_LIGHT_CLIENT, btcAddress, btcFetch, lightClientHeight, nearFetch,
-} from "@pusaka/shared";
+import { CONTRACT, MPC, NETWORK, BTC_LIGHT_CLIENT, lightClientHeight, nearFetch } from "@pusaka/shared";
+import { auditToken } from "@pusaka/shared/audit";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
 const README = fs.readFileSync(path.join(import.meta.dirname, "..", "README.md"), "utf8");
@@ -55,37 +54,22 @@ ok(up.renounced || (up.admin && Number(up.delay_ms) >= 600_000), "new code only 
 const tokens = await view("nft_tokens", { from_index: "0", limit: 100 });
 const lc = await lightClientHeight();
 let total = 0, utxoChecks = 0, mismatches = [], unreachable = [];
-// A Bitcoin explorer that rate-limits isn't a wrong balance: retry with backoff, then report it as unreachable.
-const btcTx = async (txid) => {
-  for (let i = 0; i < 4; i++) {
-    const tx = await btcFetch(`/tx/${txid}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    if (tx) return tx;
-    await new Promise((ok) => setTimeout(ok, 1500 * 2 ** i));
-  }
-  return null;
-};
+// The same per-token audit the web app's "Check it yourself" runs in a browser (shared/audit.mjs).
 for (const t of tokens) {
   const info = await view("token_info", { token_id: t.token_id });
   if (!info.btc_pubkey) continue;
-  const raw = base58.decode((await view("derived_public_key", { path: info.btc_path, predecessor: CONTRACT, domain_id: 0 }, MPC)).split(":")[1]);
-  const compressed = (raw[63] % 2 ? "03" : "02") + hex(raw.slice(0, 32));
-  if (compressed !== info.btc_pubkey) mismatches.push(`#${t.token_id} key`);
-  // 4. verified_sats = proven deposits never signed away, and each proven deposit is on Bitcoin, to this address
-  const signed = new Set(info.signed_outpoints.map((o) => `${o.txid}:${o.vout}`));
-  const sum = info.proven_utxos.filter((u) => !signed.has(`${u.txid}:${u.vout}`)).reduce((a, u) => a + Number(u.value), 0);
-  if (sum !== Number(info.verified_sats)) mismatches.push(`#${t.token_id} sum ${sum} ≠ ${info.verified_sats}`);
-  const addr = btcAddress(info.btc_pubkey);
-  for (const u of info.proven_utxos) {
-    const tx = await btcTx(u.txid);
-    if (!tx) { unreachable.push(`#${t.token_id} ${u.txid.slice(0, 10)}:${u.vout}`); continue; }
-    const out = tx.vout?.[u.vout];
-    if (!out || out.scriptpubkey_address !== addr || out.value !== Number(u.value) || !tx.status?.confirmed || tx.status.block_height > lc) mismatches.push(`#${t.token_id} ${u.txid.slice(0, 10)}:${u.vout}`);
+  const [key, sum, ...deposits] = await auditToken(t.token_id, { lc, info });
+  if (!key.ok) mismatches.push(`#${t.token_id} key`);
+  if (!sum.ok) mismatches.push(`#${t.token_id} sum (${sum.detail})`);
+  for (const d of deposits) {
+    if (d.ok === null) { unreachable.push(`#${t.token_id} ${d.txid.slice(0, 10)}`); continue; }
+    if (!d.ok) mismatches.push(`#${t.token_id} ${d.txid.slice(0, 10)}`);
     utxoChecks++;
   }
   total += Number(info.verified_sats);
 }
 ok(!mismatches.some((m) => m.endsWith("key")), `all ${tokens.length} Pusaka BTC keys are the MPC's derivation for ${CONTRACT}`, `signer ${MPC}`);
-ok(!mismatches.some((m) => !m.endsWith("key")) && !unreachable.length, `verified_sats = proven deposits never signed away; ${utxoChecks - unreachable.length} proven deposits found on Bitcoin, confirmed, paying the right address`,
+ok(!mismatches.some((m) => !m.endsWith("key")) && !unreachable.length, `verified_sats = proven deposits never signed away; ${utxoChecks} proven deposits found on Bitcoin, confirmed, paying the right address`,
   [mismatches.filter((m) => !m.endsWith("key")).join(", "), unreachable.length && `couldn't reach mempool.space or Blockstream for ${unreachable.join(", ")} (rate limit? run again)`].filter(Boolean).join("; ") || `light client ${BTC_LIGHT_CLIENT} at block ${lc}`);
 
 // 5. The public reserves API says the same as the contract.

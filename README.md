@@ -62,6 +62,7 @@ agent owned and governed by its members (tracks Social Money, Autonomous Busines
    Stock runs out? `node scripts/restock.mjs` mints new demo Pusakas, funds each with 10,000 sats from #1's own BTC (a real withdrawal), proves them through the light client and lists them; re-run it after a Bitcoin confirmation (it needs the demo account's key, so it is for us, not for judges).
 4. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
 5. **See the attacks it refused:** open [#/refused](https://pusaka-two.vercel.app/#/refused). **See:** 11 real transactions against `pusaka-btc.testnet` (the seller withdrawing after a sale or while listed, a front-run signature, a borrower pulling collateral, a lender seizing early, an early heir, relayer dust, early and swapped code), each one's sender, method and the contract's own panic read live from NEAR's archive, with the test that guards it.
+6. **Don't trust our page:** open any Pusaka (e.g. [#/pusaka/11](https://pusaka-two.vercel.app/#/pusaka/11)) and click *Check it yourself*. **See:** your browser asks NEAR, its MPC signer, its Bitcoin light client and Bitcoin directly (no Pusaka server) and ticks off: no full-access key on the contract, code final, the Bitcoin key is the MPC's derivation for this contract, `verified_sats` = proven deposits never signed away, and each deposit is confirmed on Bitcoin to this address. Same code as `scripts/verify.mjs` (`shared/audit.mjs`).
 
 ## Try it
 

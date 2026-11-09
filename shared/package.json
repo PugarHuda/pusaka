@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./btc.mjs",
-    "./ckd": "./ckd.mjs"
+    "./ckd": "./ckd.mjs",
+    "./audit": "./audit.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

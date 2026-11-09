@@ -21,7 +21,7 @@ Ada 81 video pesaing yang sudah ditonton (9 Nov). Nilai Demo 9 hanya didapat vid
 | 4 | Browser | Chrome profil bersih, zoom 110 %, bookmark bar disembunyikan (Ctrl+Shift+B), ekstensi lain disembunyikan kecuali wallet, notifikasi Windows dimatikan (Focus assist) |
 | 5 | Tab yang dibuka dulu (urut) | ① https://pusaka-two.vercel.app ② `…/#/pusaka/11` ③ https://mempool.space/testnet/address/tb1q09m27tfxggpl2au9dgum9wk7v9dksjeg79sx46 (alamat #11) ④ `…/#/refused` |
 | 6 | Wallet | Login ke wallet NEAR yang memegang `pusaka-w-mvzhtaw8.testnet` (Meteor/Intear) |
-| 7 | Terminal | Windows Terminal, font 18–20 pt, tema gelap, folder `pusaka`. Jalankan `node scripts/verify.mjs` sekali untuk pemanasan, lalu `cls` |
+| 7 | Terminal (opsional) | Windows Terminal, font 18–20 pt, tema gelap, folder `pusaka`. Jalankan `node scripts/verify.mjs` sekali untuk pemanasan, lalu `cls`. Adegan utamanya sekarang tombol "Check it yourself" di browser |
 | 8 | Perekam | OBS Studio (1080p30, mic dengan noise suppression), atau Win+Alt+R (Xbox Game Bar). Edit di **Clipchamp** (bawaan Windows 11), lalu tambahkan auto-captions |
 
 ## Naskah per detik
@@ -34,8 +34,8 @@ Narasi dalam bahasa Inggris (±290 kata, tempo santai). Kolom **Caption** berisi
 | 0:30–0:55 | Kembali ke ②. Klik **Connect NEAR wallet** → pilih wallet → akun `pusaka-w-mvzhtaw8.testnet`. Klik **Buy for 0.5 NEAR** → setujui di wallet → konfeti, pemilik berganti. Klik link tx → explorer NEAR Rocks | "I buy it in one NEAR transaction. The seller gets paid, and control of the Bitcoin moves to me. No bridge, no custodian, and the seller kept no key." | **One NEAR tx: NFT + its Bitcoin change hands** |
 | 0:55–1:20 | Di ②, form **Withdraw**: tempel alamat #3 `tb1q4jyg…`, amount `0.00003`, klik **Withdraw** ("Signing with NEAR MPC… about 15 s"). Potong jeda dengan label. Buka link tx Bitcoin dari pesan sukses/History, atau tab ③ (alamat #11) lalu refresh → mempool.space menampilkan tx baru dari alamat #11 | "Now only I can move it. The contract asks NEAR's MPC network to sign a real Bitcoin transaction. Here it is on Bitcoin testnet. The change goes back into the Pusaka, and can be proven again for free." | **NEAR MPC signs a real Bitcoin tx** · label: ⏩ waiting for MPC |
 | 1:20–1:42 | Tab ④ `#/refused`: gulir pelan; zoom ke kartu "seller_cannot_withdraw_after_sale" (NotOwner), klik link explorer (status Failure) | "And the old owner? These are real failed transactions on chain: a seller trying to withdraw after the sale, a buy after a secret signature, a lender claiming collateral early, new code the contract refused. Every one is guarded by a named test." | **Real attacks, refused on-chain** |
-| 1:42–1:58 | Kembali ke ②, gulir cepat: Ethereum / Base / Arbitrum (ETH + USDC), Solana, akun NEAR + staking, Heir, Ask for a loan | "The same MPC keys give every Pusaka an address on Ethereum, Base, Arbitrum and Solana, and its own NEAR account. Borrow against the Bitcoin, name an heir, stake. Everything moves with the NFT." | **One NFT, many chains: all move together** |
-| 1:58–2:12 | Terminal: `node scripts/verify.mjs`, dipercepat 2× (label), berhenti di "all checks passed" | "The contract has no access key, and its code is final: a DAO vote renounced upgrades. One command re-checks every claim against NEAR and Bitcoin, no wallet needed." | **0 keys · code final · `verify.mjs`: all checks passed** |
+| 1:42–1:58 | Kembali ke ②, gulir cepat: Ethereum / Base / Arbitrum (ETH + USDC), Solana, akun NEAR + staking, Heir, surat MPC, Ask for a loan | "The same MPC keys give every Pusaka an address on Ethereum, Base, Arbitrum and Solana, and its own NEAR account. Borrow against the Bitcoin, name an heir, seal a letter only the holder can open. Everything moves with the NFT." | **One NFT, many chains: all move together** · kecil di pojok: *only in Pusaka: light-client-proven BTC · MPC-sealed letter · MPC-verified USDC · final code* |
+| 1:58–2:12 | Masih di ②, gulir ke bawah kartu BTC → klik **Check it yourself** → daftar ✓ muncul satu per satu ("All N checks passed"). Potong jeda dengan label. Opsional 2 detik: terminal `node scripts/verify.mjs` → "all checks passed" | "Don't trust this page. One click and your own browser asks NEAR, its MPC network, its Bitcoin light client and Bitcoin: no key on the contract, code final, the key really is the MPC's, every satoshi really is on Bitcoin." | **Check it yourself: ✓ from the chains, not from us** |
 | 2:12–2:18 | End card: logo/hero, `pusaka-two.vercel.app`, `github.com/PugarHuda/pusaka`, "Built at NEAR HACKATHON · NFTs · DeFi · Open Innovation" | "Pusaka: an heirloom that carries its own Bitcoin." | URL + repo |
 
 ## Hal yang harus terlihat di layar (checklist editor)
@@ -45,7 +45,7 @@ Narasi dalam bahasa Inggris (±290 kata, tempo santai). Kolom **Caption** berisi
 - [ ] Link explorer NEAR dari tx beli
 - [ ] tx Bitcoin di mempool.space dari alamat #11
 - [ ] Minimal satu kartu `#/refused` dibuka ke explorer (status gagal)
-- [ ] Output terminal `all checks passed`
+- [ ] "Check it yourself" sampai "All N checks passed" (terminal `verify.mjs` opsional)
 - [ ] Setiap jeda yang dipotong diberi label
 
 ## Kalau ada yang meleset saat merekam
@@ -55,7 +55,7 @@ Narasi dalam bahasa Inggris (±290 kata, tempo santai). Kolom **Caption** berisi
 | Wallet menolak/timeout | Rekam ulang potongan itu saja; urutannya sengaja per segmen |
 | Withdraw lama (MPC > 1 menit) | Potong, beri label "⏩ 1 min, NEAR MPC signing" |
 | Mempool belum menampilkan tx | Refresh tab ③ beberapa detik kemudian; tx yang baru disiarkan muncul sebagai unconfirmed |
-| `verify.mjs` lambat (RPC rate limit di jaringanmu) | Rekam saat sepi, atau tampilkan run hijau di GitHub Actions (workflow CI, langkah yang menjalankan `verify.mjs`) |
+| "Check it yourself" menunjukkan "?" (explorer Bitcoin tidak menjawab) atau `verify.mjs` lambat | Klik **Check again**; jaringanmu kadang memblokir Blockstream dan memperlambat mempool.space. Kalau tetap "?", aktifkan VPN di Chrome. Cadangan: run hijau di GitHub Actions (langkah `verify.mjs`) |
 
 ## Setelah rekaman
 1. Ekspor MP4 ≤ 2:20, cek tanpa suara (subtitle terbaca?) dan di layar HP.

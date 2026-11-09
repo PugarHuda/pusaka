@@ -37,12 +37,33 @@ test("the landing page leads to the market, which lists every Pusaka with its ve
   expect(errors).toEqual([]);
 });
 
+test("the landing page counts on-chain ownership changes, none of which needed a Bitcoin transaction", async ({ page }) => {
+  await page.goto("/#/");
+  const moves = page.locator(".reserves.moves");
+  await expect(moves).toContainText(/changed hands \d+ times on NEAR \(\d+ of them sales/, { timeout: 30_000 });
+  await expect(moves).toContainText("0 Bitcoin transactions, 0 Bitcoin fees");
+});
+
 test("every Pusaka for sale says how its price compares with the verified BTC inside", async ({ page }) => {
   await page.goto("/#/market");
   const forSale = page.locator(".piece").filter({ hasText: "For sale at" }).filter({ hasNotText: "0.00000000 BTC verified" });
   await expect(forSale.first()).toBeVisible({ timeout: 30_000 });
   test.skip((await page.request.get("/api/prices")).status() !== 200, "price feed down: the comparison is hidden then, by design");
   for (const card of await forSale.all()) await expect(card.locator(".piece-vs")).toHaveText(/^\d[\d.,]*% (below|above) the BTC inside$/, { timeout: 30_000 });
+});
+
+test("'Check it yourself' re-checks a Pusaka in the browser against NEAR, its MPC, its light client and Bitcoin", async ({ page }) => {
+  test.setTimeout(150_000);
+  const errors = errorsOf(page);
+  await page.goto("/#/pusaka/11");
+  await page.getByRole("button", { name: "Check it yourself" }).click({ timeout: 30_000 });
+  const summary = page.locator(".self-check p.stats, .self-check p.error").first();
+  await expect(summary).toBeVisible({ timeout: 120_000 });
+  await expect(summary).not.toContainText("failed");
+  await expect(page.locator(".self-check li.bad")).toHaveCount(0);
+  for (const what of ["nobody holds a full-access key", "can never change", "the one NEAR's MPC derives", "verified_sats = proven deposits"])
+    await expect(page.locator(".self-check li.ok").filter({ hasText: what })).toHaveCount(1);
+  expect(errors).toEqual([]);
 });
 
 test("a Pusaka page shows proven BTC, its address, ETH and history", async ({ page }) => {

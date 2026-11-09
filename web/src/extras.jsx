@@ -294,3 +294,42 @@ export function Tilt({ children, className = "" }) {
   const reset = (e) => { for (const k of ["--rx", "--ry"]) e.currentTarget.style.setProperty(k, "0deg"); };
   return <div className={`tilt ${className}`} onPointerMove={onMove} onPointerLeave={reset}>{children}<span className="tilt-glare" aria-hidden="true" /></div>;
 }
+
+/**
+ * "Don't trust this page": re-checks the Pusaka in the visitor's own browser, straight against NEAR, its MPC
+ * signer, its Bitcoin light client and Bitcoin explorers (shared/audit.mjs, the same code as scripts/verify.mjs).
+ */
+export function SelfCheck({ id, explorer }) {
+  const [state, setState] = useState(null); // null | "running" | { checks } | { error }
+  async function run() {
+    setState("running");
+    try {
+      const { auditContract, auditToken } = await import("@pusaka/shared/audit");
+      const [contract, token] = await Promise.all([auditContract(), auditToken(id)]);
+      setState({ checks: [...contract, ...token] });
+    } catch (e) { setState({ error: e.message }); }
+  }
+  const checks = state?.checks;
+  const bad = checks?.filter((c) => c.ok === false).length ?? 0, unknown = checks?.filter((c) => c.ok === null).length ?? 0;
+  return (
+    <div className="self-check">
+      <button type="button" className="ghost" onClick={run} disabled={state === "running"}>
+        {state === "running" ? "Checking against NEAR and Bitcoin…" : checks ? "Check again" : "Check it yourself"}
+      </button>
+      <span className="muted"> Your browser asks NEAR, its MPC signer, its Bitcoin light client and Bitcoin directly. No Pusaka server in between.</span>
+      <div aria-live="polite">
+        {state?.error && <p className="error" role="alert">Couldn't finish: {state.error} <button type="button" onClick={run}>Try again</button></p>}
+        {checks && <>
+          <p className={bad ? "error" : "stats"}>{bad ? `${bad} check(s) failed` : unknown ? `${checks.length - unknown} of ${checks.length} checks passed; ${unknown} source(s) didn't answer` : `All ${checks.length} checks passed`}</p>
+          <ul className="checks">{checks.map((c, i) => (
+            <li key={i} className={c.ok ? "ok" : c.ok === null ? "unknown" : "bad"}>
+              <span aria-hidden="true">{c.ok ? "✓" : c.ok === null ? "?" : "✗"}</span>{" "}
+              <strong>{c.what}</strong>
+              <small>{c.detail}{c.txid && <> · <a href={`${explorer}/tx/${c.txid}`} target="_blank" rel="noreferrer">tx</a></>}</small>
+            </li>
+          ))}</ul>
+        </>}
+      </div>
+    </div>
+  );
+}

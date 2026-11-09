@@ -11,7 +11,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
-import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt } from "./extras.jsx";
+import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt, SelfCheck } from "./extras.jsx";
 import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
@@ -340,6 +340,10 @@ function Home() {
   const px = usePrices();
   const now = useNow(60_000);
   const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
+  // ownership changes recorded on-chain: each moved the Bitcoin inside with no Bitcoin transaction at all
+  // (a token keeps its last 32 history entries, so this is a floor)
+  const moves = tokens?.flatMap((t) => t.info.history.filter((h) => ["Sale", "Transfer", "Inherited"].includes(h.event.kind)));
+  const sales = moves?.filter((h) => h.event.kind === "Sale").length;
   return (
     <>
       <div className="fold">
@@ -365,6 +369,13 @@ function Home() {
           <strong>{btc(sats)} BTC</strong> verified on NEAR across {tokens.length} Pusaka
           {px && <> (about {usd(sats / 1e8 * px.btcUsd)})</>}. Every satoshi is proven by NEAR's Bitcoin light client,
           not reported by us.
+        </p>
+      )}
+      {moves?.length > 0 && (
+        <p className="reserves moves">
+          Pusakas have changed hands <strong>{moves.length} times</strong> on NEAR ({sales} of them sales; the others
+          gifts, transfers and inheritances). Each time the Bitcoin inside went with it in one NEAR transaction:
+          <strong> 0 Bitcoin transactions, 0 Bitcoin fees</strong>, no confirmations to wait for.
         </p>
       )}
 
@@ -732,6 +743,7 @@ function Detail({ id, accountId }) {
             <img src={`/api/badge?id=${id}`} alt={`Pusaka #${id}: ${btc(Number(info.verified_sats))} BTC verified`} height="22" />
             <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id})](${location.origin}/#/pusaka/${id})`} />
           </p>
+          {info.btc_pubkey && <SelfCheck id={id} explorer={EXPLORER} />}
         </section>
 
         <ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />

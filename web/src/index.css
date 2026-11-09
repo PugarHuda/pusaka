@@ -642,3 +642,9 @@ footer p { max-width: var(--measure); margin: 0; }
 .confetti i { position: absolute; left: 50%; top: 38%; width: 9px; height: 13px; border-radius: 2px; animation: burst 1.9s cubic-bezier(0.15, 0.6, 0.3, 1) forwards; }
 @keyframes burst { 0% { transform: translate(0, 0) rotate(0); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 0; } }
 .bell-title { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; justify-content: space-between; }
+
+.self-check { margin-top: 1rem; }
+.self-check .checks { list-style: none; padding: 0; margin: 0.6rem 0 0; display: grid; gap: 0.5rem; }
+.self-check .checks li { overflow-wrap: anywhere; }
+.self-check .checks small { display: block; color: var(--ink-soft); }
+.self-check .checks .bad strong { color: var(--seal); }
