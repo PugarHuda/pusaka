@@ -11,7 +11,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
-import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt, SelfCheck } from "./extras.jsx";
+import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt, SelfCheck, Appraisal } from "./extras.jsx";
 import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
@@ -747,6 +747,8 @@ function Detail({ id, accountId }) {
         </section>
 
         <ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />
+
+        <Appraisal id={id} />
 
         {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
         {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}

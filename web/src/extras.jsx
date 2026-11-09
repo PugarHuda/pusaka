@@ -333,3 +333,58 @@ export function SelfCheck({ id, explorer }) {
     </div>
   );
 }
+
+/**
+ * A short appraisal from a model running in a NEAR AI Cloud TEE (/api/appraise), shown with its evidence: the
+ * gateway and model attestations verified for a fresh nonce, and the model TEE's signature over the exact bytes.
+ * Rendered only when the deployment has a NEAR AI key; nothing is shown in its place otherwise.
+ */
+export function Appraisal({ id }) {
+  const [on, setOn] = useState(false);
+  const [state, setState] = useState(null); // null | "running" | result | { error }
+  useEffect(() => {
+    let live = true;
+    fetch("/api/appraise?status=1").then((r) => (r.ok ? r.json() : null)).then((s) => live && setOn(!!s?.configured)).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  if (!on) return null;
+  async function run() {
+    setState("running");
+    try {
+      const r = await fetch(`/api/appraise?id=${id}`);
+      const body = await r.json();
+      setState(r.ok ? body : { error: body.error ?? `HTTP ${r.status}` });
+    } catch (e) { setState({ error: e.message }); }
+  }
+  const res = state && state !== "running" && !state.error ? state : null;
+  const evidence = res && [
+    ...res.attestation.gateway.checks.map((c) => ({ ...c, what: `gateway: ${c.what}` })),
+    ...res.attestation.models.flatMap((m) => [...m.checks.map((c) => ({ ...c, what: `model: ${c.what}` })), m.gpu]),
+    ...res.checks.map((c) => ({ ...c, what: `response: ${c.what}` })),
+  ];
+  return (
+    <section className="appraisal" aria-labelledby={`appraisal-${id}`}>
+      <h2 id={`appraisal-${id}`}>Private AI appraisal</h2>
+      <p className="muted">Written from this Pusaka's on-chain facts by a model running inside a NEAR AI Cloud TEE. The page checks the hardware attestation and the model's signature over the exact request and answer, and shows each check.</p>
+      <button type="button" className="ghost" onClick={run} disabled={state === "running"}>
+        {state === "running" ? "Attesting the TEE, then asking the model…" : res ? "Appraise again" : "Appraise this Pusaka"}
+      </button>
+      <div aria-live="polite">
+        {state?.error && <p className="error" role="alert">{state.error}</p>}
+        {res && <>
+          <div className="appraisal-text">{res.text.split("\n").filter(Boolean).map((l, i) => <p key={i}>{l}</p>)}</div>
+          <p className={res.verified ? "stats" : "warn"}>
+            {res.verified ? `Verified: ${evidence.filter((c) => c.ok).length} of ${evidence.length} checks passed` : `Not verified: ${evidence.filter((c) => !c.ok).length} check(s) failed. Treat this text as unverified.`}
+            {" "}· {res.model}{res.cached ? " · from the last 15 min" : ""}
+          </p>
+          <details><summary>Evidence</summary>
+            <ul className="checks">{evidence.map((c, i) => (
+              <li key={i} className={c.ok ? "ok" : "bad"}><span aria-hidden="true">{c.ok ? "✓" : "✗"}</span> {c.what}</li>
+            ))}</ul>
+            <p className="muted"><small>Nonce {res.attestation.nonce} · request sha256 {res.request_sha256.slice(0, 16)}… · response sha256 {res.response_sha256.slice(0, 16)}… · signer {res.signature?.signer ?? "none"}</small></p>
+          </details>
+        </>}
+      </div>
+    </section>
+  );
+}

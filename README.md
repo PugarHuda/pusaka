@@ -361,6 +361,26 @@ existed. Try: `node scripts/prove-usdc.mjs <payer.testnet> <token_id>`; the rela
 **How it was deployed:** CI builds the image (`.github/workflows/shade-image.yml`, actions pinned by SHA) and the agent-contract wasm. `shade deploy` (CLI 2.4.0) deployed the contract and approved the PPIDs. The CLI only knows how to measure dstack 0.5.7/0.5.8, and Phala has disabled both images, so `node shade/deploy-tee.mjs` deploys on dstack 0.5.12 instead. It computes the app-compose hash locally, as the CLI does, and checks it against the enclave's event log; it reads only the OS/firmware RTMRs from the running enclave's quote, then approves the result.
 **Limits:** taking the RTMRs from the quote trusts Phala's 0.5.12 image on first use rather than recomputing it from a reproducible build. The image is built non-reproducibly. The agent contract's owner key (`pusaka-shade.testnet`) is not deleted.
 
+## Private AI appraisal (NEAR AI Cloud, verified TEE)
+
+A Pusaka page can ask a model running in a NEAR AI Cloud TEE for a short appraisal written only from the token's
+on-chain facts (verified sats, listing, loan, approvals, history), and it shows the evidence instead of asking for
+trust (`api/_nearai.mjs`, `api/appraise.mjs`), following NEAR AI's verification guide:
+
+1. **Before the request**, the server fetches the gateway's and the model's attestation for a fresh 32-byte nonce and
+   verifies each Intel TDX quote with Phala's `dcap-qvl` against Intel's collateral (TCB status accepted, not a debug TD).
+   Its report data must be the signing address followed by our nonce. MRCONFIGID must be the sha256 of the measured
+   app config, and the event log must replay to the quote's RTMR3. NVIDIA's NRAS must pass the model's GPU evidence.
+2. **After it**, the model TEE's signature (`/v1/signature`) must be of kind `provider_tee`, over
+   `model:sha256(our exact request bytes):sha256(the exact response bytes)`, and must recover (EIP-191) to exactly one
+   of the model keys verified in step 1. Anything less is shown as *not verified*, with the failing check.
+
+**Verified on every CI run (no key needed):** `node api/_nearai.test.mjs` verifies the live gateway and
+`Qwen/Qwen3.8-27B` attestations end to end (quote, nonce and signer binding, config, RTMR3, GPU) and checks that the
+response-signature rules reject another key, other bytes, a gateway-only signature, a mismatched signer, a missing or
+an ambiguous one. The appraisal itself needs a NEAR AI Cloud key on the deployment (`NEARAI_API_KEY`). The section
+only appears once that key is set; spend is capped at 60 appraisals an hour, and answers are cached for 15 minutes.
+
 ## Prices: what a lender or buyer is actually getting
 
 The web app values collateral and listings with live market data: BTC/USD from mempool.space, NEAR (and ETH) from Rhea/Ref, i.e. NEAR DEX prices. A loan shows its loan-to-value and annualised interest; a listing shows how far above or below the BTC's value it is priced. NEAR's on-chain oracles (`pyth-oracle.near`, `pyth-oracle.testnet`, `priceoracle.near`) were all stale when we checked, so the contract doesn't depend on a price; the numbers are labelled as mainnet prices. (Re-checked 4 Nov 2026: `pyth-oracle.testnet` last published in June, `priceoracle.near` returns no prices, and Pyth's Hermes now needs a paid API key.) Each price is cross-checked against CoinGecko: if BTC, NEAR or ETH differ by more than 5% the API answers an error, and the MCP agent's `pusaka_fund_loan` refuses to fund on a single source.
