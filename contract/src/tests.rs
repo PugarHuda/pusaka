@@ -3138,3 +3138,162 @@ fn cv7_code_hash_must_be_a_sha256() {
     at("admin.testnet", NearToken::from_yoctonear(0), 0);
     c.propose_upgrade("zz".repeat(32), None);
 }
+
+// ---------- v2: the NFT's own account (F5/F7) and post-quantum unlocks (F6) ----------
+mod v2_tests {
+    use super::*;
+    use base64::Engine;
+    use near_sdk::json_types::Base64VecU8;
+
+    const PQ: &str = include_str!("fixtures/pq.json");
+    fn fx(k: &str) -> Base64VecU8 {
+        let v: Value = serde_json::from_str(PQ).unwrap();
+        base64::engine::general_purpose::STANDARD.decode(v[k].as_str().unwrap()).unwrap().into()
+    }
+    fn at(caller: &str, deposit: NearToken, height: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_height(height).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+    fn call(c: &mut Pusaka, who: &str) {
+        at(who, NearToken::from_yoctonear(1), 100);
+        let _ = c.account_call("1".into(), false, acc("bob.testnet"), String::new(), vec![].into(), U128(5), 0);
+    }
+
+    #[test]
+    fn f5_account_is_deterministic_per_token() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_near(1), 1);
+        let _ = c.nft_mint(None);
+        let (a1, a2) = (c.account_of("1".into()), c.account_of("2".into()));
+        assert!(a1.as_str().starts_with("0s") && a1.as_str().len() == 42, "{a1}");
+        assert_ne!(a1, a2);
+        assert_eq!(a1, c.account_of("1".into()));
+        assert_eq!(c.alias_of("1".into()).as_str(), "t1.pusaka.testnet");
+        assert_eq!(c.token_account_code()["bytes"].as_u64().unwrap() as usize, v2::TOKEN_ACCOUNT_CODE.len());
+    }
+
+    #[test]
+    fn f5_holder_calls_through_the_account_and_epoch_moves() {
+        let mut c = setup();
+        let e = c.token_info("1".into()).unwrap().sign_epoch;
+        call(&mut c, "alice.testnet");
+        assert_eq!(c.token_info("1".into()).unwrap().sign_epoch, e + 1, "a buyer who looked before must look again");
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f5_stranger_cannot_use_the_account() {
+        let mut c = setup();
+        call(&mut c, "bob.testnet");
+    }
+
+    #[test]
+    #[should_panic(expected = "Listed")]
+    fn f5_seller_cannot_empty_the_account_while_listed() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.list("1".into(), NearToken::from_near(5), None, None);
+        call(&mut c, "alice.testnet");
+    }
+
+    #[test]
+    fn f5_new_holder_controls_the_same_account() {
+        let mut c = setup();
+        let a = c.account_of("1".into());
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        assert_eq!(c.account_of("1".into()), a);
+        call(&mut c, "bob.testnet");
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f5_old_holder_loses_the_account_on_transfer() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        call(&mut c, "alice.testnet");
+    }
+
+    fn with_pq() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(50), 100);
+        c.set_pq_key("1".into(), Some(fx("public_key")));
+        c
+    }
+
+    #[test]
+    #[should_panic(expected = "PqLocked")]
+    fn f6_registered_key_locks_owner_actions() {
+        let mut c = with_pq();
+        call(&mut c, "alice.testnet"); // block 100 is the registration block: still open
+        at("alice.testnet", NearToken::from_yoctonear(1), 101);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    }
+
+    #[test]
+    fn f6_pq_signed_unlock_opens_owner_actions_for_a_window() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 200);
+        assert_eq!(c.pq_unlock("1".into(), U64(1), fx("sig1")).0, 200 + v2::PQ_WINDOW_BLOCKS);
+        at("alice.testnet", NearToken::from_yoctonear(1), 200 + v2::PQ_WINDOW_BLOCKS);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        assert!(c.pq_key_of("1".into()).is_none(), "the next holder starts without it");
+        call(&mut c, "bob.testnet");
+    }
+
+    #[test]
+    #[should_panic(expected = "PqLocked")]
+    fn f6_unlock_expires() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 200);
+        c.pq_unlock("1".into(), U64(1), fx("sig1"));
+        at("alice.testnet", NearToken::from_yoctonear(1), 201 + v2::PQ_WINDOW_BLOCKS);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "nonce must be higher")]
+    fn f6_unlock_cannot_be_replayed() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 200);
+        c.pq_unlock("1".into(), U64(1), fx("sig1"));
+        c.pq_unlock("1".into(), U64(1), fx("sig1"));
+    }
+
+    #[test]
+    #[should_panic(expected = "PqBadSignature")]
+    fn f6_signature_for_someone_else_is_refused() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 200);
+        c.pq_unlock("1".into(), U64(1), fx("sig1_bob"));
+    }
+
+    #[test]
+    #[should_panic(expected = "PqBadSignature")]
+    fn f6_signature_for_another_nonce_is_refused() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 200);
+        c.pq_unlock("1".into(), U64(1), fx("sig2"));
+    }
+
+    #[test]
+    #[should_panic(expected = "PqLocked")]
+    fn f6_removing_the_key_needs_an_unlock() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 300);
+        c.set_pq_key("1".into(), None);
+    }
+
+    #[test]
+    fn f6_second_unlock_with_next_nonce() {
+        let mut c = with_pq();
+        at("alice.testnet", NearToken::from_yoctonear(0), 200);
+        c.pq_unlock("1".into(), U64(1), fx("sig1"));
+        at("alice.testnet", NearToken::from_yoctonear(0), 900);
+        c.pq_unlock("1".into(), U64(2), fx("sig2"));
+        c.set_pq_key("1".into(), None);
+        assert!(c.pq_key_of("1".into()).is_none());
+    }
+}

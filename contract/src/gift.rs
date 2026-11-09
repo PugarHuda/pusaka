@@ -155,6 +155,7 @@ impl Pusaka {
         self.end_gift(&token_id);
         self.tokens.internal_transfer(&from, &account_id, &token_id, None, None);
         clear_heir(&token_id);
+        crate::v2::clear_pq(&token_id);
         self.log(&token_id, Event::Transfer { from, to: account_id });
         true
     }
@@ -190,6 +191,7 @@ impl Pusaka {
         self.end_gift(&token_id);
         self.tokens.internal_transfer(&g.from, &to, &token_id, None, None);
         clear_heir(&token_id);
+        crate::v2::clear_pq(&token_id);
         self.log(&token_id, Event::Transfer { from: g.from, to: to.clone() });
         refund(to, GIFT_TO_RECIPIENT);
     }

@@ -9,6 +9,7 @@ mod btc;
 mod gift;
 mod upgrade;
 mod usdc;
+mod v2;
 
 use near_contract_standards::non_fungible_token::core::{ext_nft_receiver, NonFungibleTokenCore, NonFungibleTokenResolver};
 use near_contract_standards::non_fungible_token::enumeration::NonFungibleTokenEnumeration;
@@ -250,6 +251,12 @@ pub enum Event {
     ReleaseApproved { guardian: AccountId, approvals: u8, release_at_ms: U64 },
     /// The holder had the Pusaka's own NEAR account stake, unstake or withdraw at a staking pool.
     Staking { nonce: U64, pool: AccountId, action: String, amount: NearToken, signed: bool },
+    /// v2: the holder had the NFT's own token-bound account (`0s…`, or its alias `t<id>.<contract>`) send NEAR or call a contract.
+    AccountCall { account: AccountId, receiver: AccountId, method: String, deposit: U128 },
+    /// v2: the holder registered (or removed) a post-quantum ML-DSA-65 key; owner actions then need a PQ-signed unlock.
+    PqKey { set: bool },
+    /// v2: a PQ-signed unlock was verified on-chain (`env::ml_dsa_verify`); owner actions are open until `until_block`.
+    PqUnlocked { nonce: U64, until_block: U64 },
 }
 
 /// The kinds of transaction the contract signs from a Pusaka's own NEAR account.
@@ -1007,6 +1014,7 @@ impl Pusaka {
         // internal_transfer also clears NEP-178 approvals, so no market can sell it afterwards
         self.tokens.internal_transfer(&owner, &h.heir, &token_id, None, None);
         clear_heir(&token_id);
+        v2::clear_pq(&token_id);
         self.log(&token_id, Event::Inherited { from: owner, to: h.heir });
     }
 
@@ -1449,6 +1457,7 @@ impl Pusaka {
 
         self.tokens.internal_transfer(&listing.seller, &buyer, &token_id, None, None);
         clear_heir(&token_id);
+        v2::clear_pq(&token_id);
         self.log(
             &token_id,
             Event::Sale { from: listing.seller.clone(), to: buyer.clone(), price },
@@ -1556,6 +1565,7 @@ impl Pusaka {
         self.loans.remove(&token_id);
         self.tokens.internal_transfer(&loan.borrower, &lender, &token_id, None, None);
         clear_heir(&token_id);
+        v2::clear_pq(&token_id);
         self.log(&token_id, Event::LoanDefaulted { lender });
     }
 
@@ -1681,6 +1691,7 @@ impl Pusaka {
         let owner = self.tokens.owner_by_id.get(token_id).expect("NoToken");
         require!(owner == env::predecessor_account_id(), "NotOwner");
         require!(!in_transfer_call(token_id), "TransferCallPending");
+        v2::assert_pq(token_id, &owner);
         let key = heir_key(token_id);
         if let Some(mut h) = raw_get::<Heir>(&key) {
             if h.owner == owner {
@@ -2025,8 +2036,10 @@ impl NonFungibleTokenCore for Pusaka {
         // Approvals don't block a transfer: the transfer clears them.
         self.assert_unlocked(&token_id);
         let from = self.owner_of(&token_id);
+        if from == env::predecessor_account_id() { v2::assert_pq(&token_id, &from); }
         self.tokens.nft_transfer(receiver_id.clone(), token_id.clone(), approval_id, memo);
         clear_heir(&token_id);
+        v2::clear_pq(&token_id);
         self.log(&token_id, Event::Transfer { from, to: receiver_id });
     }
 
@@ -2044,8 +2057,10 @@ impl NonFungibleTokenCore for Pusaka {
         near_sdk::assert_one_yocto();
         self.assert_unlocked(&token_id);
         let sender = env::predecessor_account_id();
+        if sender == self.owner_of(&token_id) { v2::assert_pq(&token_id, &sender); }
         let (from, approvals) = self.tokens.internal_transfer(&sender, &receiver_id, &token_id, approval_id, memo);
         clear_heir(&token_id);
+        v2::clear_pq(&token_id);
         raw_put(&transfer_call_key(&token_id), &());
         // A buyer or lender who looked before the call must look again (T4/T19). Nothing was
         // signed, so no approval cooldown (signed_at) is started.
@@ -2143,6 +2158,7 @@ impl Pusaka {
     #[payable]
     pub fn nft_approve(&mut self, token_id: TokenId, account_id: AccountId, msg: Option<String>) -> Option<Promise> {
         self.assert_unlocked(&token_id);
+        v2::assert_pq(&token_id, &self.owner_of(&token_id));
         // ponytail: tokens signed for before `signed_at` existed have no entry, so they skip the
         // cooldown. Only testnet has such tokens, and its window closed 1 h after the migration;
         // mainnet deploys fresh with `signed_at` from the start.

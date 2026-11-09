@@ -1,6 +1,6 @@
 [package]
 name = "pusaka"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/PugarHuda/pusaka"
@@ -21,7 +21,7 @@ crate-type = ["cdylib", "rlib"]
 mainnet = []
 
 [dependencies]
-near-sdk = "5"
+near-sdk = { version = "5.30.1", features = ["deterministic-account-ids"] }
 near-contract-standards = "5"
 omni-transaction = { version = "0.5", default-features = false, features = ["bitcoin", "evm"] }
 bs58 = "0.5"
@@ -29,7 +29,7 @@ hex = "0.4"
 base64 = "0.22"
 
 [dev-dependencies]
-near-sdk = { version = "5", features = ["unit-testing"] }
+near-sdk = { version = "5.30.1", features = ["unit-testing", "deterministic-account-ids"] }
 proptest = "1"   # fuzz + invariant tests in src/tests.rs (dev only: not in the wasm)
 
 [profile.release]

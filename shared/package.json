@@ -5,13 +5,15 @@
   "exports": {
     ".": "./btc.mjs",
     "./ckd": "./ckd.mjs",
-    "./audit": "./audit.mjs"
+    "./audit": "./audit.mjs",
+    "./pq": "./pq.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",
+    "@noble/hashes": "^2.0.0",
+    "@noble/post-quantum": "^0.7.1",
     "@scure/base": "^2.2.0",
     "bitcoinjs-lib": "^7.0.0",
-    "viem": "^2.57.14",
-    "@noble/hashes": "^2.0.0"
+    "viem": "^2.57.14"
   }
 }

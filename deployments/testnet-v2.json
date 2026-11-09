@@ -1,0 +1,28 @@
+{
+  "network": "testnet",
+  "contract": "pusaka-v2.testnet",
+  "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
+  "code": {
+    "wasm_sha256": "ab6d5dcf9caffbe5e5085d680667a8dcb1bbadc01983c5f4b37fb16ad4e2a29c",
+    "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
+    "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
+    "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
+    "upgrade_admin_tx": "7JmL7h33raNUANbExFR6QB9AofxWqCbQyDaiEQ2mUqXQ",
+    "upgrades": "DAO proposal -> propose_upgrade(sha256) -> 10-minute timelock -> apply_upgrade"
+  },
+  "token_account": {
+    "source": "token-account/",
+    "wasm_sha256": "2be45c22d907ed2f154eb0d991ff8e6155a04201fbb41421c44947d6986bd2ef",
+    "global_contract_hash_base58": "3xLVdgZA1XcRXC1wg1naiuNmAZKNrJuza56j9Jg7Ea6a",
+    "published_tx": "7nerp9Z3So3c3UQgXSvFxyCibQVXmjMyRCEHDhHMbVZo"
+  },
+  "accounts": {
+    "upgrade_dao": "pusaka-council.sputnikv2.testnet"
+  },
+  "uses": {
+    "mpc": "v1.signer-prod.testnet",
+    "btc_light_client": "btc-client-v4.testnet",
+    "social": "v1.social08.testnet"
+  },
+  "explorer": "https://testnet.near.rocks"
+}
