@@ -215,7 +215,7 @@ export default function App() {
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
         <p>
-          Contract <a href={`${NEAR_EXPLORER}/account/${CONTRACT}`}>{CONTRACT}</a>. Signatures by NEAR Chain
+          {(() => { const c = tokenId?.startsWith("v2:") ? "pusaka-v2.testnet" : CONTRACT; return <>Contract <a href={`${NEAR_EXPLORER}/account/${c}`}>{c}</a>.</>; })()} Signatures by NEAR Chain
           Signatures (<code>{MPC}</code>). Built at NEAR HACKATHON.
         </p>
       </footer>

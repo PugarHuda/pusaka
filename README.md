@@ -271,7 +271,8 @@ Same path again: proposal 9 (2 of 3), timelock, `apply_upgrade`
 **Through the web app with a real wallet** (Intear, `web/e2e/wallet-qa.mjs v2`, 9 Nov): Pusaka v2 #6 was minted on
 [`#/v2`](https://pusaka-two.vercel.app/#/v2), its account created and funded, NEAR sent from it, an ML-DSA-65 key
 generated in the browser, downloaded and registered, then an unlock signed in the page and verified on-chain
-([5s1ew31N…](https://testnet.near.rocks/tx/5s1ew31NnoG3rrrVoak4v5StTZEAhgS571AxyhyRQoVW)).
+([5s1ew31N…](https://testnet.near.rocks/tx/5s1ew31NnoG3rrrVoak4v5StTZEAhgS571AxyhyRQoVW)). A second run (#7) pasted the key back from the file (the page keeps no copy), unlocked, and turned the lock off
+([BhhLV72u…](https://testnet.near.rocks/tx/BhhLV72uQVs4Cn4B6RJSCxFfmwvohnYwGeDzGwREeE9C)), which itself needs a fresh unlock.
 
 Costs on testnet:
 - Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.
