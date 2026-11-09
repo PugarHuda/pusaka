@@ -421,3 +421,17 @@ test("Refused lists real attacks the deployed contract turned down, each confirm
   await expect(page.getByText("Couldn't confirm a refusal")).toHaveCount(0);
   await expect(page.getByText(/Only the current holder of this Pusaka can do that\. \(NotOwner\)/)).toBeVisible(); // the panic, read from chain, in words
 });
+
+test("Pusaka v2 shows a token's own keyless account, its name and its post-quantum lock", async ({ page }) => {
+  const errors = errorsOf(page);
+  await page.goto("/#/v2");
+  await expect(page.getByRole("link", { name: "Pusaka v2 #5" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "Pusaka v2 #5" }).click();
+  await expect(page.getByRole("heading", { name: "Pusaka v2 #5" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".v2-accounts dd").first()).toContainText(/^0s[0-9a-f]{40}: [\d.]+ NEAR/); // NEP-616: derived, exists
+  await expect(page.locator(".v2-accounts dd").nth(1)).toContainText("t5.pusaka-v2.testnet");
+  await expect(page.getByText(/^On: every action by the holder needs a fresh unlock/)).toBeVisible(); // ML-DSA-65 registered by the agent test
+  await page.evaluate(() => { location.hash = "#/v2/99999"; });
+  await expect(page.getByText("There is no Pusaka v2 #99999.")).toBeVisible({ timeout: 30_000 });
+  expect(errors).toEqual([]);
+});
