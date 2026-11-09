@@ -25,6 +25,17 @@ Scanner dijalankan ulang di semua komponen.
 | R5-9 | Kontrak agen TEE (`shade/agent-contract`) | Info | Lockfile memuat 17 crate dengan advisory | `cargo audit` + `cargo tree --target wasm32-unknown-unknown -e normal -i <crate>` | Hanya `anyhow` (*unsound* di `downcast_mut`, tidak dipanggil) dan `wee_alloc` (unmaintained) yang masuk wasm; sisanya tooling host/test. `dcap-qvl` 0.4.0 ≥ 0.3.9, jadi tidak terkena GHSA-796p |
 | R5-10 | Provenance image NEAR AI | Info (eksternal) | Konfigurasi terukur model mengizinkan `${COMPOSE_MANAGER_IMAGE:-…}` diganti env var | `node api/_nearai.test.mjs` mencetak peringatannya | **Ditampilkan** di halaman sebagai provenance note; verifikasi Sigstore tidak dikerjakan (known issue) |
 
+## Putaran 3 (9 Nov): Pusaka v2 (`pusaka-v2.testnet`, `contract/src/v2.rs`)
+| ID | Komponen | Severity | Dampak | PoC / bukti | Status |
+|---|---|---|---|---|---|
+| V2-1 | Kunci PQ vs `nft_transfer_call` | Sedang | `nft_transfer_call` yang di-revert penerimanya tetap menghapus kunci ML-DSA pemegang, jadi kunci PQ bisa dilepas tanpa unlock | tes `v2_review_fixes` | **Fixed**, DAO proposal 8, `apply_upgrade` `C2Dgr5iW…` |
+| V2-2 | Kunci PQ vs approval lama | Sedang | Approval yang dibuat sebelum kunci PQ didaftarkan tetap bisa memindahkan token tanpa unlock | tes `pq_key_needs_no_standing_approvals` | **Fixed**, proposal 8: `set_pq_key` menolak (`Approved`) selama masih ada approval |
+| V2-3 | `account_call` (async) | Sedang | Token bisa di-list saat panggilan dari akunnya masih berjalan, sehingga NEAR bisa keluar setelah pembeli membayar | tes `account_call_locks_the_token_until_its_callback` | **Fixed**, proposal 8: kunci `pending` dipegang sampai callback |
+| V2-4 | Callback `on_account_call` | Rendah | Callback yang datang terlambat (setelah `unlock_stale`, >600 blok) bisa melepas kunci operasi yang lebih baru | tes `a_late_callback_leaves_a_newer_lock_alone` | **Fixed**, proposal 9 (`DbaTmJfi…`): kunci ditandai block height, callback hanya melepas kuncinya sendiri |
+| V2-5 | Web `#/v2` | Rendah | Seed ML-DSA disimpan di `sessionStorage`, jadi terbaca oleh XSS di origin yang sama | review keamanan otomatis | **Fixed** `5f1b0a4`: seed hanya di memori komponen; pemegang menempel dari file kunci |
+| V2-6 | Cakupan PQ | Info | Kunci BTC/EVM/SOL (MPC secp256k1/Ed25519) dan kunci surat (CKD/BLS) belum post-quantum | dokumentasi | **Known issue**: MPC NEAR belum punya skema PQ; BIP-360 masih draft |
+| V2-7 | Kunci akses penuh `pusaka-v2.testnet` | Sedang | Selama kunci masih ada, pemiliknya bisa deploy kode tanpa DAO/timelock | `viewAccessKeyList` | **Open, menunggu keputusan user** (penghapusan tidak bisa dibatalkan) |
+
 ## Scanner: sebelum vs sesudah
 | Alat | Putaran 1 (8 Nov) | Putaran 2 (9 Nov) |
 |---|---|---|

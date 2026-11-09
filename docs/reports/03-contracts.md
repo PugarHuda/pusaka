@@ -45,6 +45,8 @@ Semuanya ada di [`deployments/testnet.json`](../../deployments/testnet.json).
 |---|---|---|---|---|
 | Pusaka (NEP-171 + BTC/EVM/SOL/NEAR via MPC) | `pusaka-btc.testnet` | NEAR testnet | [near.rocks](https://testnet.near.rocks/account/pusaka-btc.testnet) | 0 access key, upgrade di-renounce (`GdASfxh5…`), wasm sha256 `ac16e80e…` = build reproducible commit `4bf36b2`, deploy `67hUwJuA…` |
 | DAO upgrade (dulu admin) | `pusaka-council.sputnikv2.testnet` | NEAR testnet | [near.rocks](https://testnet.near.rocks/account/pusaka-council.sputnikv2.testnet) | Sputnik v2. Perannya selesai di proposal 7 (renounce) |
+| Pusaka v2 (+ akun milik NFT NEP-616, alias, kunci PQ ML-DSA-65) | `pusaka-v2.testnet` | NEAR testnet | [near.rocks](https://testnet.near.rocks/account/pusaka-v2.testnet) | Upgrade lewat DAO + timelock 10 menit; wasm sha256 `d6c183da…` (proposal 9, `DbaTmJfi…`); masih ada 1 full-access key (lihat 05 V2-7). Rincian di [`deployments/testnet-v2.json`](../../deployments/testnet-v2.json) |
+| Kontrak akun token (global, by hash) | `3xLVdgZA…` | NEAR testnet | publish `7nerp9Z3…` | `token-account/`, 43 KB, tanpa key, hanya mematuhi `pusaka-v2.testnet` |
 | Agen TEE (deposit prover) | `pusaka-agent.testnet` | NEAR testnet | [near.rocks](https://testnet.near.rocks/account/pusaka-agent.testnet) | Kontrak Shade Agent; attestation Phala TDX dicek on-chain |
 | Relayer (bukan kontrak) | `pusaka-relayer.testnet` | NEAR testnet | [near.rocks](https://testnet.near.rocks/account/pusaka-relayer.testnet) | Gas key NEP-611, hanya me-relay method yang aman |
 
