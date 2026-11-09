@@ -53,7 +53,8 @@ try {
     await p.locator("input[type=text]:visible").first().fill(JSON.parse(fs.readFileSync(keyFile, "utf8")).private_key);
     for (const cb of await p.locator("input[type=checkbox]:visible").all()) await cb.check();
     await p.waitForTimeout(4000);
-    await p.getByRole("button", { name: /pusaka-buyer\.testnet/ }).click();
+    const who = JSON.parse(fs.readFileSync(keyFile, "utf8")).account_id ?? "pusaka-buyer.testnet";
+    await p.getByRole("button", { name: who }).click();
     await p.getByRole("button", { name: "Import Account" }).click();
     await p.waitForTimeout(6000);
   }
@@ -260,6 +261,27 @@ try {
     const status = p.locator("section.actions").getByRole("status");
     for (let i = 0; i < 90 && !(await status.count()); i++) await p.waitForTimeout(1000);
     console.log(`${step} #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  }
+  if (step === "swap") { // as holder keyFile, swap 20,000 sats of token arg2 to USDC through the form; funding txid in process.argv[6]
+    const id = arg2, funding = process.argv[6];
+    await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
+    await p.waitForTimeout(6000);
+    await switchTo(keyFile);
+    const form = p.locator("form").filter({ has: p.getByRole("heading", { name: "Swap to USDC (NEAR Intents)" }) });
+    await form.getByLabel(/testnet4 tx/).fill(funding);
+    const wp = ctx.waitForEvent("page", { timeout: 60_000 });
+    const t0 = Date.now();
+    await form.getByRole("button", { name: "Swap to USDC" }).click();
+    const w = await wp; await w.waitForLoadState(); await w.waitForTimeout(4000);
+    console.log(`  wallet: ${(await w.innerText("body")).replace(/\s+/g, " ").slice(-260)}`);
+    await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+    const status = p.locator("section.actions").getByRole("status");
+    for (let i = 0; i < 1500 && !(await status.count()); i++) {
+      if (i % 60 === 0) console.log(`  ${await form.getByRole("button").first().innerText()}`);
+      await p.waitForTimeout(1000);
+    }
+    console.log(`swap #${id} -> [${(await status.allInnerTexts()).join(" ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    console.log(await status.locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")));
   }
   if (step === "remind") { // as keyFile, open token arg2 and check its calendar reminders: the .ics downloads and says the right thing
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${arg2}`);

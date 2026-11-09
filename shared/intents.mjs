@@ -33,3 +33,62 @@ export async function exitQuote(sats, evm) {
     seconds: q.timeEstimate, signature: body.signature, id: body.correlationId,
   };
 }
+
+// ---------- executed swaps on testnet ----------
+// 1Click has no testnet. Tidepool (usetidepool.tech) serves the same /quote, /deposit/submit and /status API on
+// testnet, settling through NEAR's unmodified `defuse` verifier (verifier.tidepool-sandbox.testnet). Its Bitcoin
+// side is testnet4 with a custodial test relayer: Tidepool's trust model, not Pusaka's (disclosed in README).
+// The same tb1 address and MPC key hold coins on testnet3 and testnet4.
+export const TIDEPOOL = "https://www.usetidepool.tech/v0";
+export const TESTNET4 = "https://mempool.emzy.de/testnet4/api"; // Esplora without /address: coins are found by funding txid
+export const TIDEPOOL_BTC = "nep141:btc.tp-omft.testnet";
+export const TIDEPOOL_USDC = "nep141:usdc.tidepool-sandbox.testnet";
+
+const ok = async (r) => {
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`NEAR Intents (Tidepool): ${b.message ?? `HTTP ${r.status}`}`);
+  return b;
+};
+
+/** Confirmed, unspent outputs of testnet4 tx `txid` paying `address`. */
+export async function testnet4Coins(txid, address) {
+  if (!/^[0-9a-f]{64}$/i.test(txid.trim())) throw new Error("That isn't a Bitcoin transaction id (64 hex characters).");
+  const get = (p) => fetch(`${TESTNET4}${p}`).then((r) => { if (!r.ok) throw new Error(`testnet4 explorer answered ${r.status}`); return r.json(); });
+  const [tx, spends] = await Promise.all([get(`/tx/${txid.trim()}`), get(`/tx/${txid.trim()}/outspends`)]);
+  if (!tx.status?.confirmed) throw new Error("That testnet4 transaction has no confirmation yet. Try again after the next block.");
+  return tx.vout.map((o, vout) => ({ txid: txid.trim().toLowerCase(), vout, value: o.value, to: o.scriptpubkey_address }))
+    .filter((u, i) => u.to === address && !spends[i]?.spent);
+}
+
+/** The request for a live (dry: false) BTC -> USDC-on-NEAR quote; refunds go back to the Pusaka's own address. */
+export function swapRequest(sats, recipient, refundTo, now = Date.now()) {
+  if (!(Number(sats) >= 10_000)) throw new Error("Tidepool's Bitcoin route takes at least 10,000 sats.");
+  if (!/^[a-z0-9._-]+$/.test(recipient)) throw new Error("recipient must be a NEAR account");
+  return {
+    dry: false, swapType: "EXACT_INPUT", slippageTolerance: 100, originAsset: TIDEPOOL_BTC, depositType: "ORIGIN_CHAIN",
+    amount: String(sats), destinationAsset: TIDEPOOL_USDC, recipient, recipientType: "DESTINATION_CHAIN",
+    refundTo, refundType: "ORIGIN_CHAIN", deadline: new Date(now + 3_600_000).toISOString(),
+  };
+}
+
+/** Opens a deposit address: { depositAddress, usdc, minUsdc, seconds, id }. */
+export async function swapQuote(sats, recipient, refundTo) {
+  const b = await fetch(`${TIDEPOOL}/quote`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(swapRequest(sats, recipient, refundTo)), signal: AbortSignal.timeout(30_000) }).then(ok);
+  const q = b.quote;
+  if (!q?.depositAddress) throw new Error("NEAR Intents (Tidepool): no deposit address in the quote");
+  return { depositAddress: q.depositAddress, usdc: Number(q.amountOutFormatted), minUsdc: Number(q.minAmountOut) / 1e6, seconds: q.timeEstimate, id: b.correlationId };
+}
+
+export async function broadcastTestnet4(hex) {
+  const r = await fetch(`${TESTNET4}/tx`, { method: "POST", body: hex });
+  const t = await r.text();
+  if (!r.ok) throw new Error(`testnet4 rejected the transaction: ${t}`);
+  return t.trim();
+}
+
+export const submitDeposit = (txHash, depositAddress) => fetch(`${TIDEPOOL}/deposit/submit`, {
+  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ txHash, depositAddress }) }).then(ok);
+
+export const swapStatus = (depositAddress) => fetch(`${TIDEPOOL}/status?depositAddress=${encodeURIComponent(depositAddress)}`).then(ok);
+export const SWAP_DONE = ["SUCCESS", "REFUNDED", "FAILED"];

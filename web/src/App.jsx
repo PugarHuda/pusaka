@@ -5,7 +5,7 @@ import {
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
   nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances, stakingPools, stakeBalances,
-  exitQuote,
+  exitQuote, testnet4Coins, swapQuote, broadcastTestnet4, submitDeposit, swapStatus, SWAP_DONE,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import { Account, KeyPair } from "near-api-js";
@@ -1990,6 +1990,7 @@ function OwnerForms({ t, busy, run, status, market }) {
         <button disabled={!!busy || spendableSats <= FEE}>{busy === "withdraw" ? "Signing with NEAR MPC… (about 15 s)" : "Withdraw"}</button>
         <p className="muted">Network fee {FEE} sats. Change goes back into this Pusaka.</p>
       </form>
+      {NETWORK === "testnet" && <IntentsSwap t={t} busy={busy} run={run} />}
       <form onSubmit={give} className="stack">
         <h2>Give it to someone</h2>
         <label>Their NEAR account
@@ -2000,6 +2001,66 @@ function OwnerForms({ t, busy, run, status, market }) {
       </form>
       {status}
     </section>
+  );
+}
+
+/**
+ * Executed NEAR Intents swap on testnet: the Pusaka's own BTC -> USDC on NEAR, paid to the holder. 1Click has no
+ * testnet, so this goes through Tidepool (same API, NEAR's `defuse` verifier); its Bitcoin side is testnet4, where
+ * this app has no address index, so the holder names the testnet4 tx that funded the Pusaka.
+ */
+function IntentsSwap({ t, busy, run }) {
+  const { id, info } = t;
+  const [funding, setFunding] = useState("");
+  const [sats, setSats] = useState("20000");
+  const [step, setStep] = useState("");
+  const FEE = 500;
+
+  function swap(e) {
+    e.preventDefault();
+    run("swap", async () => {
+      const addr = btcAddress(info.btc_pubkey), owner = info.token.owner_id, amount = Math.round(Number(sats));
+      setStep("Finding this Pusaka's coins on testnet4…");
+      const ins = (await testnet4Coins(funding, addr)).slice(0, 8);
+      const have = ins.reduce((a, u) => a + u.value, 0);
+      if (have < amount + FEE) throw new Error(`That transaction left ${satsLabel(have)} unspent at this Pusaka's address; the swap needs ${satsLabel(amount + FEE)}.`);
+      setStep("Asking NEAR Intents for a quote…");
+      const q = await swapQuote(amount, owner, addr);
+      setStep(`Quote: ${q.usdc.toFixed(2)} USDC. Signing with NEAR MPC… (about 15 s)`);
+      const signed = await call("withdraw", {
+        token_id: id, utxos: ins.map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
+        to_script_hex: scriptHex(q.depositAddress), amount_sat: String(amount), fee_sat: String(FEE),
+      }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
+      const txid = await broadcastTestnet4(finalize(signed, ins.map((u) => u.value)).toHex());
+      await submitDeposit(txid, q.depositAddress);
+      let st = {};
+      for (let i = 0; i < 80 && !SWAP_DONE.includes(st.status); i++) { // ~20 min: one testnet4 block, then settlement
+        if (i) await new Promise((r) => setTimeout(r, 15_000));
+        st = await swapStatus(q.depositAddress).catch(() => st);
+        setStep(`Bitcoin sent; waiting for a testnet4 confirmation, then NEAR Intents settles (${st.status ?? "…"})`);
+      }
+      setStep("");
+      const btcLink = <a href={`https://mempool.space/testnet4/tx/${txid}`} target="_blank" rel="noreferrer">Bitcoin tx</a>;
+      const nearLinks = (st.swapDetails?.nearTxHashes ?? []).map((h, i) => <span key={h}> · <a href={`${NEAR_EXPLORER}/tx/${h}`} target="_blank" rel="noreferrer">NEAR settlement {i + 1}</a></span>);
+      if (st.status !== "SUCCESS") throw new Error(`Swap ${st.status ?? "still pending"}. Refunds go back to this Pusaka's own address. Bitcoin tx ${txid}`);
+      return <>Swapped {satsLabel(amount)} for {q.usdc.toFixed(2)} USDC, paid to {owner} on NEAR. {btcLink}{nearLinks}</>;
+    });
+  }
+
+  return (
+    <form onSubmit={swap} className="stack">
+      <h2>Swap to USDC (NEAR Intents)</h2>
+      <label>testnet4 tx that funded this Pusaka
+        <input value={funding} onChange={(e) => setFunding(e.target.value)} placeholder="64 hex characters" required spellCheck="false" pattern="[0-9a-fA-F]{64}" />
+      </label>
+      <label>Amount
+        <span className="row"><input type="number" min="10000" max="500000" step="1" value={sats} onChange={(e) => setSats(e.target.value)} required /> sats</span>
+      </label>
+      <button disabled={!!busy}>{busy === "swap" ? step || "Working…" : "Swap to USDC"}</button>
+      <p className="muted">The contract builds the Bitcoin transaction and NEAR MPC signs it to a NEAR Intents deposit address;
+        USDC arrives in your NEAR account and refunds come back to this Pusaka. Testnet runs on{" "}
+        <a href="https://www.usetidepool.tech" target="_blank" rel="noreferrer">Tidepool</a> (testnet4, a custodial test relayer).</p>
+    </form>
   );
 }
 
