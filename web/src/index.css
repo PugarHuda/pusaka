@@ -648,3 +648,8 @@ footer p { max-width: var(--measure); margin: 0; }
 .self-check .checks li { overflow-wrap: anywhere; }
 .self-check .checks small { display: block; color: var(--ink-soft); }
 .self-check .checks .bad strong { color: var(--seal); }
+
+.sealed-files { margin: 1rem 0; }
+.file-btn { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.45rem 0.9rem; border: 1px solid var(--line); border-radius: 999px; width: fit-content; }
+.file-btn:focus-within { outline: 2px solid currentColor; outline-offset: 2px; }
+.file-btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }

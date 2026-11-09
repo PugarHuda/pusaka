@@ -63,3 +63,31 @@ export async function openCkd(key, tokenId, sealed) {
   const pt = await globalThis.crypto.subtle.decrypt({ name: "AES-GCM", iv: b.subarray(0, 12), additionalData: enc.encode(`pusaka:${tokenId}`) }, await aes(key, "decrypt"), b.subarray(12));
   return new TextDecoder().decode(pt);
 }
+
+// ---------- files sealed with the same MPC secret (a different HKDF purpose), kept by the holder ----------
+export const FILE_PURPOSE = "pusaka-file-v1";
+const MAGIC = enc.encode("PUSAKA1F");
+
+/**
+ * Seals a file for whoever holds token `tokenId`: AES-256-GCM, token id as associated data, name and type inside
+ * the ciphertext. Layout: "PUSAKA1F" | iv(12) | GCM(u32 header length | header JSON | file bytes).
+ */
+export async function sealFileCkd(key, tokenId, { name, type = "", bytes }) {
+  const header = enc.encode(JSON.stringify({ name, type }));
+  const plain = new Uint8Array(4 + header.length + bytes.length);
+  new DataView(plain.buffer).setUint32(0, header.length);
+  plain.set(header, 4);
+  plain.set(bytes, 4 + header.length);
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await globalThis.crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: enc.encode(`pusaka:${tokenId}:file`) }, await aes(key, "encrypt"), plain));
+  return new Uint8Array([...MAGIC, ...iv, ...ct]);
+}
+
+/** Opens a sealed file; throws on another token's file, a wrong key or any tampering. */
+export async function openFileCkd(key, tokenId, sealed) {
+  if (sealed.length < 8 + 12 + 16 || MAGIC.some((b, i) => sealed[i] !== b)) throw new Error("not a sealed Pusaka file");
+  const plain = new Uint8Array(await globalThis.crypto.subtle.decrypt({ name: "AES-GCM", iv: sealed.subarray(8, 20), additionalData: enc.encode(`pusaka:${tokenId}:file`) }, await aes(key, "decrypt"), sealed.subarray(20)));
+  const n = new DataView(plain.buffer).getUint32(0);
+  const { name, type } = JSON.parse(new TextDecoder().decode(plain.subarray(4, 4 + n)));
+  return { name, type, bytes: plain.subarray(4 + n) };
+}

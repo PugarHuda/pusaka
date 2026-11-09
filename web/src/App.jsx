@@ -1321,7 +1321,7 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
   /** One wallet call: the contract asks NEAR MPC for the key, encrypted to a one-time key only this tab holds. */
   async function mpcKey(writeNonce) {
     // BLS12-381 is only needed here, so it loads on first use instead of with every page
-    const { ckdAppId, ckdEphemeral, ckdSecret, ckdKey, LETTER_PURPOSE } = await import("@pusaka/shared/ckd");
+    const { ckdAppId, ckdEphemeral, ckdSecret, ckdKey, LETTER_PURPOSE, FILE_PURPOSE } = await import("@pusaka/shared/ckd");
     const eph = ckdEphemeral();
     const [answer, mpcPk] = await Promise.all([
       call("letter_key", { token_id: id, app_public_key: eph.appPublicKey, ...(writeNonce && { write_nonce: writeNonce }) }, { deposit: 1n, tgas: 100 }),
@@ -1329,15 +1329,17 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
     ]);
     const path = writeNonce ? `letter:${id}:${accountId}:${writeNonce}` : extra.letter_path;
     // throws unless the answer verifies against the MPC's public key
-    return { key: ckdKey(ckdSecret(answer, eph.a, ckdAppId(CONTRACT, path), mpcPk), LETTER_PURPOSE), path };
+    const secret = ckdSecret(answer, eph.a, ckdAppId(CONTRACT, path), mpcPk);
+    // the same secret seals the holder's files, under its own HKDF purpose; it stays in this tab's memory only
+    return { key: ckdKey(secret, LETTER_PURPOSE), fileKey: ckdKey(secret, FILE_PURPOSE), path };
   }
 
   async function openWithMpc() {
     setBusy("open"); setMsg(null);
     try {
-      const { key } = await mpcKey();
+      const { key, fileKey } = await mpcKey();
       const { openCkd } = await import("@pusaka/shared/ckd");
-      setRoom({ letter: await openCkd(key, id, extra.letter), creator: extra.creator ?? null, ckd: true });
+      setRoom({ letter: await openCkd(key, id, extra.letter), creator: extra.creator ?? null, ckd: true, fileKey });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     finally { setBusy(""); }
   }
@@ -1347,11 +1349,11 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
     setBusy("seal"); setMsg(null);
     try {
       // Sealed in this tab with a NEAR MPC confidential key: the server never sees the key or the text.
-      const { key, path } = await mpcKey(Date.now().toString(36));
+      const { key, fileKey, path } = await mpcKey(Date.now().toString(36));
       const { sealCkd } = await import("@pusaka/shared/ckd");
       const sealed = await sealCkd(key, id, text);
       await call("set_letter", { token_id: id, sealed, path }, { deposit: 10_000_000_000_000_000_000_000n });
-      setRoom({ letter: text, creator: extra.creator ?? null, ckd: true });
+      setRoom({ letter: text, creator: extra.creator ?? null, ckd: true, fileKey });
       setText("");
       setMsg({ ok: true, text: "Sealed with a NEAR MPC key into the Pusaka. Only whoever holds it can get that key." });
       await onDone();
@@ -1376,16 +1378,63 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
         {room.letter ? <blockquote className="letter">{room.letter}</blockquote> : <p className="muted">No letter sealed in this Pusaka yet.</p>}
         {room.ckd && <p className="muted">Decrypted in this tab with a key from NEAR MPC (confidential key derivation), checked against the MPC's public key.</p>}
         {room.creator && <p className="muted">Created by {room.creator}. They receive a 2.5% royalty on every resale.</p>}
+        {room.fileKey && <SealedFiles id={id} fileKey={room.fileKey} />}
         {canSeal && (
           <form onSubmit={sealLetter} className="stack">
             <label>{room.letter ? "Replace the letter" : "Write a letter for the next holder"}
               <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} rows={4} required /></label>
             <button disabled={!!busy}>{busy === "seal" ? "Sealing…" : "Seal into this Pusaka"}</button>
+            {ckdLetter && <p className="muted">Sealing a new letter asks NEAR MPC for a new key: files sealed with the old one can't be opened afterwards.</p>}
           </form>
         )}
       </>}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </section>
+  );
+}
+
+const MAX_SEALED_FILE = 10 * 1024 * 1024;
+const download = (bytes, name, type = "application/octet-stream") => {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  Object.assign(document.createElement("a"), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+};
+
+/**
+ * Files only whoever holds this Pusaka can open: sealed in this tab with the key NEAR MPC gave the holder
+ * (confidential key derivation), handed over with the NFT. The sealed file stays with you; store it anywhere.
+ */
+function SealedFiles({ id, fileKey }) {
+  const [msg, setMsg] = useState(null);
+  async function handle(e, seal) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setMsg(null);
+    try {
+      if (f.size > MAX_SEALED_FILE) throw new Error("Files up to 10 MB.");
+      const { sealFileCkd, openFileCkd } = await import("@pusaka/shared/ckd");
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (seal) {
+        download(await sealFileCkd(fileKey, id, { name: f.name, type: f.type, bytes }), `${f.name}.pusaka-${id}`);
+        setMsg({ ok: true, text: `Sealed ${f.name} for whoever holds Pusaka #${id}. Keep the downloaded file anywhere: it is useless without this Pusaka.` });
+      } else {
+        const out = await openFileCkd(fileKey, id, bytes);
+        download(out.bytes, out.name, out.type || undefined);
+        setMsg({ ok: true, text: `Opened ${out.name}.` });
+      }
+    } catch (err) {
+      setMsg({ ok: false, text: err.name === "OperationError" ? `This file wasn't sealed for Pusaka #${id} with its current key.` : err.message });
+    }
+  }
+  return (
+    <div className="sealed-files stack">
+      <h3>Sealed files</h3>
+      <p className="muted">A backup, a deed, instructions for an heir: seal any file so that only the holder of this Pusaka can open it. Encrypted in this tab; nothing is uploaded.</p>
+      <label className="file-btn">Seal a file <input type="file" onChange={(e) => handle(e, true)} /></label>
+      <label className="file-btn">Open a sealed file <input type="file" accept={`.pusaka-${id}`} onChange={(e) => handle(e, false)} /></label>
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </div>
   );
 }
 

@@ -47,3 +47,19 @@ assert.equal(await openCkd(k1, "5", sealed), "for whoever holds it");
 await assert.rejects(openCkd(k1, "6", sealed)); // bound to the token
 await assert.rejects(openCkd(ckdKey(new Uint8Array(48).fill(7), "pusaka-letter-v1"), "5", sealed));
 console.log("ckd1 letters: open with the key, refuse another token or key");
+
+const { sealFileCkd, openFileCkd, FILE_PURPOSE } = await import("./ckd.mjs");
+const fk = ckdKey(ckdSecret(answer(e1), e1.a, appId, pk), FILE_PURPOSE);
+assert.notDeepEqual(fk, k1); // a file key is not the letter key
+const bytes = Uint8Array.from({ length: 70_000 }, (_, i) => (i * 31) & 255);
+const box = await sealFileCkd(fk, "5", { name: "seed-backup.pdf", type: "application/pdf", bytes });
+const back = await openFileCkd(fk, "5", box);
+assert.equal(back.name, "seed-backup.pdf");
+assert.equal(back.type, "application/pdf");
+assert.deepEqual(back.bytes, bytes);
+await assert.rejects(openFileCkd(fk, "6", box)); // bound to the token
+await assert.rejects(openFileCkd(k1, "5", box)); // the letter key doesn't open files
+const flipped = box.slice(); flipped[40] ^= 1;
+await assert.rejects(openFileCkd(fk, "5", flipped)); // tampering
+await assert.rejects(openFileCkd(fk, "5", new Uint8Array(10)), /not a sealed Pusaka file/);
+console.log("sealed files: round trip with name and type; refuse another token, the letter key, tampering, junk");

@@ -233,6 +233,17 @@ holder got the same key ([waBYg2Hr…](https://testnet.near.rocks/tx/waBYg2HrY5f
 read the letter, and the writer was refused. Limit: CKD trusts the MPC threshold like signing does; Trail of Bits'
 [review](https://new.trailofbits.com/library/near-one-confidential-key-derivation/) of NEAR's CKD applies.
 
+**Sealed files, from the same key.** The holder room also seals any file (a seed backup, a deed, instructions for an
+heir, up to 10 MB) so that only whoever holds the Pusaka can open it. The file key is the same MPC secret under a
+second HKDF purpose (`pusaka-file-v1`), AES-256-GCM with the token id bound; the sealed file is downloaded and kept
+anywhere, since nothing in it is useful without the NFT (`sealFileCkd` / `openFileCkd` in `shared/ckd.mjs`, tested in
+`shared/ckd.test.mjs`). **Verified live (9 Nov 2026)** with `node scripts/ckd-file.mjs 2`: two key requests by #2's
+holder ([hJtpsCeL…](https://testnet.near.rocks/tx/hJtpsCeLVEGYVH4vYn6XeEtmYgRaktT3TMhS4cnyZ7H),
+[7m3knUv9…](https://testnet.near.rocks/tx/7m3knUv9T1vFgjVHNsKQUVoNEKPLPooqmbyf9DQG9qbu)) gave the same file key; a
+file sealed with one opened with the other; another token, the letter key and a flipped bit were refused; a
+non-holder was refused the key (`NotOwner`). Sealing a new letter changes the key, so earlier files stop opening (the
+page says so).
+
 Try it: `node scripts/holder-test.mjs` (creates two faucet accounts and mints a Pusaka, then signs NEP-413 messages: the holder gets in; a non-holder, a
 stale or non-numeric timestamp, a signature made for another site, and a key presented for the wrong account are refused).
 `node scripts/handover.mjs` mints a Pusaka from a fresh account, seals a letter, sells it twice and checks the 2.5% royalty and the room changing hands. Both run from a clean clone (no keys needed).
