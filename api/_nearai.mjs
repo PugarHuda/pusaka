@@ -113,11 +113,11 @@ export async function checkSignature(sig, { model, reqBytes, resBytes, verifiedS
  * A completion whose bytes are bound to the attested model: send the exact request, keep the exact response,
  * then check the gateway's record of the model TEE's signature over both hashes. Needs NEARAI_API_KEY.
  */
-export async function verifiedCompletion(messages, { apiKey = process.env.NEARAI_API_KEY, model = NEARAI_MODEL, maxTokens = 700 } = {}) {
+export async function verifiedCompletion(messages, { apiKey = process.env.NEARAI_API_KEY, model = NEARAI_MODEL, maxTokens = 600 } = {}) {
   if (!apiKey) throw new Error("NEARAI_API_KEY is not set");
   const pre = await attest(model);
   const verifiedModels = pre.models.filter((m) => m.ok && m.gpu?.ok); // CPU TEE and GPU evidence both
-  const reqBytes = enc.encode(JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.2, stream: false }));
+  const reqBytes = enc.encode(JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.2, stream: false, chat_template_kwargs: { enable_thinking: false } }));
   const r = await fetch(`${NEARAI}/chat/completions`, {
     method: "POST", body: reqBytes, signal: AbortSignal.timeout(90_000),
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", accept: "application/json", "accept-encoding": "identity", "x-no-aliasing": "true" },
@@ -133,8 +133,10 @@ export async function verifiedCompletion(messages, { apiKey = process.env.NEARAI
       .then((x) => (x.ok ? x.json() : null)).catch(() => null);
   }
   const checks = await checkSignature(sig, { model, reqBytes, resBytes, verifiedSigners: verifiedModels.map((m) => m.signer) });
+  const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
+  checks.push({ ok: text.length > 0, what: "the model returned an answer (not only reasoning)" });
   return {
-    model, text: completion.choices?.[0]?.message?.content ?? "", usage: completion.usage, id: completion.id,
+    model, text, usage: completion.usage, id: completion.id,
     verified: pre.gateway.ok && verifiedModels.length > 0 && checks.every((c) => c.ok),
     attestation: pre, signature: sig && { kind: sig.signature_kind, text: sig.text, signature: sig.signature, signer: sig.signing_address },
     checks, request_sha256: hex(sha256(reqBytes)), response_sha256: hex(sha256(resBytes)),
