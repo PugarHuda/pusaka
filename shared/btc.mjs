@@ -456,14 +456,14 @@ export function crossCheck(px, cg) {
  * Map(hash → { signer, method, panic, at }) for every hash whose call into the contract panicked.
  * A hash that is missing from the map was not found or did not fail: callers show that, never a refusal.
  */
-export async function refusals(hashes) {
+export async function refusals(hashes, contracts = [CONTRACT]) {
   const r = await fetch(`${CONFIG.txApi}/v0/transactions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tx_hashes: hashes }), signal: AbortSignal.timeout(15_000) });
   if (!r.ok) throw new Error(`FastNear ${r.status}`);
   const out = new Map();
   for (const t of (await r.json()).transactions) {
     for (const rc of t.receipts) {
       const err = rc.execution_outcome.outcome.status.Failure?.ActionError?.kind?.FunctionCallError?.ExecutionError;
-      if (!err || rc.receipt.receiver_id !== CONTRACT) continue;
+      if (!err || !contracts.includes(rc.receipt.receiver_id)) continue;
       const a = rc.receipt.receipt?.Action?.actions?.[0];
       out.set(t.transaction.hash, {
         signer: t.transaction.signer_id,

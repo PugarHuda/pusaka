@@ -1596,29 +1596,37 @@ const REFUSED = [
   { hash: "2nimDRKnoTmddgnfTytjWPXySts41iktJhJPZg248Ywp", attack: "Dust sent to farm proof fees from the relayer", test: "ch2_the_same_small_amount_from_any_other_transaction_is_dust" },
   { hash: "EHX5b1cpU4pzpfu4DA5TEZL3db95dQ5NqSRRdgtQuqoh", attack: "New contract code deployed before its public delay ran out", test: "up3_announced_code_waits_for_the_delay" },
   { hash: "25pi2EER5uaAZ93Ph5eCnwboPiTmi1ocd8SEr5gD5ZEX", attack: "Different code deployed in place of the announced bytes", test: "up4_only_the_announced_bytes_deploy" },
+  // Pusaka v2 (testnet): the NFT's own account and the post-quantum lock
+  { v2: true, hash: "FFhaXCx2hJGo6m4QFmdWsWqvXCa6ETQr66ZrMEGzb4LQ", attack: "A stranger tries to spend from a Pusaka's own NEAR account", test: "f5_stranger_cannot_use_the_account" },
+  { v2: true, hash: "FF9c2dPyjZtXKja7VfgeGGeoee9LiwaBYE5aDezYqT8K", attack: "The previous holder tries to use the account after selling the NFT", test: "f5_old_holder_loses_the_account_on_transfer" },
+  { v2: true, hash: "E9G6YzUzhwzVPFaQ1RZRwCJDnttsDuyK3yd3kVnhex7d", attack: "The holder's own NEAR key acts without a post-quantum unlock (what a stolen key would try)", test: "f6_registered_key_locks_owner_actions" },
+  { v2: true, hash: "6zipnudyTvxpAWbfLoommKs4TYVJnDT9trSKzib8ENFv", attack: "An unlock signed with a different ML-DSA-65 key", test: "f6_signature_for_someone_else_is_refused" },
+  { v2: true, hash: "BXM1HqBGMBRT4zv8KMYcsQskid51uYpKbxwX8r8QEMh", attack: "A used post-quantum unlock replayed", test: "f6_unlock_cannot_be_replayed" },
 ];
+const V2_CONTRACT = "pusaka-v2.testnet";
+const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);
 
 function Refused() {
   const [seen, setSeen] = useState(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    refusals(REFUSED.map((r) => r.hash)).then(setSeen, (e) => setSeen({ error: e.message }));
+    refusals(REFUSED_HERE.map((r) => r.hash), [CONTRACT, V2_CONTRACT]).then(setSeen, (e) => setSeen({ error: e.message }));
   }, [attempt]);
   return (
     <section className="mine">
       <h1>What the contract refused</h1>
       <p className="lede">Real attempts against <code>{CONTRACT}</code>, each turned down by the contract itself. Who sent it, what it called and the contract's reason are read from NEAR just now, not stored on this page.</p>
-      <p className="muted">The contract holds no key and its code is final (upgrades renounced 8 Nov), so these rules can't be switched off. Each one also has a test named after the attack in <code>contract/src/tests.rs</code>.</p>
+      <p className="muted">The contract holds no key and its code is final (upgrades renounced 8 Nov), so these rules can't be switched off. Entries marked <em>v2</em> are on Pusaka v2, which changes only through a DAO vote and a timelock. Each one also has a test named after the attack in <code>contract/src/tests.rs</code>.</p>
       {!seen ? <p className="muted">Reading NEAR…</p>
         : seen.error ? <p className="error" role="alert">Couldn't read NEAR's archive: {seen.error}. <button className="ghost" onClick={() => { setSeen(null); setAttempt((n) => n + 1); }}>Try again</button></p>
-        : <ol className="refused">{REFUSED.map((r) => {
+        : <ol className="refused">{REFUSED_HERE.map((r) => {
           const x = seen.get(r.hash);
           return (
             <li key={r.hash}>
-              <h2>{r.attack}</h2>
+              <h2>{r.attack}{r.v2 && <> <a className="pill pill-soft" href="#/v2">v2</a></>}</h2>
               {x ? <p><strong>Refused:</strong> {explain(x.panic)}</p> : <p className="error">Couldn't confirm a refusal in this transaction.</p>}
               <p className="muted">
-                {x && <><code>{x.method}</code> from {x.signer}, {new Date(x.at).toLocaleString()} · </>}
+                {x && <><code>{x.method}</code>{r.v2 && <> on <code>{V2_CONTRACT}</code></>} from {x.signer}, {new Date(x.at).toLocaleString()} · </>}
                 <a href={`${NEAR_EXPLORER}/tx/${r.hash}`} target="_blank" rel="noreferrer">{r.hash.slice(0, 8)}… on NEAR</a> · test <code>{r.test}</code>
               </p>
             </li>

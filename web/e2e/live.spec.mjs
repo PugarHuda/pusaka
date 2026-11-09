@@ -419,7 +419,8 @@ test("Refused lists real attacks the deployed contract turned down, each confirm
   expect(n).toBeGreaterThanOrEqual(6);
   await expect(page.getByText("Refused:", { exact: true })).toHaveCount(n); // every hash really failed inside the contract
   await expect(page.getByText("Couldn't confirm a refusal")).toHaveCount(0);
-  await expect(page.getByText(/Only the current holder of this Pusaka can do that\. \(NotOwner\)/)).toBeVisible(); // the panic, read from chain, in words
+  await expect(page.getByText(/Only the current holder of this Pusaka can do that\. \(NotOwner\)/).first()).toBeVisible(); // the panic, read from chain, in words
+  await expect(page.getByText(/PqLocked: sign an unlock/)).toBeVisible(); // Pusaka v2: the post-quantum lock refusing the holder's own key
 });
 
 test("Pusaka v2 shows a token's own keyless account, its name and its post-quantum lock", async ({ page }) => {

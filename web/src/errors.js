@@ -2,6 +2,8 @@
 // Codes that already carry an explanation ("Approved: call nft_revoke_all first") pass through unchanged.
 const SAY = {
   NotOwner: "Only the current holder of this Pusaka can do that.",
+  PqLocked: "This Pusaka has a post-quantum lock: sign an unlock with its ML-DSA-65 key first.",
+  PqBadSignature: "That unlock isn't signed by the post-quantum key registered for this Pusaka.",
   NoToken: "There is no such Pusaka.",
   TokenNotFound: "There is no such Pusaka.",
   Listed: "This Pusaka is listed for sale; cancel the listing first.",
