@@ -9,7 +9,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { z } from "zod";
 import { Account, FailoverRpcProvider, JsonRpcProvider, baseDecode, getTransactionLastResult, teraToGas } from "near-api-js";
 import {
-  CONTRACT, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
+  CONTRACT, IS_SIBLING, SIBLINGS, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
@@ -593,12 +593,14 @@ reg("pusaka_withdraw_sol", {
   return { tx: sig, explorer: SOL.explorer(`tx/${sig}`), from };
 }));
 
-// ---------- Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet): the NFT's own account, its name, the post-quantum lock ----------
+// ---------- Pusaka v2: the NFT's own account, its name, the post-quantum lock (always on the v2 deployment) ----------
+const V2C = IS_SIBLING ? CONTRACT : SIBLINGS[0];
+const v2view = (method, args) => { if (!V2C) throw new Error(`No Pusaka v2 on ${NETWORK}.`); return provider.callFunction({ contractId: V2C, method, args, blockQuery: { finality: "optimistic" } }); };
 reg("pusaka_token_account", {
   description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, and whether the post-quantum (ML-DSA-65) lock is on and open.",
   inputSchema: { token_id: z.string() },
 }, tool(async ({ token_id }) => {
-  const [acct, alias, pq, info] = await Promise.all([view("account_of", { token_id }), view("alias_of", { token_id }), view("pq_key_of", { token_id }), view("token_info", { token_id })]);
+  const [acct, alias, pq, info] = await Promise.all([v2view("account_of", { token_id }), v2view("alias_of", { token_id }), v2view("pq_key_of", { token_id }), v2view("token_info", { token_id })]);
   const bal = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "final" } }).then((a) => toNear(a.amount), () => null);
   const [a, b] = await Promise.all([bal(acct), bal(alias)]);
   return { token_id, holder: info.token.owner_id, account: { id: acct, near: a, exists: a !== null }, alias: { id: alias, near: b, exists: b !== null },
@@ -614,9 +616,9 @@ reg("pusaka_account_send", {
   const receiver = to.trim().toLowerCase();
   await outflow(receiver, `send ${near} NEAR from Pusaka v2 #${token_id}'s ${alias ? "named " : ""}account to ${receiver}`);
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
-  const o = await account.callFunctionRaw({ contractId: CONTRACT, methodName: "account_call", gas: teraToGas(300), deposit: 1n,
+  const o = await account.callFunctionRaw({ contractId: V2C, methodName: "account_call", gas: teraToGas(300), deposit: 1n,
     args: { token_id, alias, receiver_id: receiver, method_name: "", args: "", deposit: toYocto(near).toString(), gas_tgas: 0 } });
-  return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, from: await view(alias ? "alias_of" : "account_of", { token_id }) };
+  return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, from: await v2view(alias ? "alias_of" : "account_of", { token_id }) };
 }));
 
 reg("pusaka_pq_unlock", {
@@ -626,11 +628,12 @@ reg("pusaka_pq_unlock", {
   const seed = process.env.PUSAKA_PQ_SEED_HEX?.trim();
   if (!/^[0-9a-f]{64}$/i.test(seed ?? "")) throw new Error("Set PUSAKA_PQ_SEED_HEX (64 hex, the holder's key file) on the server to unlock.");
   const k = pqKeys(Buffer.from(seed, "hex"));
-  const pq = await view("pq_key_of", { token_id });
+  const pq = await v2view("pq_key_of", { token_id });
   if (!pq) throw new Error(`Pusaka #${token_id} has no post-quantum lock.`);
   if (Buffer.from(k.publicKey).toString("base64") !== pq.public_key) throw new Error("PUSAKA_PQ_SEED_HEX isn't the key registered for this Pusaka.");
   const nonce = String(Number(pq.nonce) + 1);
-  const o = await call("pq_unlock", { token_id, nonce, signature: pqSign(k.secretKey, pq.message_for_next_unlock) }, { tgas: 30 });
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const o = await account.callFunction({ contractId: V2C, methodName: "pq_unlock", args: { token_id, nonce, signature: pqSign(k.secretKey, pq.message_for_next_unlock) }, gas: teraToGas(30) });
   return { unlocked: true, nonce, note: "owner actions open for ~120 blocks" , result: o ?? null };
 }));
 
