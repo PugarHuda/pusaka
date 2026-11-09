@@ -628,9 +628,15 @@ reg("pusaka_set_agent", {
 }, tool(async ({ token_id, agent, daily_near, only_to = [] }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   const a = agent.trim().toLowerCase();
-  if (daily_near > 0) await outflow(a, `let ${a} spend up to ${daily_near} NEAR a day from Pusaka v2 #${token_id}'s account`);
+  const dest = only_to.map((x) => x.trim().toLowerCase());
+  if (daily_near > 0) {
+    // the agent and every account it may pay are outflow destinations; with an allowlist, "anyone" isn't allowed
+    if (ALLOWED.length && !dest.length) throw new Error("PUSAKA_ALLOWED_RECIPIENTS is set: list the accounts the agent may pay (only_to).");
+    for (const d of dest) if (ALLOWED.length && !ALLOWED.includes(d)) throw new Error(`${d} isn't in PUSAKA_ALLOWED_RECIPIENTS.`);
+    await outflow(a, `let ${a} spend up to ${daily_near} NEAR a day from Pusaka v2 #${token_id}'s account, to ${dest.length ? dest.join(", ") : "anyone"}`);
+  }
   const o = await account.callFunctionRaw({ contractId: V2C, methodName: "set_agent", gas: teraToGas(30), deposit: toYocto(0.01),
-    args: { token_id, agent: a, daily: daily_near > 0 ? toYocto(daily_near).toString() : null, to: daily_near > 0 ? only_to.map((x) => x.trim().toLowerCase()) : [] } });
+    args: { token_id, agent: a, daily: daily_near > 0 ? toYocto(daily_near).toString() : null, to: daily_near > 0 ? dest : [] } });
   return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, budget: await v2view("agent_of", { token_id }) };
 }));
 
@@ -641,7 +647,8 @@ reg("pusaka_agent_send", {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   const receiver = to.trim().toLowerCase();
   if (!(await accountExists(receiver))) throw new Error(`${receiver} doesn't exist on NEAR ${NETWORK}.`);
-  // ponytail: no off-chain spend guard here, the holder's on-chain budget is the guard
+  // the holder's on-chain budget caps it; the usual outflow gate still applies, so text this agent read can't steer it
+  await outflow(receiver, `send ${near} NEAR from Pusaka v2 #${token_id}'s account (within the holder's budget) to ${receiver}`);
   const o = await account.callFunctionRaw({ contractId: V2C, methodName: "agent_send", gas: teraToGas(100),
     args: { token_id, receiver_id: receiver, amount: toYocto(near).toString() } });
   return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, budget: await v2view("agent_of", { token_id }) };

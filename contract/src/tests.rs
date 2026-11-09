@@ -3216,6 +3216,14 @@ mod v2_tests {
         call(&mut c, "alice.testnet");
     }
 
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f7_stranger_cannot_name_the_account() {
+        let mut c = setup();
+        at("bob.testnet", NearToken::from_millinear(50), 100);
+        let _ = c.name_account("1".into());
+    }
+
     fn with_pq() -> Pusaka {
         let mut c = setup();
         at("alice.testnet", NearToken::from_millinear(50), 100);

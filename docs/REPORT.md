@@ -35,7 +35,7 @@ Chain Signatures: Dalam → + FunctionCall staking · Light client: Sedang → D
 Staking NEAR milik NFT (`#/pusaka/2`), bukti kembalian gratis (`#/pusaka/10`), judul halaman token sebelum JS (LCP 8,4 → 2,7 s), error kontrak manusiawi, `.env.example`, `cargo audit` di CI.
 
 ## 7. Testing
-Kontrak 274 × 2 (termasuk fuzz + invariant) · unit Node 9 file · Playwright `ui.spec` 90 (5 proyek) + `live.spec` 32 · `verify.mjs` 8 cek · MCP smoke. Bug yang ditemukan tes: 10 (`06-qa.md`). Lighthouse mobile produksi: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
+Kontrak 275 × 2 (termasuk fuzz + invariant) · unit Node 9 file · Playwright `ui.spec` 90 (5 proyek) + `live.spec` 32 · `verify.mjs` 8 cek · MCP smoke. Bug yang ditemukan tes: 10 (`06-qa.md`). Lighthouse mobile produksi: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
 
 ## 8. Tautan
 Demo: https://pusaka-two.vercel.app · Kontrak: https://testnet.near.rocks/account/pusaka-btc.testnet · Repo: https://github.com/PugarHuda/pusaka · Video & deck: belum ada (naskah + outline di `07-submission.md`).

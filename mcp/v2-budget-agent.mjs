@@ -35,15 +35,15 @@ if (!(await exists(acct))) {
 }
 await account(holder).transfer({ receiverId: acct, amount: 5n * 10n ** 22n });
 
-const h = await mcp(holder, { PUSAKA_ALLOW_OUTFLOWS: "1", PUSAKA_ALLOWED_RECIPIENTS: agentId });
+const h = await mcp(holder, { PUSAKA_ALLOW_OUTFLOWS: "1", PUSAKA_ALLOWED_RECIPIENTS: `${agentId},${shop}` });
 assert.ok(!(await run(h, "pusaka_set_agent", { token_id, agent: agentId, daily_near: 0.02, only_to: [shop] })).isError);
 
-const a = await mcp(agentId);
+const a = await mcp(agentId, { PUSAKA_ALLOW_OUTFLOWS: "1" }); // no local allowlist: the contract is what refuses
 const paid = await run(a, "pusaka_agent_send", { token_id, to: shop, near: 0.01 });
 assert.ok(!paid.isError);
 assert.match((await run(a, "pusaka_agent_send", { token_id, to: shop, near: 0.02 })).text, /AgentBudget/);
 assert.match((await run(a, "pusaka_agent_send", { token_id, to: stranger, near: 0.001 })).text, /AgentReceiver|holder's list|listed/);
-const s = await mcp(stranger);
+const s = await mcp(stranger, { PUSAKA_ALLOW_OUTFLOWS: "1" });
 assert.match((await run(s, "pusaka_agent_send", { token_id, to: shop, near: 0.001 })).text, /NotAgent|agent the holder named/);
 await s.close();
 
