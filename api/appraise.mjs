@@ -11,6 +11,8 @@ const CACHE_MS = 15 * 60_000, MAX_PER_HOUR = 60;
 const cache = new Map();
 let quota = { start: Date.now(), n: 0 };
 
+const pctLabel = (d) => `${Math.abs(Math.round(d * 1000) / 10)}% ${d < 0 ? "below" : "above"} the value of the BTC inside`;
+
 /** Only on-chain facts (and two market prices) go to the model; it is told to use nothing else. */
 async function facts(id) {
   const [info, px] = await Promise.all([viewFinal("token_info", { token_id: id }), prices().catch(() => null)]);
@@ -27,6 +29,10 @@ async function facts(id) {
       btc_usd: px?.btcUsd ?? null, near_usd: px?.nearUsd ?? null,
       btc_inside_usd: px ? Math.round(sats / 1e8 * px.btcUsd * 100) / 100 : null,
       for_sale_near: listed ?? null, dutch_auction: !!info.listing && info.listing.floor !== info.listing.price,
+      // arithmetic done here, not by the model: it quotes these numbers
+      for_sale_usd: px && listed ? Math.round(listed * px.nearUsd * 100) / 100 : null,
+      price_vs_btc_inside: px && listed && sats ? pctLabel(listed * px.nearUsd / (sats / 1e8 * px.btcUsd) - 1) : null,
+      loan_to_value: px && info.loan && sats ? `${Math.round(yocto(info.loan.principal) * px.nearUsd / (sats / 1e8 * px.btcUsd) * 1000) / 10}%` : null,
       loan: info.loan ? { principal_near: yocto(info.loan.principal), repay_near: yocto(info.loan.repay), funded: !!info.loan.lender, due_ms: info.loan.due_ms ?? null } : null,
       approved_outside_markets: Object.keys(info.token.approved_account_ids ?? {}),
       history_entries: info.history.length, distinct_holders_seen: holders.length,
@@ -34,7 +40,7 @@ async function facts(id) {
   };
 }
 
-const SYSTEM = "You appraise one Pusaka: a NEAR NFT that controls a native Bitcoin address. Use only the JSON facts you are given; never invent numbers. "
+const SYSTEM = "You appraise one Pusaka: a NEAR NFT that controls a native Bitcoin address. Use only the JSON facts you are given; never compute or invent numbers: quote the given ones (price_vs_btc_inside, loan_to_value, *_usd) exactly. "
   + "Prices are mainnet market prices applied to testnet balances; say so once. Answer in at most 6 short lines, each starting with '- ': "
   + "the BTC inside and its USD value; the asking price against that value (if for sale); loan exposure and loan-to-value (if any); "
   + "anything that limits a buyer (signing in progress, outside-market approvals, loan collateral); its history in one line; a one-line verdict.";

@@ -66,6 +66,18 @@ test("'Check it yourself' re-checks a Pusaka in the browser against NEAR, its MP
   expect(errors).toEqual([]);
 });
 
+test("the private AI appraisal comes from an attested NEAR AI TEE and says so check by check", async ({ page, request }) => {
+  test.setTimeout(240_000);
+  test.skip(!(await (await request.get("/api/appraise?status=1")).json()).configured, "no NEAR AI key on this deployment");
+  await page.goto("/#/pusaka/15");
+  await page.getByRole("button", { name: "Appraise this Pusaka" }).click({ timeout: 30_000 });
+  await expect(page.locator(".appraisal p.stats")).toContainText(/^Verified: (\d+) of  checks passed/, { timeout: 200_000 });
+  await expect(page.locator(".appraisal-text p").first()).toContainText(/BTC|sats/);
+  await page.locator(".appraisal summary").click();
+  for (const what of ["Intel TDX quote verified", "report data = this signer + our fresh nonce", "NVIDIA NRAS: GPU attestation passed", "signed by the model's TEE", "exactly one model report verified before the request"])
+    await expect(page.locator(".appraisal li.ok").filter({ hasText: what }).first()).toBeVisible();
+});
+
 test("a Pusaka page shows proven BTC, its address, ETH and history", async ({ page }) => {
   const errors = errorsOf(page);
   await page.goto("/#/pusaka/1");
