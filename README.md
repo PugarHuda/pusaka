@@ -413,6 +413,31 @@ loan. The request is `dry: true`: the solvers quote, but no deposit address is o
 answers "amount too low" and the page says so. Code: `shared/intents.mjs`, test `shared/intents.test.mjs`.
 Try: `curl -s -X POST https://1click.chaindefuser.com/v0/quote -H 'content-type: application/json' -d '{"dry":true,"swapType":"EXACT_INPUT","slippageTolerance":100,"originAsset":"nep141:btc.omft.near","depositType":"ORIGIN_CHAIN","destinationAsset":"nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near","amount":"10000","refundTo":"0x578c38a22c2bb08b07b45451f65a7cd4dac50ba8","refundType":"INTENTS","recipient":"0x578C38A22c2BB08b07b45451f65A7CD4daC50Ba8","recipientType":"DESTINATION_CHAIN","deadline":"2030-01-01T00:00:00Z"}'` (Pusaka #12's EVM address).
 
+**The exit, executed: a Pusaka's BTC swapped to USDC through NEAR Intents (testnet).** The quote above is a dry
+run. On testnet the swap also runs for real: the holder picks an amount in the *Swap to USDC (NEAR Intents)* form,
+the app asks for a live quote (`dry: false`), the contract builds a spend from the Pusaka's own address to the quote's
+deposit address, NEAR MPC signs it, and the USDC lands in the holder's NEAR account. Refunds go back to the Pusaka's
+own Bitcoin address, not to a person. 1Click has no testnet, so testnet uses [Tidepool](https://www.usetidepool.tech):
+the same `/quote`, `/deposit/submit` and `/status` API, with settlement by NEAR's unmodified `defuse` verifier
+(`verifier.tidepool-sandbox.testnet`). Live (9 Nov): Pusaka #21 swapped 20,000 sats for **14.752486 USDC** paid to
+its holder `pusaka-s-mw5sfoai.testnet`; NEAR MPC signed in 7.2 s.
+- Bitcoin testnet4 tx: [52a0adcd…](https://mempool.space/testnet4/tx/52a0adcd39318ffc9137a598f8c99d3a3d126914ab58fa92d04c5fd5e8cf4fe0)
+- NEAR settlement: [6jQR6fwB…](https://testnet.near.rocks/tx/6jQR6fwBoni25o3c21hp6aYLqsQYAiyPpkLzXherQqpK), [FtkHZMPT…](https://testnet.near.rocks/tx/FtkHZMPTErzygAvHNFRbBYevWwf5bHz7S1nky94cytaS) and [2i7QK2ze…](https://testnet.near.rocks/tx/2i7QK2ze4Z7SQ2vyrLTTB7U9CQ2c6L5AJgsHZSVuwCSs)
+
+Then the same swap again **through the web app's form**, with a real wallet (Intear, approved by `web/e2e/wallet-qa.mjs swap`):
+20,000 sats for 14.79 USDC, 1,234 s from click to settled (most of it waiting for one testnet4 block).
+- Bitcoin testnet4 tx: [69509159…](https://mempool.space/testnet4/tx/69509159f4b47d12b963409373cfaa9bde5df339a88c1e4596f15ccb7797683e)
+- NEAR settlement: [AaUXakFN…](https://testnet.near.rocks/tx/AaUXakFNoBj8oyNsK1d1mKzVWMfZd2QX527oPTLjVdpa), [Hma9CFKV…](https://testnet.near.rocks/tx/Hma9CFKVQMK9Kfp2CVWKEvbCSqY1UjMZUokGYoHEb85j) and [HUWEnGY7…](https://testnet.near.rocks/tx/HUWEnGY7Q2Vcr9zEJsDzY7gBr9qtYPP46Hh2L3p48c3f)
+- The holder's balance on `usdc.tidepool-sandbox.testnet` afterwards: 29.541855 USDC, the sum of both swaps.
+
+Run it yourself: `node scripts/intents-exit.mjs <holder> <id> <testnet4_funding_txid>`.
+
+Limits, stated plainly:
+- Tidepool is a community sandbox. Its Bitcoin side is **testnet4 with a custodial test relayer**, which is Tidepool's trust model, not Pusaka's.
+- The Pusaka's address and MPC key hold coins on testnet3 and testnet4 alike. NEAR's light client follows testnet3, so testnet4 coins are spendable but never count as `verified_sats`.
+- The app has no testnet4 address index, so the holder names the testnet4 transaction that funded the Pusaka.
+- On mainnet the same requests would go to 1Click. That path isn't wired up here, because Pusaka isn't on mainnet.
+
 ## Why the seller can't keep the Bitcoin
 
 Every way we found for a seller to try to keep the BTC after selling, and what stops it:
@@ -513,7 +538,7 @@ Mapped to the primitives in [docs.near.org](https://docs.near.org/primitives/wha
 | **MPC foreign-transaction verification** (domain 3) and **confidential key derivation** (CKD) | USDC deposits counted only once the MPC network reads the finalized chain itself; the sealed holder letter's key | [Verified USDC](#verified-usdc-near-mpc-reads-base-and-arbitrum), [Holder room](#holder-room-gated-by-the-nft) |
 | **Bitcoin light client** | A deposit counts only when NEAR's on-chain SPV client verifies its merkle proof | `verified_sats`; `verify.mjs` re-checks every proven UTXO on Bitcoin |
 | **FT** (NEP-141) and **Omni Bridge** | nBTC minted to the token's own NEAR account from its native BTC | [nBTC](#nbtc-the-pusakas-bitcoin-also-as-a-near-token) |
-| **NEAR Intents** (1Click) | Solver-signed quote for what the BTC inside would sell for (dry run: 1Click liquidity is mainnet only) | exit value on every token page and in `pusaka_inspect` |
+| **NEAR Intents** (1Click) | Solver-signed quote for what the BTC inside would sell for (dry run on 1Click's mainnet liquidity), and an executed swap of a Pusaka's BTC to USDC on NEAR (testnet, through Tidepool) | exit value on every token page and in `pusaka_inspect`; [the exit, executed](#prices-what-a-lender-or-buyer-is-actually-getting) |
 | **Meta transactions** (NEP-366) | Gas-free listing, loan requests, check-ins and borrowing (a BTC holder's first NEAR can be a loan) | [Gas-free actions](#gas-free-actions-nep-366-relayer) |
 | **Gas keys** (NEP-611, protocol 88) | The relayer pays gas from a gas key's own balance and sends in parallel over 16 nonce lanes | relayed `list` from the deployed API on lane 8 [66Gi31T5…](https://testnet.near.rocks/tx/66Gi31T5sqcT1TPP4upzxXxtrTTLaXPCGkZ9e4BBggFX) |
 | **Linkdrop** (NEP-452 `claim` / `create_account_and_claim`) | Gift a Pusaka as a link: the recipient needs no account and no wallet; claiming creates and funds one, then the NFT moves to it | Pusaka #2 gifted and claimed by a brand-new account [FixcqhB7…](https://testnet.near.rocks/tx/FixcqhB73hQefMX4SmbwG81Ux2PdRTxJDH6wWgHp6o3v); again from a browser with no wallet (`web/e2e/gift-qa.mjs`): a name typed, the account created and given the Pusaka in 8 s [4haA1JXo…](https://testnet.near.rocks/tx/4haA1JXo52kJsVvYTts1Pj2JUuUfDrH5xkkb7VNkaYVM), and its 0.13 NEAR paid a default 100 TGas transfer right after [BovGdcY2…](https://testnet.near.rocks/tx/BovGdcY2yK6yae5tfnudGtLBstww4Q9bibcTfPyGPoYD) |

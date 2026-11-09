@@ -38,9 +38,11 @@ const switchTo = async (who) => {
     for (const fr of p.frames()) { const b = fr.getByText("Web", { exact: true }); if (await b.count()) { await b.first().click(); break; } }
     const w = await pop;
     await w.waitForLoadState(); await w.waitForTimeout(4000);
-    await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
-    await w.getByText(who, { exact: true }).last().click();
-    await w.waitForTimeout(1000);
+    if (!(await w.innerText("body")).includes(who)) { // already selected when it's the wallet's only account
+      await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
+      await w.getByText(who, { exact: true }).last().click();
+      await w.waitForTimeout(1000);
+    }
     await w.getByRole("button", { name: "Connect", exact: true }).click();
     await p.waitForTimeout(6000);
   }
@@ -52,9 +54,9 @@ try {
     await p.locator("text=Private Key").click();
     await p.locator("input[type=text]:visible").first().fill(JSON.parse(fs.readFileSync(keyFile, "utf8")).private_key);
     for (const cb of await p.locator("input[type=checkbox]:visible").all()) await cb.check();
-    await p.waitForTimeout(4000);
+    await p.waitForTimeout(15000); // Intear looks the key up; slower for some accounts
     const who = JSON.parse(fs.readFileSync(keyFile, "utf8")).account_id ?? "pusaka-buyer.testnet";
-    await p.getByRole("button", { name: who }).click();
+    await p.getByText(who).first().click({ timeout: 60_000 });
     await p.getByRole("button", { name: "Import Account" }).click();
     await p.waitForTimeout(6000);
   }
