@@ -697,6 +697,15 @@ reg("pusaka_withdraw_nbtc", {
   if (!(await provider.callFunction({ contractId: NBTC, method: "storage_balance_of", args: { account_id: receiver } }))) throw new Error(`${receiver} isn't registered with ${NBTC}`);
   const acct = await nearAccount(token_id);
   const have = BigInt(await provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: acct } }));
+  if (have < BigInt(sats)) throw new Error(`Pusaka #${token_id} holds ${have} nBTC sats`);
+  const { nonce, blockHash } = await nearTxParams(acct);
+  const deposit = 10_000_000_000_000_000_000_000n;
+  await spend(deposit, "withdraw_nbtc");
+  const signed = await call("withdraw_nbtc", { token_id, receiver_id: receiver, sats: String(sats), nonce: String(nonce), block_hash: blockHash }, { deposit, tgas: 300 });
+  if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
+  const hash = await broadcastNear(await finalizeNear(signed));
+  return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, from: acct };
+}));
 
 reg("pusaka_stake_near", {
   description: `Stake, unstake or withdraw NEAR from your Pusaka's own NEAR account at a validator (pools from the official factory, *${POOL_SUFFIX}). The stake and its rewards stay in that account, so they move with the NFT; nothing leaves the Pusaka. pool "best" picks the active factory pool with the lowest fee. Unstaked NEAR can be withdrawn after about 4 epochs.`,
@@ -715,15 +724,6 @@ reg("pusaka_stake_near", {
   const hash = await broadcastNear(await finalizeNear(signed));
   const [now] = await stakeBalances(acct, [p]);
   return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, account: acct, pool: p, staked_yocto: now.staked, unstaked_yocto: now.unstaked, withdrawable: now.withdrawable };
-}));
-  if (have < BigInt(sats)) throw new Error(`Pusaka #${token_id} holds ${have} nBTC sats`);
-  const { nonce, blockHash } = await nearTxParams(acct);
-  const deposit = 10_000_000_000_000_000_000_000n;
-  await spend(deposit, "withdraw_nbtc");
-  const signed = await call("withdraw_nbtc", { token_id, receiver_id: receiver, sats: String(sats), nonce: String(nonce), block_hash: blockHash }, { deposit, tgas: 300 });
-  if (signed.account !== acct) throw new Error(`contract signed for ${signed.account}, expected ${acct}`);
-  const hash = await broadcastNear(await finalizeNear(signed));
-  return { tx: hash, explorer: `${NEAR_EXPLORER}/tx/${hash}`, from: acct };
 }));
 
 // ---------- due diligence an agent can run before trusting Pusaka with money: all read live, nothing signed ----------

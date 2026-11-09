@@ -12,6 +12,12 @@ Ada 81 video pesaing yang sudah ditonton (9 Nov). Nilai Demo 9 hanya didapat vid
 - **Suara sendiri, bahasa Inggris.** Juri internasional, dan video ber-voiceover AI dinilai lebih rendah oleh agen penilai. Kalau tidak nyaman bicara, cukup subtitle plus musik pelan tanpa lirik.
 - **Jangan menyembunyikan jeda.** Potong saat menunggu, tapi beri label, misalnya "⏩ 40 s waiting for NEAR MPC". Workcell dan Sealed Exploit dipuji agen penilai karena jujur soal jeda.
 
+## Footage siap pakai (10 Nov)
+`node web/e2e/record-clips.mjs` merekam adegan tanpa wallet dari app live, 1080p, satu file per adegan, ke `media/clips/`:
+`01-landing`, `02-token`, `03-refused` (24 tx ditolak, lalu satu dibuka di explorer), `04-chains`, `05-check` ("Check it yourself" sampai selesai), `06-v2-agent` (budget agen on-chain di v2 #7).
+Kamu tinggal merekam adegan yang butuh wallet (beli dan withdraw), lalu memotong dan menambah suara/subtitle.
+**Catatan:** #11 sudah dibeli (`pusaka-buyer.testnet`); pakai Pusaka lain yang masih dijual di `#/market`, atau `node scripts/restock.mjs`.
+
 ## Persiapan (H-1, ±20 menit)
 | # | Langkah | Status / perintah |
 |---|---|---|

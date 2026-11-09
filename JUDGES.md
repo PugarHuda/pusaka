@@ -2,7 +2,7 @@
 
 Everything below runs without a wallet and without a key, on a fresh clone. Nothing is signed or sent.
 
-## 1. Check every claim against the chains (1 minute)
+## 1. Check every claim against the chains (1–2 minutes)
 
 ```
 npm install
@@ -35,7 +35,7 @@ What each line means:
 - **Proven deposits**: `verified_sats` is recomputed from the token's proven UTXOs minus the ones it ever signed,
   and each UTXO is looked up on Bitcoin: confirmed, at or below the light client's height, paying this address.
 
-## 2. Run the tests (2 minutes)
+## 2. Run the tests (2 minutes once built; the first build adds ~2)
 
 ```
 cd contract && cargo test        # 275 passed (incl. fuzz + invariant tests)
