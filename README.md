@@ -234,7 +234,10 @@ read the letter, and the writer was refused. Limit: CKD trusts the MPC threshold
 [review](https://new.trailofbits.com/library/near-one-confidential-key-derivation/) of NEAR's CKD applies.
 
 **Sealed files, from the same key.** The holder room also seals any file (a seed backup, a deed, instructions for an
-heir, up to 10 MB) so that only whoever holds the Pusaka can open it. The file key is the same MPC secret under a
+heir, up to 10 MB) with the Pusaka's MPC key, which only its current holder can ask the contract for. Limit, shown on
+the page: that key belongs to the current letter's path (`letter:<id>:<who sealed it>:<nonce>`), and anyone who held
+the Pusaka while that letter was current could have kept it. So a new holder seals a new letter first (one wallet
+call, a new key from NEAR MPC); files sealed after that are closed to every earlier holder. The file key is the same MPC secret under a
 second HKDF purpose (`pusaka-file-v1`), AES-256-GCM with the token id bound; the sealed file is downloaded and kept
 anywhere, since nothing in it is useful without the NFT (`sealFileCkd` / `openFileCkd` in `shared/ckd.mjs`, tested in
 `shared/ckd.test.mjs`). **Verified live (9 Nov 2026)** with `node scripts/ckd-file.mjs 2`: two key requests by #2's

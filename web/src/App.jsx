@@ -372,7 +372,7 @@ function Home() {
         </p>
       )}
       {moves?.length > 0 && (
-        <p className="reserves moves">
+        <p className="moves">
           Pusakas have changed hands <strong>{moves.length} times</strong> on NEAR ({sales} of them sales; the others
           gifts, transfers and inheritances). Each time the Bitcoin inside went with it in one NEAR transaction:
           <strong> 0 Bitcoin transactions, 0 Bitcoin fees</strong>, no confirmations to wait for.
@@ -1353,7 +1353,7 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
       const { sealCkd } = await import("@pusaka/shared/ckd");
       const sealed = await sealCkd(key, id, text);
       await call("set_letter", { token_id: id, sealed, path }, { deposit: 10_000_000_000_000_000_000_000n });
-      setRoom({ letter: text, creator: extra.creator ?? null, ckd: true, fileKey });
+      setRoom({ letter: text, creator: extra.creator ?? null, ckd: true, fileKey, path });
       setText("");
       setMsg({ ok: true, text: "Sealed with a NEAR MPC key into the Pusaka. Only whoever holds it can get that key." });
       await onDone();
@@ -1378,7 +1378,7 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
         {room.letter ? <blockquote className="letter">{room.letter}</blockquote> : <p className="muted">No letter sealed in this Pusaka yet.</p>}
         {room.ckd && <p className="muted">Decrypted in this tab with a key from NEAR MPC (confidential key derivation), checked against the MPC's public key.</p>}
         {room.creator && <p className="muted">Created by {room.creator}. They receive a 2.5% royalty on every resale.</p>}
-        {room.fileKey && <SealedFiles id={id} fileKey={room.fileKey} />}
+        {room.fileKey && <SealedFiles id={id} fileKey={room.fileKey} keyBy={(room.path ?? extra.letter_path)?.split(":")[2]} accountId={accountId} />}
         {canSeal && (
           <form onSubmit={sealLetter} className="stack">
             <label>{room.letter ? "Replace the letter" : "Write a letter for the next holder"}
@@ -1404,7 +1404,10 @@ const download = (bytes, name, type = "application/octet-stream") => {
  * Files only whoever holds this Pusaka can open: sealed in this tab with the key NEAR MPC gave the holder
  * (confidential key derivation), handed over with the NFT. The sealed file stays with you; store it anywhere.
  */
-function SealedFiles({ id, fileKey }) {
+function SealedFiles({ id, fileKey, keyBy, accountId }) {
+  // The key comes from the letter's MPC path, letter:<id>:<who sealed it>:<nonce>. Whoever held the Pusaka while that
+  // letter was current could ask for the same key and keep it, so a key made by someone else isn't yours alone.
+  const inherited = keyBy && keyBy !== accountId;
   const [msg, setMsg] = useState(null);
   async function handle(e, seal) {
     const f = e.target.files?.[0];
@@ -1417,7 +1420,7 @@ function SealedFiles({ id, fileKey }) {
       const bytes = new Uint8Array(await f.arrayBuffer());
       if (seal) {
         download(await sealFileCkd(fileKey, id, { name: f.name, type: f.type, bytes }), `${f.name}.pusaka-${id}`);
-        setMsg({ ok: true, text: `Sealed ${f.name} for whoever holds Pusaka #${id}. Keep the downloaded file anywhere: it is useless without this Pusaka.` });
+        setMsg({ ok: true, text: `Sealed ${f.name} with Pusaka #${id}'s key. Keep the downloaded file anywhere: it can't be opened without that key.` });
       } else {
         const out = await openFileCkd(fileKey, id, bytes);
         download(out.bytes, out.name, out.type || undefined);
@@ -1430,7 +1433,10 @@ function SealedFiles({ id, fileKey }) {
   return (
     <div className="sealed-files stack">
       <h3>Sealed files</h3>
-      <p className="muted">A backup, a deed, instructions for an heir: seal any file so that only the holder of this Pusaka can open it. Encrypted in this tab; nothing is uploaded.</p>
+      <p className="muted">A backup, a deed, instructions for an heir: seal any file so that it opens only with this Pusaka's MPC key, which only its holder can ask for. Encrypted in this tab; nothing is uploaded.</p>
+      {inherited
+        ? <p className="warn">This key was made by {keyBy}, who sealed the current letter. Anyone who held this Pusaka since then may have kept it. To seal files that only you and later holders can open, seal a new letter below first: that asks NEAR MPC for a new key.</p>
+        : <p className="muted">You made this key when you sealed the letter. Earlier holders never had it; later holders can ask for it, so pass the files on with the NFT.</p>}
       <label className="file-btn">Seal a file <input type="file" onChange={(e) => handle(e, true)} /></label>
       <label className="file-btn">Open a sealed file <input type="file" accept={`.pusaka-${id}`} onChange={(e) => handle(e, false)} /></label>
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}

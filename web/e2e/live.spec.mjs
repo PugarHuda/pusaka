@@ -39,7 +39,7 @@ test("the landing page leads to the market, which lists every Pusaka with its ve
 
 test("the landing page counts on-chain ownership changes, none of which needed a Bitcoin transaction", async ({ page }) => {
   await page.goto("/#/");
-  const moves = page.locator(".reserves.moves");
+  const moves = page.locator(".moves");
   await expect(moves).toContainText(/changed hands \d+ times on NEAR \(\d+ of them sales/, { timeout: 30_000 });
   await expect(moves).toContainText("0 Bitcoin transactions, 0 Bitcoin fees");
 });
