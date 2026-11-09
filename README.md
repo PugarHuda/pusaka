@@ -14,6 +14,21 @@ And the Bitcoin inside is **proven, not claimed**: every deposit is checked on N
 headers by NEAR's on-chain Bitcoin light client, and the contract subtracts every output it ever signed away. A buyer,
 a lender or an agent reads `verified_sats` from the contract and needs no indexer, no oracle and no trust in us.
 
+**How this differs from other "the NFT is a wallet" designs.** The common design gives each NFT its own NEAR
+(sub-)account. That account can hold NEAR and NEP-141 tokens, so Bitcoin can only be there as a wrapped token, and
+someone has to vouch for the wrapper. A Chain Signatures design that gives the NFT an EVM address does better, but a
+buyer still checks that address's balance off-chain. Pusaka puts **native BTC** in the NFT: a real Bitcoin address
+holding UTXOs, with no wrapper. The contract itself knows how much is inside: `verified_sats` is proven by the light
+client, net of everything it has ever signed away. So a price, a loan or an inheritance can be set against BTC the
+chain has verified, not BTC someone says is there.
+
+| | NFT with a NEAR sub-account | NFT with an EVM address (Chain Signatures) | **Pusaka** |
+|---|---|---|---|
+| Bitcoin inside | wrapped token only | no | **native UTXOs at its own address** |
+| Contents provable on NEAR | NEAR assets only | no: the balance is read off-chain from the other chain | **yes: `verified_sats`, light-client proven** |
+| Seller can't keep a way back in | keyless account | sign log | **sign epoch: a buy fails if anything was signed since the buyer looked; outside markets wait 1 h (mainnet 24 h) after the last signature** |
+| Borrow against what's inside | — | — | **BTC-collateral loans, enforced by the contract** |
+
 One NFT is a whole set of wallets: the same MPC key that holds its Bitcoin also controls one address on every EVM
 chain (ETH and USDC on Ethereum, Base and Arbitrum), and a second, Ed25519 MPC key is both a **Solana address** and the
 Pusaka's **own NEAR account**. Sell the NFT and all of it moves at once, with a sealed letter only the current holder

@@ -5,7 +5,7 @@ import {
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
   nearAccount, nearBalances, nearTxParams, finalizeNear, broadcastNear, NBTC, nbtcDepositAddress, nbtcBalances, stakingPools, stakeBalances,
-  ckdAppId, ckdEphemeral, ckdSecret, ckdKey, sealCkd, openCkd, LETTER_PURPOSE, exitQuote,
+  exitQuote,
 } from "@pusaka/shared";
 import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "viem";
 import { Account, KeyPair } from "near-api-js";
@@ -1304,6 +1304,8 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
 
   /** One wallet call: the contract asks NEAR MPC for the key, encrypted to a one-time key only this tab holds. */
   async function mpcKey(writeNonce) {
+    // BLS12-381 is only needed here, so it loads on first use instead of with every page
+    const { ckdAppId, ckdEphemeral, ckdSecret, ckdKey, LETTER_PURPOSE } = await import("@pusaka/shared/ckd");
     const eph = ckdEphemeral();
     const [answer, mpcPk] = await Promise.all([
       call("letter_key", { token_id: id, app_public_key: eph.appPublicKey, ...(writeNonce && { write_nonce: writeNonce }) }, { deposit: 1n, tgas: 100 }),
@@ -1318,6 +1320,7 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
     setBusy("open"); setMsg(null);
     try {
       const { key } = await mpcKey();
+      const { openCkd } = await import("@pusaka/shared/ckd");
       setRoom({ letter: await openCkd(key, id, extra.letter), creator: extra.creator ?? null, ckd: true });
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     finally { setBusy(""); }
@@ -1329,6 +1332,7 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
     try {
       // Sealed in this tab with a NEAR MPC confidential key: the server never sees the key or the text.
       const { key, path } = await mpcKey(Date.now().toString(36));
+      const { sealCkd } = await import("@pusaka/shared/ckd");
       const sealed = await sealCkd(key, id, text);
       await call("set_letter", { token_id: id, sealed, path }, { deposit: 10_000_000_000_000_000_000_000n });
       setRoom({ letter: text, creator: extra.creator ?? null, ckd: true });

@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./btc.mjs"
+    ".": "./btc.mjs",
+    "./ckd": "./ckd.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

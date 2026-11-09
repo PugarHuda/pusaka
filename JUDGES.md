@@ -15,8 +15,8 @@ Expect `all checks passed`, with these lines (numbers move as the demo is used):
 ✓ deployed code = the README's reproducible build: sha256 …, commit …
 ✓ NEP-330 build info names the reproducible image: sourcescan/cargo-near:0.21.1-rust-1.96.1
 ✓ nobody holds a key to the contract account: no key at all (or only open gift-link keys limited to claim)
-✓ new code only after a public announcement: admin pusaka-admin.testnet announces a sha256; deployable 10 min later
-✓ all 20 Pusaka BTC keys are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
+✓ new code only after a public announcement: upgrades renounced: final
+✓ all 21 Pusaka BTC keys are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
 ✓ verified_sats = proven deposits never signed away; 9 proven deposits found on Bitcoin, confirmed, paying the right address: …
 ✓ the app's /api/reserves matches the contract: … sats verified in total
 ✓ all … NEAR transactions cited in the README are on chain: via FastNear's archival index
