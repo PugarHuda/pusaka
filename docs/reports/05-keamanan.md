@@ -1,6 +1,6 @@
 # 05 — Keamanan (Web3 Security Auditor)
 
-Acuan: `03-kontrak.md`, `04-dapp.md`. Threat model lengkap (T1–T27, tiap baris → tes): README "Why the seller can't keep the Bitcoin".
+Acuan: `03-contracts.md`, `04-dapp.md`. Threat model lengkap (T1–T27, tiap baris → tes): README "Why the seller can't keep the Bitcoin".
 
 ## Scanner
 | Alat | Sebelum | Sesudah |
@@ -24,7 +24,7 @@ Acuan: `03-kontrak.md`, `04-dapp.md`. Threat model lengkap (T1–T27, tiap baris
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
-PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (225 tes).
+PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (246 tes, termasuk fuzz dan invariant).
 
 ## Frontend / backend
 | Pemeriksaan | Hasil |

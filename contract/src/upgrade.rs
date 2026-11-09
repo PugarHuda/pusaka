@@ -112,6 +112,7 @@ impl Pusaka {
         }
     }
 
+    /// Upgrade state: admin, announced sha256 and when it becomes deployable, delay, and `renounced` (true since 8 Nov 2026: final).
     pub fn upgrade_status(&self) -> Value {
         json!({
             "admin": admin(),

@@ -2828,3 +2828,313 @@ fn gd10_a_new_holder_starts_with_no_guardians() {
     assert!(c.guardians_of("1".into()).is_none());
     assert!(c.heir_of("1".into()).is_none());
 }
+
+// ---------- fuzz and invariant tests (proptest): numeric inputs, untrusted bytes, random operation sequences ----------
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// `setup()` on empty storage: the mocked chain keeps its storage between proptest cases.
+    fn fresh() -> Pusaka {
+        near_sdk::mock::with_mocked_blockchain(|b| drop(b.take_storage()));
+        setup()
+    }
+
+    fn listing(price: u128, floor: u128, start: u64, end: u64) -> Listing {
+        Listing {
+            seller: acc("alice.testnet"),
+            price: NearToken::from_yoctonear(price),
+            floor: NearToken::from_yoctonear(floor),
+            start_ms: U64(start),
+            end_ms: U64(end),
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+        /// Dutch auction: the price never leaves [floor, price], never rises over time,
+        /// starts at `price`, ends at `floor`, and never overflows, even near u128::MAX.
+        #[test]
+        fn fz1_dutch_price_bounded_monotonic(
+            a in any::<u128>(), b in any::<u128>(),
+            start in 0u64..u64::MAX / 2, dur in 1u64..u64::MAX / 4,
+            t1 in any::<u64>(), t2 in any::<u64>(),
+        ) {
+            let (price, floor) = (a.max(b), a.min(b));
+            let l = listing(price, floor, start, start + dur);
+            let (early, late) = (t1.min(t2), t1.max(t2));
+            let (pe, pl) = (l.price_at(early).as_yoctonear(), l.price_at(late).as_yoctonear());
+            prop_assert!(floor <= pl && pl <= pe && pe <= price);
+            prop_assert_eq!(l.price_at(start).as_yoctonear(), price);
+            prop_assert_eq!(l.price_at(start + dur).as_yoctonear(), floor);
+        }
+
+        /// A listing whose window is empty or reversed sells at the floor, whatever the clock says.
+        #[test]
+        fn fz2_dutch_degenerate_window_is_floor(price in any::<u128>(), start in any::<u64>(), back in 0u64..1_000_000, now in any::<u64>()) {
+            let l = listing(price, price / 2, start, start.saturating_sub(back));
+            prop_assert_eq!(l.price_at(now).as_yoctonear(), price / 2);
+        }
+
+        /// Bitcoin parser, round trip: for any well-formed non-witness tx, `output(tx, k)`
+        /// returns exactly output k's value and script.
+        #[test]
+        fn fz4_btc_output_round_trip(
+            n_in in 1usize..4,
+            outs in prop::collection::vec((any::<u64>(), prop::collection::vec(any::<u8>(), 0..300)), 1..6),
+            pick in any::<prop::sample::Index>(),
+        ) {
+            fn varint(n: usize, v: &mut Vec<u8>) {
+                if n < 0xfd { v.push(n as u8) } else { v.push(0xfd); v.extend((n as u16).to_le_bytes()) }
+            }
+            let mut tx = vec![2, 0, 0, 0];
+            varint(n_in, &mut tx);
+            for i in 0..n_in {
+                tx.extend([i as u8 + 1; 36]);
+                varint(0, &mut tx);
+                tx.extend([0xff; 4]);
+            }
+            varint(outs.len(), &mut tx);
+            for (value, script) in &outs {
+                tx.extend(value.to_le_bytes());
+                varint(script.len(), &mut tx);
+                tx.extend(script);
+            }
+            tx.extend([0; 4]);
+            let k = pick.index(outs.len());
+            prop_assert_eq!(btc::output(&tx, k as u32), outs[k].clone());
+        }
+
+        /// Bitcoin parser, hostile bytes: anything a prover sends either parses or panics (which aborts
+        /// the call and stores nothing); it always terminates and never reads past the input.
+        #[test]
+        fn fz5_btc_output_hostile_bytes_terminate(bytes in prop::collection::vec(any::<u8>(), 0..400), vout in 0u32..8) {
+            if let Ok((_, script)) = std::panic::catch_unwind(|| btc::output(&bytes, vout)) {
+                prop_assert!(script.len() <= bytes.len());
+            }
+        }
+
+    }
+
+    // These two build a contract per case in the mocked VM: fewer cases by default (PROPTEST_CASES raises them).
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Royalty split: the parts always add up to what was paid, the creator gets exactly
+        /// floor(2.5 %), and huge amounts don't overflow. A creator selling their own token pays none.
+        #[test]
+        fn fz3_royalty_split_conserves_value(amount in any::<u128>()) {
+            let c = fresh(); // alice minted token 1, so alice is its creator
+            let parts = c.split(&"1".to_string(), &acc("bob.testnet"), amount);
+            prop_assert_eq!(parts.len(), 2);
+            prop_assert_eq!(parts[0].1.checked_add(parts[1].1), Some(amount));
+            prop_assert_eq!(&parts[1].0, &acc("alice.testnet"));
+            if amount <= u128::MAX / ROYALTY_BPS {
+                prop_assert_eq!(parts[1].1, amount * ROYALTY_BPS / 10_000);
+            }
+            let own = c.split(&"1".to_string(), &acc("alice.testnet"), amount);
+            prop_assert_eq!(own, vec![(acc("alice.testnet"), amount)]);
+        }
+
+        /// Invariant over random sequences of proofs, withdrawals and MPC answers (success or failure):
+        /// - verified_sats == sum of proven outpoints that were never signed for;
+        /// - the signed-outpoint registry only grows and never holds duplicates;
+        /// - no token is left SignPending once the MPC answered;
+        /// - sign_epoch never goes down (a buyer's expected epoch can't be replayed).
+        #[test]
+        fn inv1_verified_sats_and_registry(ops in prop::collection::vec((0u8..3, 0u32..6, 10_000u64..200_000, any::<bool>()), 1..25)) {
+            let mut c = fresh();
+            let mut proven_model: Vec<(u32, u64)> = vec![];
+            let mut signed_model: Vec<u32> = vec![];
+            let (mut last_epoch, mut last_signed) = (0u32, 0usize);
+            for (op, vout, value, ok) in ops {
+                match op {
+                    0 => {
+                        // returns the light client's answer; whether it is stored is checked through verified_sats below
+                        proven(&mut c, b"true", vout, value);
+                        if !signed_model.contains(&vout) && !proven_model.iter().any(|(v, _)| *v == vout) {
+                            proven_model.push((vout, value));
+                        }
+                    }
+                    1 => {
+                        withdraw(&mut c, "alice.testnet", &[vout]);
+                        sign_ok(&mut c, &[vout], &[ok]);
+                        if !signed_model.contains(&vout) { signed_model.push(vout); }
+                        proven_model.retain(|(v, _)| *v != vout);
+                    }
+                    _ => prop_assert!(!proven(&mut c, b"false", vout, value)), // light client said no: nothing stored
+                }
+                let info = c.token_info("1".into()).unwrap();
+                let expected: u64 = proven_model.iter().map(|(_, v)| v).sum();
+                prop_assert_eq!(info.verified_sats, U64(expected));
+                prop_assert!(!info.pending);
+                let s = &info.signed_outpoints;
+                prop_assert!(s.len() >= last_signed);
+                for (i, o) in s.iter().enumerate() { prop_assert!(!s[..i].contains(o)); }
+                prop_assert_eq!(s.len(), signed_model.len());
+                prop_assert!(info.sign_epoch >= last_epoch);
+                last_epoch = info.sign_epoch;
+                last_signed = s.len();
+            }
+        }
+    }
+}
+
+// ---------- paths the coverage report showed untested (cv…) ----------
+
+fn other_mpc_key() -> String {
+    format!("secp256k1:{}", bs58::encode([7u8; 64]).into_string())
+}
+
+#[test]
+fn cv1_evm_address_comes_from_the_same_mpc_key() {
+    let mut c = setup();
+    // new mints record it in on_key; evm_key is for tokens minted before that: make token 1 one of them
+    let minted_with = c.evm_address("1".into()).unwrap();
+    env::storage_remove(b"ea:1");
+    assert!(c.evm_address("1".into()).is_none());
+    ctx("bob.testnet", NearToken::from_yoctonear(0), vec![]); // anyone may ask
+    let _ = c.evm_key("1".into());
+    as_contract(vec![PromiseResult::Successful(serde_json::to_vec(MPC_KEY).unwrap())]);
+    c.on_evm_key("1".into());
+    assert_eq!(c.evm_address("1".into()).unwrap(), minted_with);
+}
+
+#[test]
+#[should_panic(expected = "key mismatch")]
+fn cv1_evm_address_from_a_different_key_is_refused() {
+    let mut c = setup();
+    env::storage_remove(b"ea:1");
+    as_contract(vec![PromiseResult::Successful(serde_json::to_vec(&other_mpc_key()).unwrap())]);
+    c.on_evm_key("1".into());
+}
+
+#[test]
+#[should_panic(expected = "MPC key derivation failed")]
+fn cv1_failed_mpc_answer_stores_no_evm_address() {
+    let mut c = setup();
+    as_contract(vec![PromiseResult::Failed]);
+    c.on_evm_key("1".into());
+}
+
+#[test]
+#[should_panic(expected = "EvmAddressKnown")]
+fn cv1_evm_key_is_asked_once() {
+    let mut c = setup();
+    as_contract(vec![PromiseResult::Successful(serde_json::to_vec(MPC_KEY).unwrap())]);
+    c.on_evm_key("1".into());
+    ctx("bob.testnet", NearToken::from_yoctonear(0), vec![]);
+    let _ = c.evm_key("1".into());
+}
+
+#[test]
+#[should_panic(expected = "NoKey")]
+fn cv1_no_evm_key_before_the_btc_key() {
+    let mut c = setup();
+    ctx("bob.testnet", NearToken::from_yoctonear(0), vec![]);
+    let _ = c.evm_key("9".into());
+}
+
+#[test]
+fn cv2_refresh_key_recovers_a_mint_whose_key_callback_failed() {
+    let mut c = setup();
+    ctx("alice.testnet", NearToken::from_near(1), vec![]);
+    let _ = c.nft_mint(None); // token 2, its on_key never ran
+    assert!(c.token_info("2".into()).unwrap().btc_pubkey.is_none());
+    ctx("bob.testnet", NearToken::from_yoctonear(0), vec![]);
+    let _ = c.refresh_key("2".into());
+    as_contract(vec![PromiseResult::Successful(serde_json::to_vec(MPC_KEY).unwrap())]);
+    c.on_key("2".into());
+    assert!(c.token_info("2".into()).unwrap().btc_pubkey.is_some());
+}
+
+#[test]
+#[should_panic(expected = "KeyAlreadySet")]
+fn cv2_refresh_key_cannot_replace_a_key() {
+    let mut c = setup();
+    ctx("mallory.testnet", NearToken::from_yoctonear(0), vec![]);
+    let _ = c.refresh_key("1".into());
+}
+
+#[test]
+#[should_panic(expected = "NoToken")]
+fn cv2_refresh_key_needs_a_token() {
+    let mut c = setup();
+    ctx("mallory.testnet", NearToken::from_yoctonear(0), vec![]);
+    let _ = c.refresh_key("9".into());
+}
+
+#[test]
+fn cv3_enumeration_views_count_and_carry_the_art() {
+    let c = setup();
+    assert_eq!(c.nft_total_supply(), U128(1));
+    assert_eq!(c.nft_supply_for_owner(acc("alice.testnet")), U128(1));
+    assert_eq!(c.nft_supply_for_owner(acc("bob.testnet")), U128(0));
+    for list in [c.nft_tokens(None, None), c.nft_tokens_for_owner(acc("alice.testnet"), None, None)] {
+        assert_eq!(list.len(), 1);
+        assert!(list[0].metadata.as_ref().unwrap().media.as_ref().is_some_and(|m| m.starts_with("data:image/svg+xml")));
+    }
+}
+
+#[test]
+fn cv4_revoking_one_market_keeps_the_btc_locked_until_the_last() {
+    let mut c = setup();
+    approve(&mut c, "market.testnet");
+    approve(&mut c, "other-market.testnet");
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_revoke("1".into(), acc("market.testnet"));
+    assert!(!c.nft_is_approved("1".into(), acc("market.testnet"), None));
+    assert!(c.nft_is_approved("1".into(), acc("other-market.testnet"), None));
+    let still_locked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| withdraw(&mut c, "alice.testnet", &[0])));
+    assert!(still_locked.is_err());
+    ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+    c.nft_revoke("1".into(), acc("other-market.testnet"));
+    withdraw(&mut c, "alice.testnet", &[0]);
+    assert!(c.token_info("1".into()).unwrap().pending);
+}
+
+#[test]
+fn cv5_admin_can_withdraw_an_announcement() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    at("admin.testnet", NearToken::from_yoctonear(0), 2_000);
+    c.cancel_upgrade();
+    assert!(c.upgrade_status()["proposal"].is_null());
+}
+
+#[test]
+fn cv6_admin_handover_drops_the_pending_announcement() {
+    let mut c = with_admin();
+    announce(&mut c, 1_000);
+    at("admin.testnet", NearToken::from_yoctonear(0), 2_000);
+    c.transfer_upgrade_admin(acc("dao.testnet"));
+    let s = c.upgrade_status();
+    assert_eq!(s["admin"], "dao.testnet");
+    assert!(s["proposal"].is_null());
+}
+
+#[test]
+#[should_panic(expected = "NotUpgradeAdmin")]
+fn cv6_old_admin_has_no_say_after_handover() {
+    let mut c = with_admin();
+    at("admin.testnet", NearToken::from_yoctonear(0), 0);
+    c.transfer_upgrade_admin(acc("dao.testnet"));
+    c.cancel_upgrade();
+}
+
+#[test]
+#[should_panic(expected = "bad migrate method name")]
+fn cv7_migrate_method_name_is_checked() {
+    let mut c = with_admin();
+    at("admin.testnet", NearToken::from_yoctonear(0), 0);
+    c.propose_upgrade("00".repeat(32), Some("drop everything()".into()));
+}
+
+#[test]
+#[should_panic(expected = "code_sha256 must be 64 hex characters")]
+fn cv7_code_hash_must_be_a_sha256() {
+    let mut c = with_admin();
+    at("admin.testnet", NearToken::from_yoctonear(0), 0);
+    c.propose_upgrade("zz".repeat(32), None);
+}

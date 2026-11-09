@@ -345,6 +345,7 @@ footer p { max-width: var(--measure); margin: 0; }
 .piece-name { font-weight: 600; }
 .piece-btc { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 0.92rem; }
 .piece-price { color: var(--lav-ink); font-size: 0.86rem; }
+.piece-vs { color: var(--ink-soft); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .piece-pending { color: var(--ink-soft); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 
 /* ---------- home: closing ---------- */

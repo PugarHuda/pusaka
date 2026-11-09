@@ -22,6 +22,14 @@ jobs:
         with: { tool: cargo-audit }
       - run: cargo audit   # RustSec advisories for every crate in Cargo.lock
         working-directory: contract
+      # line/region coverage of the contract by its tests (the test file itself excluded), in the run summary
+      - run: rustup component add llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-llvm-cov }
+      - run: |
+          cargo llvm-cov --ignore-filename-regex 'tests\.rs' --summary-only | tee coverage.txt
+          { echo '### Contract coverage'; echo '```'; cat coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        working-directory: contract
 
   # NEP-330: the wasm deployed to pusaka-btc.testnet comes from here; anyone can rebuild it with
   # `cargo near verify` / the same image and compare the hash.

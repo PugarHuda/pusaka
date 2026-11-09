@@ -181,6 +181,7 @@ pub struct Listing {
 }
 
 impl Listing {
+    /// Current price of the listing at `now_ms`: `price` before the auction starts, falling linearly to `floor` at `end_ms`.
     pub fn price_at(&self, now_ms: u64) -> NearToken {
         let (start, end) = (self.start_ms.0, self.end_ms.0);
         if now_ms >= end || end <= start {
@@ -383,6 +384,7 @@ pub fn btc_path(token_id: &str) -> String {
 
 #[near]
 impl Pusaka {
+    /// Initializes the contract with the NEAR MPC signer it asks for keys and signatures (`v1.signer-prod.testnet` / `v1.signer`).
     #[init]
     pub fn new(mpc: AccountId) -> Self {
         Self {
@@ -485,6 +487,7 @@ impl Pusaka {
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).on_key(id))
     }
 
+    /// Callback of `nft_mint`: stores the token's Bitcoin public key as derived by the MPC for this contract (never taken from user input).
     #[private]
     pub fn on_key(&mut self, token_id: TokenId) {
         let Ok(bytes) = env::promise_result_checked(0, 256) else {
@@ -517,6 +520,7 @@ impl Pusaka {
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).on_evm_key(token_id))
     }
 
+    /// Callback of `evm_key`: stores the token's EVM address, derived by the MPC from the same secp256k1 key.
     #[private]
     pub fn on_evm_key(&mut self, token_id: TokenId) {
         let bytes = env::promise_result_checked(0, 256).unwrap_or_else(|_| env::panic_str("MPC key derivation failed"));
@@ -594,6 +598,7 @@ impl Pusaka {
             )
     }
 
+    /// Callback of `prove_usdc_deposit`: records a USDC transfer to the token's EVM address once the MPC's foreign-transaction check confirms it. Returns whether it was stored.
     #[private]
     #[allow(clippy::too_many_arguments)]
     pub fn on_usdc_proven(&mut self, token_id: TokenId, chain_id: U64, tx: String, log_index: U64, amount: U128, expected: String, payer: AccountId) -> bool {
@@ -623,6 +628,7 @@ impl Pusaka {
         stored
     }
 
+    /// Whether this USDC transfer (chain, tx hash, log index) is already recorded for the token.
     pub fn usdc_is_proven(&self, token_id: TokenId, chain_id: U64, tx: String, log_index: U64) -> bool {
         env::storage_has_key(usdc_marker(&token_id, chain_id.0, &usdc::hex32(&tx, "tx"), log_index.0).as_bytes())
     }
@@ -738,6 +744,7 @@ impl Pusaka {
         )
     }
 
+    /// Callback of `withdraw`: collects the MPC signature for every input, releases the `SignPending` lock and returns the spend. Inputs stay recorded as signed even when a signature failed.
     #[private]
     pub fn on_signed(
         &mut self,
@@ -837,6 +844,7 @@ impl Pusaka {
             )
     }
 
+    /// Callback of `prove_deposit`: stores the output as a proven UTXO when the Bitcoin light client confirmed the transaction and the output pays this token's address; refunds the prover when nothing is stored. Returns the light client's answer.
     #[private]
     pub fn on_deposit_proven(
         &mut self,
@@ -1094,6 +1102,7 @@ impl Pusaka {
             )
     }
 
+    /// Callback of `withdraw_eth`: returns the signed EIP-1559 transaction and releases the lock; the nonce floor stays raised either way.
     #[private]
     pub fn on_eth_signed(
         &mut self,
@@ -1195,6 +1204,7 @@ impl Pusaka {
             )
     }
 
+    /// Callback of `withdraw_near`: with the token's NEAR implicit-account key from the MPC, builds the Transfer transaction to sign.
     #[private]
     pub fn on_near_key(&mut self, token_id: TokenId, receiver_id: AccountId, amount: NearToken, nonce: U64, block_hash: [u8; 32], kind: NearTx) -> PromiseOrValue<SignedNear> {
         let Some(pk) = ed25519_key_result() else {
@@ -1225,6 +1235,7 @@ impl Pusaka {
         )
     }
 
+    /// Callback of `withdraw_near`: returns the signed NEAR transaction and releases the lock.
     #[private]
     pub fn on_near_signed(&mut self, token_id: TokenId, nonce: U64, amount: NearToken, transaction: String, account: String, kind: NearTx) -> SignedNear {
         self.pending.remove(&token_id);
@@ -1341,6 +1352,7 @@ impl Pusaka {
             )
     }
 
+    /// Callback of `withdraw_sol`: with the token's Ed25519 key from the MPC, builds the Solana transfer message to sign.
     #[private]
     pub fn on_sol_key(&mut self, token_id: TokenId, to: [u8; 32], lamports: U64, blockhash: [u8; 32]) -> PromiseOrValue<SignedSol> {
         let key = ed25519_key_result().filter(|k| *k != to); // sending to itself: give up here, a panic would leave the lock on
@@ -1368,6 +1380,7 @@ impl Pusaka {
         )
     }
 
+    /// Callback of `withdraw_sol`: returns the signed Solana transaction and releases the lock.
     #[private]
     pub fn on_sol_signed(&mut self, token_id: TokenId, lamports: U64, message: String, from: String) -> SignedSol {
         self.pending.remove(&token_id);
@@ -1415,6 +1428,7 @@ impl Pusaka {
         self.log(&token_id, Event::Listed { price });
     }
 
+    /// Owner only: takes the token off sale, which unlocks withdrawals and transfers again.
     pub fn cancel_listing(&mut self, token_id: TokenId) {
         self.assert_owner(&token_id);
         require!(self.listings.remove(&token_id).is_some(), "NotListed");
@@ -1477,6 +1491,7 @@ impl Pusaka {
         self.log(&token_id, Event::LoanRequested { principal, repay, duration_ms });
     }
 
+    /// Owner only: withdraws an unfunded loan request.
     pub fn cancel_loan_request(&mut self, token_id: TokenId) {
         self.assert_owner(&token_id);
         let loan = self.loans.get(&token_id).expect("NoLoan");
@@ -1556,6 +1571,7 @@ impl Pusaka {
 
     // ---------- views ----------
 
+    /// Everything about one token in one view: owner, keys, listing and current price, loan, locks, sign epoch, signed outpoints, proven UTXOs, `verified_sats` and history.
     pub fn token_info(&self, token_id: TokenId) -> Option<TokenInfo> {
         let token = self.tokens.nft_token(token_id.clone())?;
         Some(TokenInfo {
@@ -1574,6 +1590,7 @@ impl Pusaka {
         })
     }
 
+    /// The MPC signer account this contract uses.
     pub fn mpc_contract(&self) -> AccountId {
         self.mpc.clone()
     }
@@ -2138,6 +2155,7 @@ impl Pusaka {
             &mut self.tokens, token_id, account_id, msg)
     }
 
+    /// NEP-178: the owner revokes one market's approval (1 yoctoNEAR).
     #[payable]
     pub fn nft_revoke(&mut self, token_id: TokenId, account_id: AccountId) {
         near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_revoke(
@@ -2147,6 +2165,7 @@ impl Pusaka {
         }
     }
 
+    /// NEP-178: the owner revokes every approval (1 yoctoNEAR), which unlocks the BTC again.
     #[payable]
     pub fn nft_revoke_all(&mut self, token_id: TokenId) {
         near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_revoke_all(
@@ -2154,6 +2173,7 @@ impl Pusaka {
         self.log(&token_id, Event::ApprovalsRevoked);
     }
 
+    /// NEP-178: whether `approved_account_id` may transfer the token (with `approval_id`, only that approval).
     pub fn nft_is_approved(&self, token_id: TokenId, approved_account_id: AccountId, approval_id: Option<u64>) -> bool {
         near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval::nft_is_approved(
             &self.tokens, token_id, approved_account_id, approval_id)

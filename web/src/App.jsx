@@ -24,6 +24,9 @@ const satsLabel = (sats) => `${Number(sats).toLocaleString("en-US")} sats`;
 const eth6 = (wei) => Number(formatEther(wei)).toLocaleString(undefined, { maximumFractionDigits: 6 });
 const usd = (x) => x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: x < 100 ? 2 : 0 });
 const pct = (x) => `${(x * 100).toLocaleString(undefined, { maximumFractionDigits: x < 0.1 ? 1 : 0 })}%`;
+/** A price in yoctoNEAR against the verified BTC inside, at mainnet prices: below 0 = cheaper than the BTC it holds. */
+const vsInside = (yocto, sats, px) => (Number(BigInt(yocto) / 10n ** 18n) / 1e6 * px.nearUsd) / (sats / 1e8 * px.btcUsd) - 1;
+const vsLabel = (d) => d < 0 ? `${pct(-d)} below` : `${pct(d)} above`;
 
 // One price fetch per page load; a failure just hides the dollar figures.
 let pricePromise;
@@ -493,6 +496,7 @@ function Market({ accountId }) {
             <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
             {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
             {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
+            {t.info.listing && px && Number(t.info.verified_sats) > 0 && <span className="piece-vs">{vsLabel(vsInside(t.info.price_now ?? t.info.listing.price, Number(t.info.verified_sats), px))} the BTC inside</span>}
             {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
           </a>
@@ -1744,8 +1748,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
         {px && Number(info.verified_sats) > 0 && (() => {
           const paid = Number(BigInt(now) / 10n ** 18n) / 1e6 * px.nearUsd;
           const inside = Number(info.verified_sats) / 1e8 * px.btcUsd;
-          const diff = paid / inside - 1;
-          return <p className="stats">You pay about {usd(paid)} for {usd(inside)} of BTC: {diff < 0 ? `${pct(-diff)} below` : `${pct(diff)} above`} its value at mainnet prices.</p>;
+          return <p className="stats">You pay about {usd(paid)} for {usd(inside)} of BTC: {vsLabel(vsInside(now, Number(info.verified_sats), px))} its value at mainnet prices.</p>;
         })()}
         <p className="muted">
           You get {btc(Number(info.verified_sats))} BTC (verified on NEAR). The NEAR goes to {info.listing.seller}.

@@ -1,0 +1,26 @@
+{
+  "network": "testnet",
+  "contract": "pusaka-btc.testnet",
+  "code": {
+    "wasm_sha256": "ac16e80e928ba6a2f1e67fc358a8f5d8db7de83779a70514aaffdceb1bceac60",
+    "source_commit": "4bf36b2",
+    "build": "cargo near build reproducible-wasm (image sourcescan/cargo-near:0.21.1-rust-1.96.1, NEP-330 metadata on-chain)",
+    "deployed_tx": "67hUwJuAe98wKNAyjQeMkjD8vYe4SJHeEzzUc188x3Jf",
+    "upgrades_renounced_tx": "GdASfxh5Xr6UCGeg5LPTXsH3SCn4aWvCLGUqPWNDGa6N",
+    "access_keys": 0
+  },
+  "accounts": {
+    "upgrade_dao": "pusaka-council.sputnikv2.testnet",
+    "relayer": "pusaka-relayer.testnet",
+    "tee_agent": "pusaka-agent.testnet"
+  },
+  "uses": {
+    "mpc": "v1.signer-prod.testnet",
+    "btc_light_client": "btc-client-v4.testnet",
+    "outside_market": "market-v2-beta.mintspace2.testnet",
+    "nbtc": "nbtc.n-bridge.testnet",
+    "btc_connector": "btc-connector.n-bridge.testnet",
+    "staking_pool_suffix": ".pool.f863973.m0"
+  },
+  "explorer": "https://testnet.near.rocks"
+}

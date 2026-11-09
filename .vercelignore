@@ -4,6 +4,7 @@
 !package-lock.json
 !vercel.json
 !shared
+!deployments
 !scripts
 !web
 !api

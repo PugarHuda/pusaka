@@ -4,6 +4,8 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { mainnet, sepolia, base, baseSepolia, arbitrum, arbitrumSepolia } from "viem/chains";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
+// Deployed accounts: deployments/<network>.json records them (code hash, deploy tx, accounts); read here.
+import TESTNET from "../deployments/testnet.json" with { type: "json" };
 
 // One switch for everything network-specific. Node: PUSAKA_NETWORK=mainnet; Vite: VITE_NETWORK=mainnet.
 const env = (k) => globalThis.process?.env?.[k] ?? import.meta.env?.[`VITE_${k.replace("PUSAKA_", "")}`];
@@ -11,11 +13,11 @@ export const NETWORK = env("PUSAKA_NETWORK") ?? "testnet";
 
 const CONFIG = {
   testnet: {
-    contract: "pusaka-btc.testnet",
-    mpc: "v1.signer-prod.testnet",
+    contract: TESTNET.contract,
+    mpc: TESTNET.uses.mpc,
     nearRpc: "https://test.rpc.fastnear.com",
     nearRpcFallbacks: ["https://near-testnet.drpc.org", "https://rpc.testnet.near.org"],
-    nearExplorer: "https://testnet.near.rocks",
+    nearExplorer: TESTNET.explorer,
     txApi: "https://tx.test.fastnear.com", // FastNear transactions API (CORS-enabled)
     btc: bitcoin.networks.testnet, // Bitcoin testnet3: the network btc-client-v4.testnet (light client) tracks
     mempool: "https://mempool.space/testnet",
@@ -27,9 +29,9 @@ const CONFIG = {
       { chain: arbitrumSepolia, rpc: "https://arbitrum-sepolia-rpc.publicnode.com", explorer: "https://sepolia.arbiscan.io", usdc: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d" },
     ],
     sol: { rpc: "https://api.devnet.solana.com", explorer: (a) => `https://explorer.solana.com/${a}?cluster=devnet`, name: "Solana devnet" },
-    market: "market-v2-beta.mintspace2.testnet", // Mintbase
-    nbtc: "nbtc.n-bridge.testnet", // Omni Bridge nBTC (NEP-141)
-    btcConnector: "btc-connector.n-bridge.testnet",
+    market: TESTNET.uses.outside_market, // Mintbase
+    nbtc: TESTNET.uses.nbtc, // Omni Bridge nBTC (NEP-141)
+    btcConnector: TESTNET.uses.btc_connector,
     bridgeApi: "https://testnet.api.bridge.nearone.org",
   },
   mainnet: {
@@ -215,7 +217,7 @@ export function finalize(signed, inputValues) {
  * The contract re-derives the txid from `tx_hex` and the light client checks the proofs,
  * so a wrong answer from the API can only make the proof fail, never fake a deposit.
  */
-export const BTC_LIGHT_CLIENT = NETWORK === "mainnet" ? "btc-client.bridge.near" : "btc-client-v4.testnet";
+export const BTC_LIGHT_CLIENT = NETWORK === "mainnet" ? "btc-client.bridge.near" : TESTNET.uses.btc_light_client;
 
 /** Height of the last Bitcoin block NEAR's light client has accepted. */
 export async function lightClientHeight() {
@@ -613,7 +615,7 @@ export async function broadcastNear(b64) {
 // ---------- staking: the Pusaka's own NEAR account delegates to validators ----------
 /** Pools from the network's official staking-pool factory; the contract accepts no other (POOL_SUFFIX). */
 const POOL_DUST = 10n ** 21n;
-export const POOL_SUFFIX = NETWORK === "mainnet" ? ".poolv1.near" : ".pool.f863973.m0";
+export const POOL_SUFFIX = NETWORK === "mainnet" ? ".poolv1.near" : TESTNET.uses.staking_pool_suffix;
 
 /** The current validators that are factory pools, with their fee, lowest fee first. */
 export async function stakingPools() {

@@ -30,6 +30,7 @@ base64 = "0.22"
 
 [dev-dependencies]
 near-sdk = { version = "5", features = ["unit-testing"] }
+proptest = "1"   # fuzz + invariant tests in src/tests.rs (dev only: not in the wasm)
 
 [profile.release]
 codegen-units = 1
