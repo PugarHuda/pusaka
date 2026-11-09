@@ -14,6 +14,7 @@ import {
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
   nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote, stakingPools, stakeBalances, POOL_SUFFIX,
+  testnet4Coins, swapQuote, broadcastTestnet4, submitDeposit, swapStatus, TIDEPOOL_USDC,
   MPC, btcFetch, ckdEphemeral, ckdSecret, ckdKey, ckdAppId, sealCkd, openCkd, LETTER_PURPOSE,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
@@ -141,10 +142,10 @@ export async function inspect(token_id) {
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
-  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio"]);
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
-const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc"]);
+const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -428,6 +429,44 @@ reg("pusaka_withdraw_btc", {
   }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
   const txid = await broadcast(finalize(signed, ins.map((u) => u.value)).toHex());
   return { txid, explorer: `${EXPLORER}/tx/${txid}` };
+}));
+
+reg("pusaka_swap_to_usdc", {
+  description: "Testnet: sell BTC out of your Pusaka for USDC on NEAR through NEAR Intents, executed. The contract builds the Bitcoin transaction to a live quote's deposit address, NEAR MPC signs it, and the USDC is paid to this agent's NEAR account; refunds go back to the Pusaka's own Bitcoin address. Runs on Tidepool (1Click's API on testnet, NEAR's defuse verifier; its Bitcoin side is testnet4 with a custodial test relayer), so name the testnet4 tx that funded the Pusaka. Returns once the Bitcoin is sent; follow it with pusaka_swap_status (about one testnet4 block).",
+  inputSchema: { token_id: z.string(), funding_txid: z.string(), sats: z.number().int().min(10_000).max(500_000) },
+}, tool(async ({ token_id, funding_txid, sats }) => {
+  if (NETWORK !== "testnet") throw new Error("Executed swaps run on testnet only (Tidepool); on mainnet use pusaka_inspect's exit quote.");
+  const FEE = 500;
+  // the proceeds come to this agent, but the Pusaka's BTC still leaves it: an outflow, put to the person before any quote
+  await outflow(ACCOUNT_ID, `swap ${sats} sats from Pusaka #${token_id} for USDC paid to ${ACCOUNT_ID} on NEAR, at a live NEAR Intents quote with at most 1% slippage (Tidepool testnet)`);
+  const info = await view("token_info", { token_id });
+  const addr = btcAddress(info.btc_pubkey);
+  const ins = (await testnet4Coins(funding_txid, addr)).slice(0, 8);
+  const have = ins.reduce((a, u) => a + u.value, 0);
+  if (have < sats + FEE) throw new Error(`That tx left ${have} sats unspent at Pusaka #${token_id}'s address; this swap needs ${sats + FEE}.`);
+  const q = await swapQuote(sats, ACCOUNT_ID, addr);
+  await spend(WITHDRAW_DEPOSIT, "withdraw");
+  const signed = await call("withdraw", {
+    token_id, utxos: ins.map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
+    to_script_hex: scriptHex(q.depositAddress), amount_sat: String(sats), fee_sat: String(FEE),
+  }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
+  const txid = await broadcastTestnet4(finalize(signed, ins.map((u) => u.value)).toHex());
+  await submitDeposit(txid, q.depositAddress);
+  return { quote_id: q.id, usdc: q.usdc, min_usdc: q.minUsdc, deposit_address: q.depositAddress, bitcoin_txid: txid,
+    explorer: `https://mempool.space/testnet4/tx/${txid}`, next: "pusaka_swap_status with this deposit_address" };
+}));
+
+reg("pusaka_swap_status", {
+  description: "Where a NEAR Intents swap stands (pusaka_swap_to_usdc): PENDING_DEPOSIT, KNOWN_DEPOSIT_TX, PROCESSING, SUCCESS, REFUNDED or FAILED, with its NEAR settlement transactions and, once settled, the recipient's USDC balance.",
+  inputSchema: { deposit_address: z.string() },
+}, tool(async ({ deposit_address }) => {
+  const st = await swapStatus(deposit_address);
+  const to = st.quoteResponse?.quoteRequest?.recipient;
+  const out = { status: st.status, amount_in_sats: Number(st.quoteResponse?.quote?.amountIn ?? 0), recipient: to,
+    near_settlement: (st.swapDetails?.nearTxHashes ?? []).map((h) => `${NEAR_EXPLORER}/tx/${h}`),
+    bitcoin: (st.swapDetails?.originChainTxHashes ?? []).map((h) => h.explorerUrl) };
+  if (st.status === "SUCCESS" && to) out.recipient_usdc = Number(await provider.callFunction({ contractId: TIDEPOOL_USDC.slice(7), method: "ft_balance_of", args: { account_id: to }, blockQuery: { finality: "optimistic" } })) / 1e6;
+  return out;
 }));
 
 const accountExists = (accountId) => provider.viewAccount({ accountId, blockQuery: { finality: "final" } }).then(() => true, () => false);
