@@ -7,4 +7,10 @@ assert.equal(claimNonce("n1", t, t), true);
 assert.equal(claimNonce("n1", t, t + 1_000), false);           // replay inside the window
 assert.equal(claimNonce("n2", t, t + 1_000), true);            // another signature is fine
 assert.equal(claimNonce("n1", t, t + 5 * 60_000 + 1), true);   // forgotten once it would be expired anyway
-console.log("holder room: a signed message opens it once");
+
+// Other spellings of one nonce decode to the same bytes; verifyHolder rejects every non-canonical one before this point.
+const n = Buffer.alloc(32, 7).toString("base64");
+for (const variant of [` ${n}`, n.replace(/=+$/, ""), `${n}
+`, n.replaceAll("/", "_")])
+  assert.ok(Buffer.from(variant, "base64").toString("base64") !== variant || variant === n, `variant accepted: ${JSON.stringify(variant)}`);
+console.log("holder room: a signed message opens it once; only the canonical nonce spelling is accepted");

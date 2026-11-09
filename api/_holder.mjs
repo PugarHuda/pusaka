@@ -43,8 +43,10 @@ export async function verifyHolder(tokenId, auth, recipient) {
   // NaN would compare false and pass the age check, so require a real millisecond timestamp.
   if (!Number.isSafeInteger(ts) || Math.abs(Date.now() - ts) > MAX_AGE_MS) throw fail(401, "signature expired; sign in again");
   if (message !== accessMessage(tokenId, ts)) throw fail(400, "wrong message signed");
-  const nonceBytes = Buffer.from(nonce, "base64");
-  if (nonceBytes.length !== 32) throw fail(400, "nonce must be 32 bytes");
+  const nonceBytes = Buffer.from(String(nonce), "base64");
+  // Node's base64 decoder is lenient (whitespace, padding, url-safe letters): only the canonical spelling is accepted,
+  // and the replay check below is keyed on the bytes, so no second spelling of one nonce gets in.
+  if (nonceBytes.length !== 32 || nonceBytes.toString("base64") !== nonce) throw fail(400, "nonce must be 32 bytes, standard base64");
   const hash = nep413Hash({ message, nonce: nonceBytes, recipient });
   // NEP-413 says base64; some wallets hand back "ed25519:<base58>" instead.
   let sig = Buffer.from(signature, "base64");
@@ -52,7 +54,7 @@ export async function verifyHolder(tokenId, auth, recipient) {
   if (!ed25519.verify(sig, hash, base58.decode(publicKey.slice(8)))) throw fail(401, "signature doesn't match");
   const key = await provider.query({ request_type: "view_access_key", finality: "optimistic", account_id: accountId, public_key: publicKey }).catch(() => null);
   if (key?.permission !== "FullAccess") throw fail(401, `${publicKey} is not a full-access key of ${accountId}`);
-  if (!claimNonce(nonce, ts)) throw fail(401, "this signature was already used; sign in again");
+  if (!claimNonce(nonceBytes.toString("hex"), ts)) throw fail(401, "this signature was already used; sign in again");
   return accountId;
 }
 
