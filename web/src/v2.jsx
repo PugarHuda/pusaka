@@ -47,7 +47,7 @@ function V2List({ accountId }) {
       {msg && <p className="muted" role="status">{msg}</p>}
       {!toks ? <p className="muted">Reading {V2}…</p> : toks.error ? <p className="error">Couldn't read {V2}: {toks.error}</p> : (
         <ul className="v2-list">
-          {toks.map((t) => <li key={t.token_id}><a href={`#/v2/${t.token_id}`}>Pusaka v2 #{t.token_id}</a> <span className="muted">held by {t.owner_id}</span></li>)}
+          {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => <li key={t.token_id}><a href={`#/v2/${t.token_id}`}>Pusaka v2 #{t.token_id}</a> <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></li>)}
         </ul>
       )}
     </section>
@@ -168,6 +168,10 @@ function Owner({ id, s, owner, reload }) {
           </label>
           <button disabled={!!busy}>{busy === "unlock" ? "Signing…" : "Sign an unlock"}</button>
           <p className="muted">Signed in this browser; only the signature leaves it.</p>
+          {s.pq.open && <button type="button" className="ghost" disabled={!!busy} onClick={() => run("pqoff", async () => {
+            const o = await tx("set_pq_key", { token_id: id, public_key: null }, 0n);
+            return <>Post-quantum lock off: your NEAR key alone controls this Pusaka again. {link(o.transaction.hash)}</>;
+          })}>{busy === "pqoff" ? "Turning off…" : "Turn the lock off (needs the unlock above)"}</button>}
         </form>
       )}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}

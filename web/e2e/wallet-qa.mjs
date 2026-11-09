@@ -337,6 +337,10 @@ try {
     await p.getByLabel(/^Key \(from your key file/).fill(seedHex); // the page keeps no copy: the holder pastes it from the file
     await approve(() => p.getByRole("button", { name: "Sign an unlock" }).click());
     console.log("unlock:", (await result()).replace(/\s+/g, " "));
+    await p.waitForTimeout(3000);
+    await p.reload(); await p.getByText("Post-quantum lock").waitFor({ timeout: 60_000 });
+    await approve(() => p.getByRole("button", { name: /Turn the lock off/ }).click());
+    console.log("lock off:", (await result()).replace(/\s+/g, " "));
     console.log(await p.getByRole("status").last().locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")));
   }
   if (step === "remind") { // as keyFile, open token arg2 and check its calendar reminders: the .ics downloads and says the right thing
