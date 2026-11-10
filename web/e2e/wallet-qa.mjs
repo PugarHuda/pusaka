@@ -102,7 +102,8 @@ try {
       await p.locator("text=Private Key").last().click();
       await p.locator("input[type=text]:visible").first().fill(JSON.parse(fs.readFileSync(keyFile, "utf8")).private_key);
       await p.waitForTimeout(4000);
-      await p.getByRole("button", { name: /pusaka-seller.testnet/ }).last().click();
+      const id = JSON.parse(fs.readFileSync(keyFile, "utf8")).account_id ?? "pusaka-seller.testnet";
+      await p.getByRole("button", { name: id }).last().click();
       for (const cb of await p.locator("input[type=checkbox]:visible").all()) await cb.check();
       await p.getByRole("button", { name: /^Import/ }).last().click();
       await p.waitForTimeout(6000);
@@ -342,6 +343,32 @@ try {
     await approve(() => p.getByRole("button", { name: /Turn the lock off/ }).click());
     console.log("lock off:", (await result()).replace(/\s+/g, " "));
     console.log(await p.getByRole("status").last().locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")));
+  }
+  if (step === "v2-signin") { // as holder keyFile of v2 #arg2: sign in as the NFT, then withdraw its NEAR Intents USDC
+    const approve = async (click) => {
+      const wp = ctx.waitForEvent("page", { timeout: 60_000 });
+      await click();
+      const w = await wp; await w.waitForLoadState(); await w.waitForTimeout(4000);
+      await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+    };
+    const result = async () => {
+      const st = p.getByRole("status").last();
+      for (let i = 0; i < 90; i++) { const t = await st.innerText().catch(() => ""); if (t && !/…$/.test(t)) return t.replace(/\s+/g, " "); await p.waitForTimeout(1000); }
+      return "(no result)";
+    };
+    await p.goto(`https://pusaka-two.vercel.app/#/v2/${arg2}`);
+    await p.waitForTimeout(6000);
+    await switchTo(keyFile);
+    await p.goto(`https://pusaka-two.vercel.app/#/v2/${arg2}`);
+    await p.getByRole("button", { name: /^Sign in to .* as Pusaka v2/ }).waitFor({ timeout: 60_000 });
+    await approve(() => p.getByRole("button", { name: /^Sign in to .* as Pusaka v2/ }).click());
+    console.log("sign in:", await result());
+    console.log("message:", (await p.locator("pre.siwe").innerText()).split("\n").slice(0, 4).join(" | "));
+    const usdc = p.getByRole("button", { name: "Withdraw its Intents USDC to me" });
+    if (await usdc.count()) {
+      await approve(() => usdc.click());
+      console.log("intents withdraw:", await result());
+    }
   }
   if (step === "remind") { // as keyFile, open token arg2 and check its calendar reminders: the .ics downloads and says the right thing
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${arg2}`);

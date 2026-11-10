@@ -431,7 +431,11 @@ test("Pusaka v2 shows a token's own keyless account, its name and its post-quant
   await expect(page.getByRole("heading", { name: "Pusaka v2 #5" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".v2-accounts dd").first()).toContainText(/^0s[0-9a-f]{40}: [\d.]+ NEAR/); // NEP-616: derived, exists
   await expect(page.locator(".v2-accounts dd").nth(1)).toContainText("t5.pusaka-v2.testnet");
-  await expect(page.getByText(/^On: every action by the holder needs a fresh unlock/)).toBeVisible(); // ML-DSA-65 registered by the agent test
+  // #5 changed hands with USDC in its own NEAR Intents balance (scripts/v2-intents-balance.mjs); the transfer cleared its PQ lock
+  await expect(page.getByRole("heading", { name: "Its NEAR Intents balance" })).toBeVisible({ timeout: 30_000 }); // read from the verifier (emptied by the wallet QA)
+  await expect(page.getByText(/Couldn't read the verifier/)).toHaveCount(0);
+  await page.evaluate(() => { location.hash = "#/v2/6"; });
+  await expect(page.getByText(/^On: every action by the holder needs a fresh unlock/)).toBeVisible({ timeout: 30_000 }); // ML-DSA-65, registered in the browser
   await page.evaluate(() => { location.hash = "#/v2/99999"; });
   await expect(page.getByText("There is no Pusaka v2 #99999.")).toBeVisible({ timeout: 30_000 });
   expect(errors).toEqual([]);

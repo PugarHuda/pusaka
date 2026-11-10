@@ -69,6 +69,7 @@ jobs:
       - run: node shared/esplora.test.mjs  # Bitcoin reads fail over mempool.space -> Blockstream
       - run: node shared/failover.test.mjs  # NEAR reads skip a rate-limited RPC; a contract panic is not retried
       - run: node shared/intents.test.mjs  # NEAR Intents exit quote: dry run only, refusals keep their reason
+      - run: node shared/siwe.test.mjs  # v2 sign-in: the MPC signature (high or low s) recovers to the NFT, nothing else
       - run: node api/_prices.test.mjs  # a price-source failure serves the last good answer, marked stale
       - run: node api/_relayer.test.mjs  # gas-free loan acceptance only when the contract would take it
       - run: node api/_holder.test.mjs  # NEP-413 holder signatures are single use (nonce replay refused)

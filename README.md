@@ -361,6 +361,8 @@ unmodified `defuse` verifier:
 | The holder transferred the NFT (after a post-quantum unlock: #5 is locked) | [8kdA8CDT…](https://testnet.near.rocks/tx/8kdA8CDTnTUknerNrGTsn8a95rYe8oRFLDCiyhk2s2oW) |
 | The previous holder tried to move the balance: `NotOwner` | [Pjvg5Uxa…](https://testnet.near.rocks/tx/Pjvg5Uxab6mjouQtkShBzxWzeheQJ4FrF6cRMB6fBGu) |
 | The new holder withdrew 2.5 USDC of it; 2.5 stay with the NFT | [FvuNSTaZ…](https://testnet.near.rocks/tx/FvuNSTaZ7sq12Nw5MTu8B5Dt8YVx3BJUPYXLyVACWsG) |
+| Through the web app with a real wallet (Intear, `web/e2e/wallet-qa.mjs <profile> v2-signin pusaka-buyer.testnet 5`): the new holder signed in as #5 | [E9KrdiX8…](https://testnet.near.rocks/tx/E9KrdiX8D2jWrkyupoYk5hCvRd1RzaJ6Cusj7CqWo2f1) |
+| …and clicked *Withdraw its Intents USDC to me*: the other 2.5 USDC | [BVCLTuf9…](https://testnet.near.rocks/tx/BVCLTuf9VJF22x7S1P1BYN8pPTS9EnDHxH3eCetKXy9Z) |
 
 **A hole this closed (V2-9).** A right the NFT's account grants somewhere else would outlive a sale. Example: the holder
 has the account register *their own* signing key on the Intents verifier (`add_public_key`), sells, and later signs
