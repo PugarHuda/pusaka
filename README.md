@@ -337,13 +337,17 @@ Pusaka v2 #7*; over MCP, `pusaka_sign_in`. Live (`node scripts/v2-sign-in.mjs pu
 10 Nov): signed in as `0x2814…580a`, checked by viem's `parseSiweMessage`, `validateSiweMessage` and signature
 recovery ([BBN85r1K…](https://testnet.near.rocks/tx/BBN85r1KGr4A7kxgzQGgrDbHWs8CSDuPBrwCjDmWFVaU)); a stranger
 refused, `NotOwner` ([3Xfwhfud…](https://testnet.near.rocks/tx/3XfwhfudVHo2kzYDV6xv5fkpV9rr1W69hFdp7LFb784p)).
-A sign-in can't outlive a sale: it is refused while the Pusaka is listed, pledged or approved to a market, and while
+A sign-in *message* can't outlive a sale: it is refused while the Pusaka is listed, pledged or approved to a market, and while
 one is valid (`signed_in_until`) nothing a counterparty pays for can start: no listing, market approval,
 `nft_transfer_call` (markets, NEAR Intents) or loan (`SignedIn`, live: a listing
 [2Bc5HUNU…](https://testnet.near.rocks/tx/2Bc5HUNUrbNkT4fux6nBJ3BzG7wZxu1qMbeL51DrSZGT) and a deposit into the Intents
 verifier [65pQSqHL…](https://testnet.near.rocks/tx/65pQSqHLy1HTJ5KNRHS9sh2w88Wvocka51mCJMc5VVq8)). The record outlives a transfer,
 so handing the NFT to a second account first doesn't clear it. Automated security reviews of proposals 11 and 12 each
-found a way around the earlier version; the fixes went in as DAO proposals 12 and 13.
+found a way around the earlier version; the fixes went in as DAO proposals 12 and 13. **What this doesn't cover:** a
+site that accepts the message may give the old holder a session that lasts longer than the hour, and the contract can't
+see or end it. So treat a sign-in as a login for sites that check it each time, not as a lasting right that changes hands.
+The same goes for V2-9: it matches method names, so a contract that grants a right under another name isn't caught; an
+allowlist of receivers and methods would close it, at the cost of `account_call` no longer reaching any contract.
 
 **The NFT holds a NEAR Intents balance.** Anyone can deposit into NEAR Intents for the NFT's `0s…` account
 (`ft_transfer_call` to the verifier with `msg` = the account). That balance belongs to whoever holds the NFT: the holder
