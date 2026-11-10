@@ -9,8 +9,8 @@ import { CONTRACT, MPC, NETWORK, BTC_LIGHT_CLIENT, lightClientHeight, nearFetch 
 import { auditToken } from "@pusaka/shared/audit";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
-// the README plus docs/V2.md and docs/AGENTS.md, which hold the detail moved out of it
-const README = ["README.md", "docs/V2.md", "docs/AGENTS.md"].map((f) => fs.readFileSync(path.join(import.meta.dirname, "..", f), "utf8")).join("\n");
+// the README plus the docs/ pages that hold the detail moved out of it
+const README = ["README.md", "docs/EVIDENCE.md", "docs/THREAT-MODEL.md", "docs/FEATURES.md", "docs/V2.md", "docs/AGENTS.md"].map((f) => fs.readFileSync(path.join(import.meta.dirname, "..", f), "utf8")).join("\n");
 let failed = 0, inconclusive = 0;
 // A judge shouldn't wait forever on a slow explorer: the whole run stops after 5 minutes and says where it was.
 let step = "start";

@@ -44,7 +44,7 @@ What each line means:
 cd contract && cargo test        # 355 passed (incl. fuzz + invariant tests)
 ```
 
-Tests are named after the attack they stop; the README's [threat model](README.md#why-the-seller-cant-keep-the-bitcoin)
+Tests are named after the attack they stop; the README's [threat model](docs/THREAT-MODEL.md)
 maps each attack to its tests (`t1_…` to `t5_…`, loans `l…`/`o…`, heir `h…`, guardians `gd…`, upgrades `up…`, gift links `g…`).
 
 ## 3. Use it (2 minutes)
