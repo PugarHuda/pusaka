@@ -4612,6 +4612,28 @@ mod f16 {
     }
 
     #[test]
+    fn f16_a_bogus_proof_alongside_cant_keep_the_genuine_one_out() {
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        let tx = payment(SCRIPT, 50_000, &memo);
+        prove(&mut c, tx.clone(), 4_000); // the griefer's copy, with a merkle proof the light client will reject
+        prove(&mut c, tx.clone(), 4_000); // the genuine one, in flight at the same time
+        as_contract(vec![PromiseResult::Successful(b"false".to_vec())]);
+        assert!(!c.on_btc_exercise_proven("1".into(), acc("bob.testnet"), U64(1), txid_of(&tx), U64(50_000)));
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_exercise_proven("1".into(), acc("bob.testnet"), U64(1), txid_of(&tx), U64(50_000)));
+        assert_eq!(owner(&c), "bob.testnet");
+    }
+
+    #[test]
+    fn f16_no_payment_instructions_once_the_time_to_pay_is_over() {
+        let mut c = bought();
+        reserve(&mut c, 3_000);
+        at("anyone.testnet", NearToken::from_yoctonear(0), 3_000 + crate::v2::RESERVE_MS + 1);
+        assert!(c.call_of("1".into()).unwrap()["op_return"].is_null());
+    }
+
+    #[test]
     fn f16_a_lapsed_reservation_frees_the_pusaka_after_expiry() {
         let mut c = bought();
         reserve(&mut c, 3_000);

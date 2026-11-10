@@ -394,7 +394,8 @@ function Call({ id, s, accountId, isOwner, reload }) {
       {c.holder === accountId && !c.strike_sats && <button disabled={!!busy} onClick={() => run("ex", async () =>
         <>Exercised: the Pusaka is yours. {link((await tx2("exercise_call", { token_id: id }, BigInt(c.strike), 100)).transaction.hash)}</>)}>
         Exercise: buy it for {near(c.strike)} NEAR</button>}
-      {c.holder === accountId && c.strike_sats && !c.op_return && <button disabled={!!busy} onClick={() => run("res", async () =>
+      {c.strike_sats && c.btc_reserved_until_ms && !c.op_return && <p className="warn">The time to pay on Bitcoin is over; don't pay now. A payment made in time can still be proven until {when(c.btc_proof_until_ms)}.</p>}
+      {c.holder === accountId && c.strike_sats && !c.btc_reserved_until_ms && <button disabled={!!busy} onClick={() => run("res", async () =>
         <>Reserved: 6 hours to pay on Bitcoin. {link((await tx2("reserve_btc_exercise", { token_id: id })).transaction.hash)}</>)}>
         Exercise: pay {Number(c.strike_sats).toLocaleString()} sats on Bitcoin</button>}
       {c.op_return && <p>Pay {Number(c.strike_sats).toLocaleString()} sats to script <code>{c.pay_to_script}</code> in one Bitcoin transaction with an

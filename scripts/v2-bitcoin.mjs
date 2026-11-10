@@ -80,8 +80,10 @@ if (step === "proof") {
   const [token_id] = a;
   // a reserved Bitcoin purchase (F12) or a reserved Bitcoin exercise of a call (F16)
   const sale = await view("btc_listing_of", { token_id }, V2), call = await view("call_of", { token_id }, V2);
-  const l = sale?.op_return ? sale : call?.op_return ? { price_sats: call.strike_sats, pay_to_script: call.pay_to_script, op_return: call.op_return } : null;
-  if (!l) throw new Error("not reserved");
+  const l = sale?.op_return ? sale : call?.op_return ? { price_sats: call.strike_sats, pay_to_script: call.pay_to_script, op_return: call.op_return, reserved_until_ms: call.btc_reserved_until_ms } : null;
+  if (!l) throw new Error("not reserved, or the time to pay is over");
+  // paying after the reservation's time to pay risks the sats: refuse with a margin for the Bitcoin block
+  if (Date.now() > Number(l.reserved_until_ms) - 30 * 60_000) throw new Error("less than 30 minutes left to pay; reserve again later instead");
   const p = payer();
   const utxos = await (await btcFetch(`/address/${p.address}/utxo`)).json(); // unconfirmed is fine: both can confirm in one block
   const total = utxos.reduce((s, u) => s + u.value, 0), price = Number(l.price_sats), fee = 400;

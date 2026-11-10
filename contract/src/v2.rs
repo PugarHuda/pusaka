@@ -318,7 +318,7 @@ fn btc_exercise_nonce_key(token_id: &str) -> String {
 /// A reserved Bitcoin exercise holds the Pusaka (and the call) until its time to pay plus the proof grace, and while a
 /// proof is with the light client (so a proof sent in the last seconds of the grace can't lose to a cancel).
 fn btc_exercise_holds(token_id: &str) -> bool {
-    env::storage_has_key(btc_exercise_proving_key(token_id).as_bytes())
+    raw_get::<u32>(&btc_exercise_proving_key(token_id)).unwrap_or(0) > 0
         || raw_get::<BtcStrike>(&btc_strike_key(token_id))
             .is_some_and(|b| b.until_ms > 0 && env::block_timestamp_ms() <= b.until_ms.saturating_add(PROOF_GRACE_MS))
 }
@@ -986,7 +986,7 @@ impl Pusaka {
             "strike_sats": b.as_ref().map(|b| U64(b.sats)), "pay_to_script": b.as_ref().map(|b| hex::encode(&b.pay_to)),
             "btc_reserved_until_ms": b.as_ref().filter(|b| b.until_ms > 0).map(|b| U64(b.until_ms)),
             "btc_proof_until_ms": b.as_ref().filter(|b| b.until_ms > 0).map(|b| U64(b.until_ms.saturating_add(PROOF_GRACE_MS))),
-            "op_return": b.as_ref().filter(|b| b.until_ms > 0).and_then(|b| c.holder.as_ref().map(|h| hex::encode(btc_exercise_memo(&token_id, h, b.nonce)))),
+            "op_return": b.as_ref().filter(|b| b.until_ms > 0 && env::block_timestamp_ms() <= b.until_ms).and_then(|b| c.holder.as_ref().map(|h| hex::encode(btc_exercise_memo(&token_id, h, b.nonce)))),
         }))
     }
 
@@ -1037,8 +1037,8 @@ impl Pusaka {
         let memo = btc_exercise_memo(&token_id, &holder, b.nonce);
         let (args, txid, paid) = check_btc_payment(&tx_hex, pay_vout, memo_vout, &b.pay_to, b.sats, &memo,
             &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof);
-        require!(!env::storage_has_key(btc_exercise_proving_key(&token_id).as_bytes()), "a proof is already with the light client");
-        raw_put(&btc_exercise_proving_key(&token_id), &());
+        // a count, not a lock: a bogus proof sent alongside can't keep the genuine one out
+        raw_put(&btc_exercise_proving_key(&token_id), &(raw_get::<u32>(&btc_exercise_proving_key(&token_id)).unwrap_or(0) + 1));
         Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
             .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(30))
@@ -1049,7 +1049,10 @@ impl Pusaka {
     /// the same reservation still stands.
     #[private]
     pub fn on_btc_exercise_proven(&mut self, token_id: TokenId, holder: AccountId, nonce: U64, txid: String, sats: U64) -> bool {
-        env::storage_remove(btc_exercise_proving_key(&token_id).as_bytes());
+        match raw_get::<u32>(&btc_exercise_proving_key(&token_id)).unwrap_or(0) {
+            0 | 1 => { env::storage_remove(btc_exercise_proving_key(&token_id).as_bytes()); }
+            n => raw_put(&btc_exercise_proving_key(&token_id), &(n - 1)),
+        }
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
         let (Some(c), Some(b)) = (raw_get::<CoveredCall>(&call_key(&token_id)), raw_get::<BtcStrike>(&btc_strike_key(&token_id))) else { return false };
         if !ok || c.holder.as_ref() != Some(&holder) || b.nonce != nonce.0 || env::storage_has_key(btc_paid_key(&txid).as_bytes()) {
