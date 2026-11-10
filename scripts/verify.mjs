@@ -9,7 +9,8 @@ import { CONTRACT, MPC, NETWORK, BTC_LIGHT_CLIENT, lightClientHeight, nearFetch 
 import { auditToken } from "@pusaka/shared/audit";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
-const README = fs.readFileSync(path.join(import.meta.dirname, "..", "README.md"), "utf8");
+// the README plus docs/V2.md and docs/AGENTS.md, which hold the detail moved out of it
+const README = ["README.md", "docs/V2.md", "docs/AGENTS.md"].map((f) => fs.readFileSync(path.join(import.meta.dirname, "..", f), "utf8")).join("\n");
 let failed = 0, inconclusive = 0;
 // A judge shouldn't wait forever on a slow explorer: the whole run stops after 5 minutes and says where it was.
 let step = "start";
@@ -99,7 +100,7 @@ for (let i = 0; i < hashes.length; i += 20) {
   for (const t of r.transactions ?? []) found.add(t.transaction.hash);
 }
 const missing = hashes.filter((h) => !found.has(h));
-ok(missing.length === 0, `all ${hashes.length} NEAR transactions cited in the README are on chain`, missing.length ? `not found: ${missing.join(", ")}` : "via FastNear's archival index");
+ok(missing.length === 0, `all ${hashes.length} NEAR transactions cited in the README and docs/ are on chain`, missing.length ? `not found: ${missing.join(", ")}` : "via FastNear's archival index");
 
 // 7. Pusaka v2 (testnet): the code is the recorded build, changes only via the DAO + timelock, and every NFT's own
 //    account is keyless and runs the token-account global contract published by hash.

@@ -19,7 +19,7 @@ Expect `all checks passed`, with these lines (numbers move as the demo is used):
 ✓ all 21 Pusaka BTC keys are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
 ✓ verified_sats = proven deposits never signed away; 9 proven deposits found on Bitcoin, confirmed, paying the right address: …
 ✓ the app's /api/reserves matches the contract: … sats verified in total
-✓ all … NEAR transactions cited in the README are on chain: via FastNear's archival index
+✓ all … NEAR transactions cited in the README and docs/ are on chain: via FastNear's archival index
 ```
 
 If a line starts with ⚠, a Bitcoin explorer (mempool.space or Blockstream) didn't answer from your network: those
