@@ -42,6 +42,8 @@ const adapter = (req) => {
 
 const send = (res, { status, headers = {}, body }) => {
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
+  // a browser gets x402's HTML paywall page as a string: send it as is, not as a JSON-escaped string
+  if (typeof body === "string") return res.status(status).send(body);
   res.status(status).json(body ?? {});
 };
 
