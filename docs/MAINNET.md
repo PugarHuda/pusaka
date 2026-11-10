@@ -31,18 +31,20 @@ NEAR Intents has no testnet (hackathon rule Q-007), which is why this waits for 
 - **Testing:** `dry: true` quotes first (Q-007), then one real purchase with a few dollars.
 - **Notes:** without a 1Click JWT there is a 0.2% fee (Q-006). Register at partners.near-intents.org.
 
-## Costs (measured 8 Nov 2026: NEAR $3.68, BTC $75,612, Bitcoin fees 1–3 sat/vB)
+## Costs (prices of 8 Nov 2026, sizes of 10 Nov: NEAR $3.68, BTC $75,612, Bitcoin fees 1–3 sat/vB)
 
 | Item | Amount | USD |
 |---|---|---|
-| Contract storage (628 KB wasm; never recoverable once the key is deleted and upgrades renounced) | ~6.3 NEAR | ~$23 |
+| Contract storage, Smart Pusaka code (817 KB wasm, 10 Nov; never recoverable once the key is deleted) | ~8.2 NEAR | ~$30 |
+| Optional: publish `token-account` as a global contract (43 KB at 0.0001 NEAR/byte, burned), needed only for the NFT's own NEAR account | ~4.4 NEAR | ~$16 |
+| Optional: the market contract (258 KB) for bids, pools and perpetual loans | ~2.6 NEAR | ~$10 |
 | Account, deploy, init, gas for the smoke test | ~0.5 NEAR | ~$2 |
 | Second account to buy/lend in the demo; 2 mints (0.1 NEAR deposit each, mostly refunded) | ~0.5 NEAR | ~$2 |
 | Relayer gas balance for gas-free proofs (optional) | ~2 NEAR | ~$7 |
 | BTC: 10,000 sats, the smallest deposit the relayer proves for free (6 confirmations) | 10,000 sats | ~$7.60 |
 | Bitcoin fees: deposit + one withdrawal (~150 vB each at 1–3 sat/vB) | ~1,000 sats | < $1 |
 | One real NEAR Intents exit (BTC → USDC), optional | min ~6,400 sats | ~$5 |
-| **Minimum** (no relayer, no Intents) | ~7.3 NEAR + ~11,000 sats | **~$35** |
-| **Full demo** | ~9.3 NEAR + ~17,000 sats | **~$47** |
+| **Minimum** (Smart Pusaka code only; no global account contract, market, relayer or Intents) | ~9.2 NEAR + ~11,000 sats | **~$42** |
+| **Full demo** (with the NFT's own account, the market, the relayer and one Intents exit) | ~18.2 NEAR + ~17,000 sats | **~$80** |
 
 Not counted: an exchange's own BTC withdrawal fee if the BTC comes from one. MPC signatures on `v1.signer` carry no separate deposit (`experimental_signature_deposit` doesn't exist there; checked 8 Nov).
