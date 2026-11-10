@@ -87,7 +87,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `287 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
+See: `290 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -262,7 +262,7 @@ account can create names under 65 characters.
 | The new holder uses the same account | [36RLmrAL…](https://testnet.near.rocks/tx/36RLmrALsb8NYmPJqeNNh5BucVb1Ud6tkCjQtWeF3y9y) |
 | The old holder tries: `NotOwner` | [FF9c2dPy…](https://testnet.near.rocks/tx/FF9c2dPyjZtXKja7VfgeGGeoee9LiwaBYE5aDezYqT8K) |
 
-Tests: 41 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`, `f8_agent`, `f9_sign_in`), with real ML-DSA-65 keys and signatures from
+Tests: 44 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`, `f8_agent`, `f9_sign_in`), with real ML-DSA-65 keys and signatures from
 `@noble/post-quantum` (`scripts/pq-fixture.mjs`), and 3 in `token-account/`.
 
 **Upgraded through the DAO, as designed (9 Nov).** A security review of v2 found three holes, fixed with tests:
@@ -338,9 +338,12 @@ Pusaka v2 #7*; over MCP, `pusaka_sign_in`. Live (`node scripts/v2-sign-in.mjs pu
 recovery ([BBN85r1K…](https://testnet.near.rocks/tx/BBN85r1KGr4A7kxgzQGgrDbHWs8CSDuPBrwCjDmWFVaU)); a stranger
 refused, `NotOwner` ([3Xfwhfud…](https://testnet.near.rocks/tx/3XfwhfudVHo2kzYDV6xv5fkpV9rr1W69hFdp7LFb784p)).
 A sign-in can't outlive a sale: it is refused while the Pusaka is listed, pledged or approved to a market, and while
-one is valid (`signed_in_until`) the holder can't list it or approve a market (`SignedIn`, live
-[2Bc5HUNU…](https://testnet.near.rocks/tx/2Bc5HUNUrbNkT4fux6nBJ3BzG7wZxu1qMbeL51DrSZGT)). An automated security review
-of the first version caught that gap; the fix went in as DAO proposal 12.
+one is valid (`signed_in_until`) nothing a counterparty pays for can start: no listing, market approval,
+`nft_transfer_call` (markets, NEAR Intents) or loan (`SignedIn`, live: a listing
+[2Bc5HUNU…](https://testnet.near.rocks/tx/2Bc5HUNUrbNkT4fux6nBJ3BzG7wZxu1qMbeL51DrSZGT) and a deposit into the Intents
+verifier [65pQSqHL…](https://testnet.near.rocks/tx/65pQSqHLy1HTJ5KNRHS9sh2w88Wvocka51mCJMc5VVq8)). The record outlives a transfer,
+so handing the NFT to a second account first doesn't clear it. Automated security reviews of proposals 11 and 12 each
+found a way around the earlier version; the fixes went in as DAO proposals 12 and 13.
 
 **The NFT holds a NEAR Intents balance.** Anyone can deposit into NEAR Intents for the NFT's `0s…` account
 (`ft_transfer_call` to the verifier with `msg` = the account). That balance belongs to whoever holds the NFT: the holder
@@ -363,8 +366,8 @@ now refuses methods that grant keys, approvals or allowances (`AccountGrant`,
 names, so a contract that grants a right under some other name isn't caught (`docs/reports/05-security.md`, V2-9).
 F9 and this fix went in through DAO proposal 11 and the timelock, `apply_upgrade`
 ([Eqimmrz6…](https://testnet.near.rocks/tx/Eqimmrz6sg31CBsCr1Y4wjut96y3yHawx71UZ3uNhogN)), sha256 `c786e1e6…d4f838`;
-tests `f9_*`, `v2_9_*` and `v2_10_*` (12). Proposal 12 ([FcFuQZVq…](https://testnet.near.rocks/tx/FcFuQZVqV7zKuSJvBsUwLcFcXxE2YGZ6J9rhFa9gAp3q),
-sha256 `0c66a94f…b4eaf6`) added the sign-in gate above.
+tests `f9_*`, `v2_9_*` and `v2_10_*` (15). Proposal 12 ([FcFuQZVq…](https://testnet.near.rocks/tx/FcFuQZVqV7zKuSJvBsUwLcFcXxE2YGZ6J9rhFa9gAp3q),
+sha256 `0c66a94f…b4eaf6`) and 13 (sha256 `8c66134f…6f573b`) added the sign-in gate above.
 
 Costs on testnet:
 - Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.
@@ -705,8 +708,8 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Same, on a second chain (Arbitrum Sepolia, 20 USDC) | [89W2pDYE…](https://testnet.near.rocks/tx/89W2pDYEx6M1kGBZMfMgm5MhHauEQNAoQN48k5PCruzo): attested in 7.3 s; `usdc_info(5)` verified 20 USDC on Arbitrum |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
 | A withdrawal's change below 10,000 sats, proven for free (proposal 5) | #10 held 8,700 sats it could never count again (change of an earlier withdrawal); after the deploy its holder withdrew 1,000 ([22907ae1…](https://mempool.space/testnet/tx/22907ae13f07e4da75e7de3c89c99ae81f2f86d2d90e5380e62df3a8d67629f7)), and the public `/api/prove` proved output 1 (7,400 sats): `verified_sats` 0 → 7,400 |
-| Unit tests | 287 / 287 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
-| Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192870b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
+| Unit tests | 290 / 290 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
+| Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192900b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | The README's try-it path through the web app with a real wallet (Intear, driven by Playwright: `node web/e2e/wallet-qa.mjs <profile> judge 10 12`, then `repay pusaka-buyer.testnet 12`), current build | *Buy* #10: one wallet approval, "You own Pusaka #10…" in 9 s; *Lend* on #12: "Loan funded. The NEAR went to the borrower." in 8 s; the borrower's *Repay*: "Loan repaid. The Pusaka is unlocked." in 7 s. It also showed the old demo terms as 1,217% a year, so the asks now repay 0.501 for 0.5 (about 24% a year) |
 | The loan market's web forms with a real wallet (Intear, `node web/e2e/wallet-qa.mjs <profile> offer pusaka-seller.testnet 15`, then `refinance pusaka-buyer.testnet 15`) | a lender posted a standing offer through the form and cancelled it (8 s each); the borrower of a funded loan saw a cheaper-per-day offer "pays off the 0.102 NEAR owed to pusaka-seller.testnet; 0.008 NEAR comes to you" and clicked Refinance: one wallet approval, `LoanRefinanced` [4HiEGnAW…](https://testnet.near.rocks/tx/4HiEGnAWEvAj8bcZTYTtG2vdhd8pkMQQQxAnLZ11zfoe). This QA found the amount inputs refusing 0.501-style values (`step=0.01`), fixed |
 | `nft_metadata_update` (NEP-171 1.2.0) on a live change of the art | listing #15: [8YW6UFg1…](https://testnet.near.rocks/tx/8YW6UFg1qzuE3X8EEv2sQ75fQeFMuFUsP7EsPYRJVQ3F) logs `{"event":"nft_metadata_update","data":[{"token_ids":["15"]}]}` |

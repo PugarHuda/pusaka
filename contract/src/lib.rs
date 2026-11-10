@@ -1491,6 +1491,7 @@ impl Pusaka {
     ) {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
+        v2::assert_no_live_sign_in(&token_id);
         require!(!principal.is_zero() && repay >= principal, "need 0 < principal <= repay");
         require!(duration_ms.0 > 0, "duration_ms must be > 0");
         self.loans.insert(
@@ -2063,6 +2064,7 @@ impl NonFungibleTokenCore for Pusaka {
     ) -> PromiseOrValue<bool> {
         near_sdk::assert_one_yocto();
         self.assert_unlocked(&token_id);
+        v2::assert_no_live_sign_in(&token_id);
         let sender = env::predecessor_account_id();
         if sender == self.owner_of(&token_id) { v2::assert_pq(&token_id, &sender); }
         let (from, approvals) = self.tokens.internal_transfer(&sender, &receiver_id, &token_id, approval_id, memo);
@@ -2336,6 +2338,7 @@ impl Pusaka {
     pub fn accept_loan_offer(&mut self, token_id: TokenId, offer_id: U64, expected_sign_epoch: u32) {
         let offer: LoanOffer = raw_get(&offer_key(offer_id.0)).expect("NoOffer");
         self.assert_owner(&token_id);
+        v2::assert_no_live_sign_in(&token_id);
         let borrower = env::predecessor_account_id();
         let old = self.loans.get(&token_id).cloned();
         if let Some(l) = &old {

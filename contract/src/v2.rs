@@ -82,7 +82,7 @@ pub fn assert_pq(token_id: &str, owner: &AccountId) {
 pub fn clear_pq(token_id: &str) {
     env::storage_remove(pq_key(token_id).as_bytes());
     env::storage_remove(agent_key(token_id).as_bytes());
-    env::storage_remove(sign_in_key(token_id).as_bytes());
+    // not the sign-in record: it expires by itself, so passing the NFT to an alt account can't clear it (V2-10)
 }
 
 /// F8, an agent with a budget: the holder lets one account (an AI agent) send NEAR out of the NFT's own
@@ -123,7 +123,8 @@ fn sign_in_key(token_id: &str) -> String {
     format!("si:{token_id}")
 }
 
-/// V2-10: a seller's sign-in mustn't outlive the sale, so no listing or market approval while one is valid.
+/// V2-10: a sign-in mustn't outlive a sale, so while one is valid (whoever holds the NFT now) nothing a counterparty
+/// pays for can start: no listing, market approval, `nft_transfer_call` (markets, NEAR Intents) or loan.
 pub fn assert_no_live_sign_in(token_id: &str) {
     if let Some(until) = raw_get::<u64>(&sign_in_key(token_id)) {
         require!(env::block_timestamp_ms() >= until, format!("SignedIn: a sign-in as this Pusaka is valid until {until} ms; list it after that"));

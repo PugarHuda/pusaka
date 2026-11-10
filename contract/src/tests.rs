@@ -3569,6 +3569,38 @@ mod f9_sign_in {
         c.list("1".into(), NearToken::from_near(1), None, None);
     }
 
+    fn signed_in_then_given_to_bob() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_yoctonear(1), 1_000_000);
+        let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        at("bob.testnet", NearToken::from_yoctonear(1), 1_000_001);
+        c
+    }
+
+    #[test]
+    #[should_panic(expected = "SignedIn")]
+    fn v2_10_passing_it_to_an_alt_account_doesnt_clear_the_sign_in() {
+        let mut c = signed_in_then_given_to_bob();
+        at("bob.testnet", NearToken::from_yoctonear(0), 1_000_001);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "SignedIn")]
+    fn v2_10_no_nft_transfer_call_while_a_sign_in_is_valid() {
+        let mut c = signed_in_then_given_to_bob();
+        let _ = c.nft_transfer_call(acc("verifier.testnet"), "1".into(), None, None, String::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "SignedIn")]
+    fn v2_10_no_loan_while_a_sign_in_is_valid() {
+        let mut c = signed_in_then_given_to_bob();
+        at("bob.testnet", NearToken::from_yoctonear(0), 1_000_001);
+        c.request_loan("1".into(), NearToken::from_near(1), NearToken::from_near(1), U64(1000));
+    }
+
     #[test]
     #[should_panic(expected = "Listed")]
     fn v2_10_no_sign_in_while_listed() {
