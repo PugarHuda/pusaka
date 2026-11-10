@@ -11,7 +11,11 @@
 import { randomBytes } from "node:crypto";
 import { hex } from "@scure/base";
 import { witnessFromMpc, verify } from "@pusaka/shared/bip322";
-import { account, callRaw, view, btcAddress, scriptHex, NEAR_EXPLORER } from "./lib.mjs";
+import fs from "node:fs";
+import * as bitcoin from "bitcoinjs-lib";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { account, callRaw, view, btcAddress, scriptHex, NEAR_EXPLORER, NET, btcFetch, broadcast, depositProof } from "./lib.mjs";
+const PAYER = new URL("../.keys/btc-payer.json", import.meta.url);
 
 const V2 = process.env.PUSAKA_CONTRACT;
 if (V2 !== "pusaka-v2.testnet") throw new Error("PUSAKA_CONTRACT=pusaka-v2.testnet");
@@ -66,4 +70,37 @@ if (step === "proof") {
     + "0000000000000000" + "16" + "6a14" + "00".repeat(20) + "00000000";
   await refused("a Bitcoin payment carrying someone else's OP_RETURN", /OP_RETURN isn't this reservation's/, () => tx(buyer, "prove_btc_purchase",
     { token_id, tx_hex: fake, pay_vout: 0, memo_vout: 1, block_hash: "00".repeat(32), tx_index: "0", merkle_proof: [], coinbase_txid: "00".repeat(32), coinbase_merkle_proof: [] }));
-} else throw new Error("step: proof | rent | btc-list | reserve");
+} else if (step === "payer") {
+  // a plain Bitcoin testnet key that pays like any outside wallet (a Pusaka's own withdraw always writes
+  // "pusaka:<id>" as its OP_RETURN, so it can't carry a reservation's)
+  if (!fs.existsSync(PAYER)) fs.writeFileSync(PAYER, JSON.stringify({ priv: hex.encode(randomBytes(32)) }));
+  console.log(`payer address ${payer().address} (key in .keys/, never printed)`);
+} else if (step === "pay") {
+  const [token_id] = a;
+  const l = await view("btc_listing_of", { token_id }, V2);
+  if (!l?.op_return) throw new Error("not reserved");
+  const p = payer();
+  const utxos = await (await btcFetch(`/address/${p.address}/utxo`)).json(); // unconfirmed is fine: both can confirm in one block
+  const total = utxos.reduce((s, u) => s + u.value, 0), price = Number(l.price_sats), fee = 400;
+  if (total < price + fee) throw new Error(`payer holds ${total} sats; needs ${price + fee}`);
+  const psbt = new bitcoin.Psbt({ network: NET });
+  for (const u of utxos) psbt.addInput({ hash: u.txid, index: u.vout, witnessUtxo: { script: p.output, value: BigInt(u.value) } });
+  psbt.addOutput({ script: hex.decode(l.pay_to_script), value: BigInt(price) }); // pay_vout 0
+  psbt.addOutput({ script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, hex.decode(l.op_return)]), value: 0n }); // memo_vout 1
+  if (total - price - fee >= 546) psbt.addOutput({ script: p.output, value: BigInt(total - price - fee) });
+  psbt.signAllInputs(p.signer).finalizeAllInputs();
+  console.log(`paid ${price} sats for #${token_id}, OP_RETURN ${l.op_return}: txid ${await broadcast(psbt.extractTransaction().toHex())}`);
+} else if (step === "prove") {
+  const [who, token_id, txid] = a;
+  const { vout, ...proof } = await depositProof(txid, 0);
+  const o = await tx(who, "prove_btc_purchase", { token_id, ...proof, pay_vout: 0, memo_vout: 1 }, 0n, 300);
+  console.log(`proved; #${token_id} now held by ${(await view("nft_token", { token_id }, V2)).owner_id}: ${link(o)}`);
+} else throw new Error("step: proof | rent | btc-list | reserve | payer | pay | prove");
+
+function payer() {
+  const priv = hex.decode(JSON.parse(fs.readFileSync(PAYER, "utf8")).priv);
+  const pub = secp256k1.getPublicKey(priv, true);
+  const { address, output } = bitcoin.payments.p2wpkh({ pubkey: pub, network: NET });
+  const signer = { publicKey: pub, sign: (h) => secp256k1.sign(h, priv, { prehash: false, lowS: true }) };
+  return { address, output, signer };
+}
