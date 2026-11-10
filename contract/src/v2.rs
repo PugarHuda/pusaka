@@ -123,7 +123,7 @@ fn btc_listing_key(token_id: &str) -> String {
 /// An heir's claim ends a BTC listing, but never while a reserved buyer may already have paid on Bitcoin.
 pub fn end_btc_listing_for_heir(token_id: &str) {
     if let Some(l) = raw_get::<BtcListing>(&btc_listing_key(token_id)) {
-        require!(l.buyer.is_none() || env::block_timestamp_ms() > l.until_ms, "Reserved: a Bitcoin buyer is paying; claim after the reservation");
+        require!(!l.holds(env::block_timestamp_ms()), "Reserved: a Bitcoin buyer is paying; claim after the reservation");
         env::storage_remove(btc_listing_key(token_id).as_bytes());
         if l.buyer.is_some() && l.bond > 0 {
             refund(l.seller, NearToken::from_yoctonear(l.bond));
@@ -141,6 +141,20 @@ pub const BTC_BOND: NearToken = NearToken::from_millinear(100);
 pub const RESERVE_MS: u64 = 6 * 3_600_000;
 #[cfg(feature = "mainnet")]
 pub const RESERVE_MS: u64 = 24 * 3_600_000;
+/// After the time to pay, the time a paid buyer still has to get the payment proven (Bitcoin confirmations and the
+/// light client's lag) before anyone else may reserve, the seller may cancel or an heir may claim.
+pub const PROOF_GRACE_MS: u64 = RESERVE_MS;
+
+impl BtcListing {
+    /// A reservation holds the sale until its time to pay plus the proof grace period.
+    fn holds(&self, now_ms: u64) -> bool {
+        self.buyer.is_some() && now_ms <= self.until_ms.saturating_add(PROOF_GRACE_MS)
+    }
+}
+
+fn btc_nonce_key(token_id: &str) -> String {
+    format!("bn:{token_id}")
+}
 
 /// The OP_RETURN data a BTC purchase must carry: binds the payment to this contract, token, buyer and reservation.
 pub fn btc_purchase_memo(token_id: &str, buyer: &AccountId, nonce: u64) -> Vec<u8> {
@@ -548,7 +562,7 @@ impl Pusaka {
     pub fn cancel_btc_listing(&mut self, token_id: TokenId) {
         let l: BtcListing = raw_get(&btc_listing_key(&token_id)).unwrap_or_else(|| env::panic_str("NotListed"));
         require!(l.seller == env::predecessor_account_id(), "NotOwner");
-        require!(l.buyer.is_none() || env::block_timestamp_ms() > l.until_ms, "Reserved: a buyer is paying; wait for the reservation to run out");
+        require!(!l.holds(env::block_timestamp_ms()), "Reserved: a buyer is paying; wait for the reservation to run out");
         env::storage_remove(btc_listing_key(&token_id).as_bytes());
         // an expired reservation's bond goes to the seller, for the time the Pusaka was held for nobody
         if l.buyer.is_some() && l.bond > 0 {
@@ -566,11 +580,13 @@ impl Pusaka {
         require!(buyer != l.seller, "SelfBuy");
         require!(env::attached_deposit() >= BTC_BOND, "attach 0.1 NEAR: a bond, back when you buy");
         let now = env::block_timestamp_ms();
-        require!(l.buyer.is_none() || now > l.until_ms, "Reserved: another buyer is paying");
+        require!(!l.holds(now), "Reserved: another buyer is paying");
         if l.buyer.is_some() && l.bond > 0 {
             refund(l.seller.clone(), NearToken::from_yoctonear(l.bond));
         }
-        l.nonce += 1;
+        // never reused for this token, across listings: an old payment's OP_RETURN can't match a new reservation
+        l.nonce = raw_get::<u64>(&btc_nonce_key(&token_id)).unwrap_or(0).max(l.nonce) + 1;
+        raw_put(&btc_nonce_key(&token_id), &l.nonce);
         l.buyer = Some(buyer.clone());
         l.until_ms = now + RESERVE_MS;
         l.bond = env::attached_deposit().as_yoctonear();
@@ -584,7 +600,7 @@ impl Pusaka {
     pub fn btc_listing_of(&self, token_id: TokenId) -> Option<Value> {
         raw_get::<BtcListing>(&btc_listing_key(&token_id)).map(|l| json!({
             "seller": l.seller, "price_sats": U64(l.price_sats), "pay_to_script": hex::encode(&l.pay_to),
-            "buyer": l.buyer.clone(), "reserved_until_ms": U64(l.until_ms),
+            "buyer": l.buyer.clone(), "reserved_until_ms": U64(l.until_ms), "proof_until_ms": U64(l.until_ms.saturating_add(PROOF_GRACE_MS)),
             "op_return": l.buyer.as_ref().map(|b| hex::encode(btc_purchase_memo(&token_id, b, l.nonce))),
         }))
     }

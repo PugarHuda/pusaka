@@ -3996,8 +3996,8 @@ mod f10_f13 {
     fn f12_a_payment_for_another_reservation_is_refused() {
         let mut c = btc_listed();
         let memo = reserve(&mut c, "bob.testnet", 2_000);
-        // bob's reservation runs out, carol reserves: bob's old payment can't buy it for carol or for bob
-        reserve(&mut c, "carol.testnet", 2_000 + crate::v2::RESERVE_MS + 1);
+        // bob's reservation and its proof grace run out, carol reserves: bob's old payment can't buy it for carol or for bob
+        reserve(&mut c, "carol.testnet", 2_000 + 2 * crate::v2::RESERVE_MS + 1);
         prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
     }
 
@@ -4006,7 +4006,7 @@ mod f10_f13 {
         let mut c = btc_listed();
         let memo = reserve(&mut c, "bob.testnet", 2_000);
         prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
-        reserve(&mut c, "carol.testnet", 2_000 + crate::v2::RESERVE_MS + 1);
+        reserve(&mut c, "carol.testnet", 2_000 + 2 * crate::v2::RESERVE_MS + 1);
         as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
         assert!(!c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), "ab".repeat(32), U64(50_000)));
         assert_eq!(c.owner_of(&"1".to_string()), acc("alice.testnet"));
@@ -4040,6 +4040,43 @@ mod f10_f13 {
         reserve(&mut c, "bob.testnet", 1_000 + HEIR_MIN_MS);
         at("heir.testnet", NearToken::from_yoctonear(0), 1_001 + HEIR_MIN_MS);
         c.claim_inheritance("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved")]
+    fn f12_a_paid_buyer_keeps_the_sale_while_their_proof_is_on_its_way() {
+        // bob's time to pay is over, but his payment may be waiting for the light client: carol can't take it yet
+        let mut c = btc_listed();
+        reserve(&mut c, "bob.testnet", 2_000);
+        reserve(&mut c, "carol.testnet", 2_000 + crate::v2::RESERVE_MS + 1);
+    }
+
+    #[test]
+    fn f12_a_late_proof_within_the_grace_still_buys() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        at("anyone.testnet", NearToken::from_yoctonear(0), 2_000 + crate::v2::RESERVE_MS + 10);
+        let _ = c.prove_btc_purchase("1".into(), payment(SELLER_SCRIPT, 50_000, &memo), 0, 1, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), "ab".repeat(32), U64(50_000)));
+    }
+
+    #[test]
+    #[should_panic(expected = "OP_RETURN isn't this reservation's")]
+    fn f12_an_old_payment_cant_buy_it_again_after_it_is_relisted() {
+        // bob bought it for 50,000 sats; it comes back to alice, who lists it again to the same address; bob reserves
+        // again and replays his old payment: the nonce never repeats for this token, so the OP_RETURN can't match
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), "ab".repeat(32), U64(50_000)));
+        at("bob.testnet", NearToken::from_yoctonear(1), 4_000);
+        c.nft_transfer(acc("alice.testnet"), "1".into(), None, None);
+        at("alice.testnet", NearToken::from_millinear(10), 5_000);
+        c.list_for_btc("1".into(), U64(50_000), SELLER_SCRIPT.into());
+        reserve(&mut c, "bob.testnet", 6_000);
+        prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
     }
 
     // ---------- F13 ----------

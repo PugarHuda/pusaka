@@ -22,7 +22,7 @@ Brief track, dikutip:
 |---|---|---|
 | Reproduksibilitas (penyaring AI) | 9 | Repo publik. Sisanya sudah ada: `npm run demo`, `verify.mjs`, JUDGES.md, CI hijau lagi sejak `44bda6a` |
 | Klaim = kenyataan on-chain | 10 | Pertahankan: `verify.mjs` harian di CI |
-| Technical implementation | 9 | — (324 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
+| Technical implementation | 9 | — (327 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
 | Kesesuaian `nfts` ("NFT sebagai akun yang memiliki uang") | 9 | Brief track praktis mendeskripsikan Pusaka |
 | Kesesuaian `defi` ("settle… through NEAR Intents", "nobody to switch it off") | 6 | Intents di Pusaka hanya **quote dry-run**: likuiditas 1Click hanya ada di mainnet. Pemimpin `defi` (Warrant, setllend) **di mainnet**, dan Warrant menyelesaikan transaksinya di dalam `intents.near`. Untuk naik: deploy mainnet + satu jalur keluar Intents yang benar-benar dieksekusi |
 | Kesesuaian `open` | 8 | Kombinasi BTC × agen AI (MCP) × pewarisan sudah unik |
@@ -117,7 +117,7 @@ Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", bar
 **Aksi, urut kenaikan skor per jam:**
 1. Repo publik (user), paling lambat 12 Nov. Repro 1 → 9, dan CI jadi gratis lagi sehingga badge hijau.
 2. Video 2–2,5 menit + post X (user). Kalimat pembuka: "BTC native, dibuktikan light client". Tunjukkan layar nyata + explorer, bukan animasi.
-3. ~~Samakan angka tes~~: selesai (324 di semua dokumen).
+3. ~~Samakan angka tes~~: selesai (327 di semua dokumen).
 4. ~~Kotak "What's real / not"~~: selesai, di atas README.
 5. ~~`verify.mjs` mengecek v2~~: selesai. Hapus key v2 pada 13 Nov.
 6. Mainnet (user, butuh dana) adalah satu-satunya cara mengejar Contri, Hallmark dan Warrant di "impact".

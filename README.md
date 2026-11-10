@@ -87,7 +87,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `324 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
+See: `327 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -264,7 +264,7 @@ account can create names under 65 characters.
 | The new holder uses the same account | [36RLmrAL…](https://testnet.near.rocks/tx/36RLmrALsb8NYmPJqeNNh5BucVb1Ud6tkCjQtWeF3y9y) |
 | The old holder tries: `NotOwner` | [FF9c2dPy…](https://testnet.near.rocks/tx/FF9c2dPyjZtXKja7VfgeGGeoee9LiwaBYE5aDezYqT8K) |
 
-Tests: 78 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`, `f8_agent`, `f9_sign_in`, `v2_11_nested`, `f10_f13`), with real ML-DSA-65 keys and signatures from
+Tests: 81 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`, `f8_agent`, `f9_sign_in`, `v2_11_nested`, `f10_f13`), with real ML-DSA-65 keys and signatures from
 `@noble/post-quantum` (`scripts/pq-fixture.mjs`), and 3 in `token-account/`.
 
 **Upgraded through the DAO, as designed (9 Nov).** A security review of v2 found three holes, fixed with tests:
@@ -412,8 +412,10 @@ renter's attempt to list it refused [DpkwLCoP…](https://testnet.near.rocks/tx/
 
 **Buy a Pusaka with native Bitcoin (F12).** A Bitcoiner shouldn't need NEAR tokens to buy one. `list_for_btc(token_id,
 price_sats, pay_to_script)` locks the Pusaka like a listing. A buyer calls `reserve_btc_purchase` (0.1 NEAR bond, back on
-purchase; 6 h to pay), so two buyers can never pay for the same sale, and gets the OP_RETURN their payment must carry:
-`sha256("pusaka-buy:<contract>:<token>:<buyer>:<nonce>")[..20]`. They pay on Bitcoin; anyone then calls
+purchase; 6 h to pay, then 6 more for the payment to be proven, during which nobody else can reserve and the seller can't
+cancel), so two buyers can never pay for the same sale, and gets the OP_RETURN their payment must carry:
+`sha256("pusaka-buy:<contract>:<token>:<buyer>:<nonce>")[..20]`, where the nonce never repeats for a token, so an old
+payment can't buy it again after a resale. They pay on Bitcoin; anyone then calls
 `prove_btc_purchase` with the transaction and its merkle proof; the contract checks the output to the seller and the
 OP_RETURN, asks NEAR's Bitcoin light client to confirm inclusion, and hands the NFT to the buyer. An heir's claim waits
 while a reserved buyer may already have paid. Live on v2 #5, 5,000 sats paid to the seller's own Pusaka #1 address:
@@ -421,14 +423,17 @@ listed [5opmjDCS…](https://testnet.near.rocks/tx/5opmjDCSBv7TgLYyF3NJVjw2WSCJs
 [88dqPFrR…](https://testnet.near.rocks/tx/88dqPFrRYTjhd8yKahC5rYF7mW7jqdx2EHUiQTmstVQu), and a payment carrying another reservation's OP_RETURN refused before any light-client
 call [CVmWWhPF…](https://testnet.near.rocks/tx/CVmWWhPFKMtsjuaj8aPMYxRZdx7D2pjZ8UiRSrM2QSXq). **Not yet done live:** the Bitcoin payment itself. Our ISP hijacks DNS for
 blockstream.info and times out mempool.space, so from here we can neither broadcast nor fetch the merkle proof; the
-proof path is the same light-client call as `prove_deposit` (live since 3 Nov) and is covered by tests `f12_*` (11).
+proof path is the same light-client call as `prove_deposit` (live since 3 Nov) and is covered by tests `f12_*` (14).
 Anyone with testnet3 BTC can finish it: reserve on `#/v2/5`, pay, prove.
 
 **Proof of reserves as a contract view (F13).** `reserves(from_index, limit)` returns every Pusaka's verified sats and
 the total, for other contracts and dashboards; the web app's [`#/reserves`](https://pusaka-two.vercel.app/#/reserves)
 lists every address with an in-browser re-check of each one.
 
-F10–F13 went in through DAO proposal 16 ([3DovJDZi…](https://testnet.near.rocks/tx/3DovJDZiNTC9Ydt27dTkJzQ9BH6JdWdZ9tb3ksPRpdDk), sha256 `56895764…0c2df6`), tests `f10_*`–`f13_*` (22).
+F10–F13 went in through DAO proposal 16 ([3DovJDZi…](https://testnet.near.rocks/tx/3DovJDZiNTC9Ydt27dTkJzQ9BH6JdWdZ9tb3ksPRpdDk), sha256 `56895764…0c2df6`), tests `f10_*`–`f13_*` (25).
+An automated security review of proposal 16 found two holes in F12, both closed by proposal 17 ([AtRLSQVr…](https://testnet.near.rocks/tx/AtRLSQVrss2iXNe78KxiZQfxgy1k9MYXXey3AzjHujYM), sha256 `ddf231e3…fcaf4`):
+the reservation nonce restarted with each listing, so a buyer could replay an old payment after a resale to the same
+address; and a buyer who had paid but whose proof came after the 6 hours could lose the sale to a new reservation.
 
 Costs on testnet:
 - Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.
@@ -800,7 +805,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Same, on a second chain (Arbitrum Sepolia, 20 USDC) | [89W2pDYE…](https://testnet.near.rocks/tx/89W2pDYEx6M1kGBZMfMgm5MhHauEQNAoQN48k5PCruzo): attested in 7.3 s; `usdc_info(5)` verified 20 USDC on Arbitrum |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
 | A withdrawal's change below 10,000 sats, proven for free (proposal 5) | #10 held 8,700 sats it could never count again (change of an earlier withdrawal); after the deploy its holder withdrew 1,000 ([22997ae1…](https://mempool.space/testnet/tx/22997ae13f07e4da75e7de3c89c99ae81f2f86d2d90e5380e62df3a8d67629f7)), and the public `/api/prove` proved output 1 (7,400 sats): `verified_sats` 0 → 7,400 |
-| Unit tests | 324 / 324 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
+| Unit tests | 327 / 327 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
 | Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192990b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | The README's try-it path through the web app with a real wallet (Intear, driven by Playwright: `node web/e2e/wallet-qa.mjs <profile> judge 10 12`, then `repay pusaka-buyer.testnet 12`), current build | *Buy* #10: one wallet approval, "You own Pusaka #10…" in 9 s; *Lend* on #12: "Loan funded. The NEAR went to the borrower." in 8 s; the borrower's *Repay*: "Loan repaid. The Pusaka is unlocked." in 7 s. It also showed the old demo terms as 1,217% a year, so the asks now repay 0.501 for 0.5 (about 24% a year) |
 | The loan market's web forms with a real wallet (Intear, `node web/e2e/wallet-qa.mjs <profile> offer pusaka-seller.testnet 15`, then `refinance pusaka-buyer.testnet 15`) | a lender posted a standing offer through the form and cancelled it (8 s each); the borrower of a funded loan saw a cheaper-per-day offer "pays off the 0.102 NEAR owed to pusaka-seller.testnet; 0.008 NEAR comes to you" and clicked Refinance: one wallet approval, `LoanRefinanced` [4HiEGnAW…](https://testnet.near.rocks/tx/4HiEGnAWEvAj8bcZTYTtG2vdhd8pkMQQQxAnLZ11zfoe). This QA found the amount inputs refusing 0.501-style values (`step=0.01`), fixed |
