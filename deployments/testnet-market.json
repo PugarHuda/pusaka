@@ -1,12 +1,24 @@
 {
   "network": "testnet",
   "contract": "pusaka-market.testnet",
-  "note": "market/: standing bids priced per verified sat and perpetual callable loans, against Pusakas through NEP-171/178/199. No upgrade path in the code; the account's key is deleted at the final deploy (13 Nov), after which the code can never change.",
+  "note": "market/: standing bids and buy pools priced per verified sat and perpetual callable loans, against Pusakas through NEP-171/178/199. No upgrade path in the code; the account's key is deleted at the final deploy (13 Nov), after which the code can never change.",
   "code": {
-    "wasm_sha256": "5b80222ac9bf3583473ffdd54e9c04ab436ba33411936033cf4073f91b2d89fa",
+    "wasm_sha256": "e87c4d65311fe56c1d42cbc26f15b96017892baf78f7ee9e154a1a2c59675ae2",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0), in market/",
     "created_tx": "Ek3Hdd7W8WjJGCfgmX44h5w3gQPcHKh3VMm8aVLxmXxa",
-    "deployed_tx": "6uG46TDQgFwFEPdh9VrJMsDQ4Q3fhuQ1cMHZzJQV87rJ",
-    "init_tx": "6zYF263P85cVPfDYRNKFTAzMVxZAeYNZc6kz3VtAa2YN"
+    "deployed_tx": "HfF9AxjjFYcmTBX96frTjUQrssYrAa12o9HaYo7qV7bA",
+    "init_tx": "6zYF263P85cVPfDYRNKFTAzMVxZAeYNZc6kz3VtAa2YN",
+    "history": [
+      {
+        "sha256": "5b80222ac9bf3583473ffdd54e9c04ab436ba33411936033cf4073f91b2d89fa",
+        "tx": "6uG46TDQgFwFEPdh9VrJMsDQ4Q3fhuQ1cMHZzJQV87rJ",
+        "how": "first deploy: bids per verified sat, perpetual loans"
+      },
+      {
+        "sha256": "e87c4d65311fe56c1d42cbc26f15b96017892baf78f7ee9e154a1a2c59675ae2",
+        "tx": "HfF9AxjjFYcmTBX96frTjUQrssYrAa12o9HaYo7qV7bA",
+        "how": "redeploy with the account key (before 13 Nov): buy pools, a linear curve per verified sat; live bids kept their layout"
+      }
+    ]
   }
 }
