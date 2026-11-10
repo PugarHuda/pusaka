@@ -33,4 +33,9 @@ await refused("a stranger signs in as the NFT", stranger, "sign_in", args, 1n, /
 const pk = Buffer.from(JSON.stringify({ public_key: "ed25519:11111111111111111111111111111111" })).toString("base64");
 await refused("the holder gives the NFT's account a key on the NEAR Intents verifier", holder, "account_call",
   { token_id, alias: false, receiver_id: "verifier.tidepool-sandbox.testnet", method_name: "add_public_key", args: pk, deposit: "1", gas_tgas: 10 }, 1n, /AccountGrant/);
-console.log("OK: signed in as the NFT; both refused on-chain");
+
+// V2-10: while that sign-in is valid the holder can't list the NFT, so it can't outlive a sale
+await refused("the holder lists the NFT while their sign-in is still valid", holder, "list",
+  { token_id, price: "1000000000000000000000000", floor: null, duration_ms: null }, 0n, /SignedIn/);
+console.log(`listing opens at ${new Date(Number(await view("signed_in_until", { token_id }, V2))).toISOString()}`);
+console.log("OK: signed in as the NFT; the stranger, the key grant and the early listing all refused on-chain");

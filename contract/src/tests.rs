@@ -3548,6 +3548,37 @@ mod f9_sign_in {
         sign_in("alice.testnet", "app.example", "short");
     }
 
+    #[test]
+    #[should_panic(expected = "SignedIn")]
+    fn v2_10_no_listing_while_the_sellers_sign_in_is_valid() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_yoctonear(1), 1_000_000);
+        let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
+        at("alice.testnet", NearToken::from_yoctonear(0), 1_000_000 + crate::v2::SIGN_IN_TTL_MS - 1);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    fn v2_10_listing_opens_when_the_sign_in_expires_and_the_buyer_starts_clean() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_yoctonear(1), 1_000_000);
+        let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
+        assert!(c.signed_in_until("1".into()).is_some());
+        at("alice.testnet", NearToken::from_yoctonear(0), 1_000_000 + crate::v2::SIGN_IN_TTL_MS);
+        assert!(c.signed_in_until("1".into()).is_none());
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Listed")]
+    fn v2_10_no_sign_in_while_listed() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_yoctonear(0), 1_000_000);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+        at("alice.testnet", NearToken::from_yoctonear(1), 1_000_001);
+        let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
+    }
+
     fn call(method: &str) {
         let mut c = setup();
         at("alice.testnet", NearToken::from_yoctonear(1), 100);

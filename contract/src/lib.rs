@@ -1424,6 +1424,7 @@ impl Pusaka {
     ) {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
+        v2::assert_no_live_sign_in(&token_id);
         let floor = floor.unwrap_or(price);
         require!(!price.is_zero() && floor <= price, "need 0 < floor <= price");
         let now = env::block_timestamp_ms();
@@ -2166,6 +2167,7 @@ impl Pusaka {
     pub fn nft_approve(&mut self, token_id: TokenId, account_id: AccountId, msg: Option<String>) -> Option<Promise> {
         self.assert_unlocked(&token_id);
         v2::assert_pq(&token_id, &self.owner_of(&token_id));
+        v2::assert_no_live_sign_in(&token_id);
         // ponytail: tokens signed for before `signed_at` existed have no entry, so they skip the
         // cooldown. Only testnet has such tokens, and its window closed 1 h after the migration;
         // mainnet deploys fresh with `signed_at` from the start.

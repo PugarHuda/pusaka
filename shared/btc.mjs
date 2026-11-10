@@ -473,10 +473,14 @@ export function crossCheck(px, cg) {
  * A hash that is missing from the map was not found or did not fail: callers show that, never a refusal.
  */
 export async function refusals(hashes, contracts = [CONTRACT]) {
-  const r = await fetch(`${CONFIG.txApi}/v0/transactions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tx_hashes: hashes }), signal: AbortSignal.timeout(15_000) });
-  if (!r.ok) throw new Error(`FastNear ${r.status}`);
+  // FastNear takes at most 20 hashes per request
+  const pages = await Promise.all(Array.from({ length: Math.ceil(hashes.length / 20) }, async (_, i) => {
+    const r = await fetch(`${CONFIG.txApi}/v0/transactions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tx_hashes: hashes.slice(i * 20, i * 20 + 20) }), signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) throw new Error(`FastNear ${r.status}`);
+    return (await r.json()).transactions;
+  }));
   const out = new Map();
-  for (const t of (await r.json()).transactions) {
+  for (const t of pages.flat()) {
     for (const rc of t.receipts) {
       const err = rc.execution_outcome.outcome.status.Failure?.ActionError?.kind?.FunctionCallError?.ExecutionError;
       if (!err || !contracts.includes(rc.receipt.receiver_id)) continue;

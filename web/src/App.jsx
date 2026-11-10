@@ -1617,6 +1617,7 @@ const REFUSED = [
   { v2: true, hash: "3XfwhfudVHo2kzYDV6xv5fkpV9rr1W69hFdp7LFb784p", attack: "A stranger tries to sign in to a website as someone's Pusaka", test: "f9_only_the_holder_signs_in_as_the_nft" },
   { v2: true, hash: "5VxydhLQSPDmQXjAyiGV5Lu2RvK1dLmuMQC9RxV7HVMR", attack: "The holder gives the NFT's account a signing key on the NEAR Intents verifier, to keep using it after a sale", test: "v2_9_no_signing_key_for_the_nfts_account_on_the_intents_verifier" },
   { v2: true, hash: "Pjvg5Uxab6mjouQtkShBzxWzeheQJ4FrF6cRMB6fBGu", attack: "The previous holder tries to move the NFT's NEAR Intents balance after transferring it", test: "f5_old_holder_loses_the_account_on_transfer" },
+  { v2: true, hash: "2Bc5HUNUrbNkT4fux6nBJ3BzG7wZxu1qMbeL51DrSZGT", attack: "The seller lists the NFT while a sign-in as it is still valid (to keep using it after the sale)", test: "v2_10_no_listing_while_the_sellers_sign_in_is_valid" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";
 const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);

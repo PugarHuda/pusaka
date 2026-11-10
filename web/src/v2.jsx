@@ -191,7 +191,8 @@ function Owner({ id, s, owner, reload }) {
       <div className="stack">
         <h3>Sign in as this Pusaka</h3>
         <p className="muted">Its own EVM key (the NEAR MPC key that holds its Bitcoin) signs a standard Sign-In with Ethereum message
-          naming you as the holder, valid for an hour. Any site that accepts it sees the Pusaka's address as the user.</p>
+          naming you as the holder, valid for an hour. Any site that accepts it sees the Pusaka's address as the user. While it's
+          valid you can't list this Pusaka or approve a market, so it can't outlive a sale.</p>
         <button disabled={!!busy} onClick={() => run("signin", async () => {
           const nonce = hex.encode(crypto.getRandomValues(new Uint8Array(8)));
           const o = await tx("sign_in", { token_id: id, domain: location.host, uri: location.href.split("#")[0], chain_id: "1", nonce }, 1n);

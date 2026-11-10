@@ -37,7 +37,7 @@ Scanner dijalankan ulang di semua komponen.
 | V2-7 | Kunci akses penuh `pusaka-v2.testnet` | Sedang | Selama kunci masih ada, pemiliknya bisa deploy kode tanpa DAO/timelock | `viewAccessKeyList` | **Dijadwalkan 13 Nov** (keputusan user; tidak bisa dibatalkan) |
 | V2-8 | F8: agen menghabiskan isi akun NFT, atau reset budget dengan revoke lalu grant ulang | Sedang | Kontrak membatasi per hari UTC + daftar penerima + token harus bebas; revoke menyimpan catatan pengeluaran hari itu (bug ini ditemukan tes `f8_regranting_does_not_reset_todays_spending` sebelum deploy); budget hilang saat NFT pindah tangan | 9 tes `f8_*` + 4 tolakan live di `#/refused` | **Fixed** (proposal 10) |
 | V2-9 | `account_call` memberi hak yang bertahan setelah NFT dijual | Tinggi (kalau akun NFT punya saldo di NEAR Intents atau memegang NFT lain) | Pemegang lama bisa menyuruh akun `0s…` mendaftarkan kunci miliknya di verifier Intents (`add_public_key`) atau memberi approval, lalu memakainya setelah pembeli membayar | tes `v2_9_*` + tolakan live `AccountGrant` | **Fixed**, proposal 11: `account_call` menolak nama method yang memuat approve/key/allow/grant/delegate. Batas: dicocokkan lewat nama method; kontrak lain yang memberi hak lewat nama lain tidak tertangkap |
-| V2-10 | F9 sign-in sebagai NFT | Rendah | Pesan SIWE yang sudah ditandatangani tetap berlaku sampai 1 jam setelah NFT dijual; pesan yang diserahkan ke pihak yang salah bisa dipakai login sebagai NFT di domain itu | tes `f9_*` | **Accepted**: masa berlaku 1 jam, domain/uri/nonce divalidasi kontrak sehingga teksnya tidak bisa jadi transaksi atau payload Intents (JSON); MCP hanya untuk domain di `PUSAKA_SIGN_IN_DOMAINS` plus konfirmasi manusia |
+| V2-10 | F9 sign-in sebagai NFT bertahan setelah penjualan | Sedang | Penjual membuat sign-in (berlaku 1 jam) tepat sebelum listing, lalu memakainya setelah pembeli membayar; pesan yang diserahkan ke pihak yang salah bisa dipakai login sebagai NFT di domain itu | review keamanan otomatis atas proposal 11; tes `v2_10_*`; tolakan live `SignedIn` `2Bc5HUNU…` | **Fixed**, proposal 12: `sign_in` hanya saat token bebas; selama sign-in berlaku, `list` dan `nft_approve` ditolak (`SignedIn`); teks dibangun kontrak dari field yang divalidasi sehingga tidak bisa jadi transaksi atau payload Intents (JSON); MCP hanya untuk domain di `PUSAKA_SIGN_IN_DOMAINS` plus konfirmasi manusia. Sisa: gift link dan pinjaman tidak dicek (penerima gift tidak membayar; agunan baru berpindah setelah jatuh tempo) |
 
 ## Scanner: sebelum vs sesudah
 | Alat | Putaran 1 (8 Nov) | Putaran 2 (9 Nov) |
@@ -66,7 +66,7 @@ Scanner dijalankan ulang di semua komponen.
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
-PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (284 tes, termasuk fuzz dan invariant).
+PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (287 tes, termasuk fuzz dan invariant).
 
 ## Frontend / backend
 | Pemeriksaan | Hasil |
@@ -81,7 +81,7 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 
 ## Catatan verifikasi
 Run GitHub Actions untuk commit putaran ini tidak dimulai karena kuota menit Actions repo private habis atau batas belanja tercapai, jadi bukan karena kegagalan kode. Verifikasinya dijalankan lokal:
-- `cargo test` (284) dan unit Node;
+- `cargo test` (287) dan unit Node;
 - `node api/_nearai.test.mjs` dan `node api/_holder.test.mjs`;
 - 11 tes `live.spec` yang relevan, terhadap produksi.
 

@@ -82,6 +82,7 @@ pub fn assert_pq(token_id: &str, owner: &AccountId) {
 pub fn clear_pq(token_id: &str) {
     env::storage_remove(pq_key(token_id).as_bytes());
     env::storage_remove(agent_key(token_id).as_bytes());
+    env::storage_remove(sign_in_key(token_id).as_bytes());
 }
 
 /// F8, an agent with a budget: the holder lets one account (an AI agent) send NEAR out of the NFT's own
@@ -115,8 +116,19 @@ fn assert_no_grant(method_name: &str) {
 
 // ---------- F9: sign in as the NFT (EIP-4361) ----------
 
-/// How long a sign-in message stays valid: also how long it outlives a sale.
+/// How long a sign-in message stays valid.
 pub const SIGN_IN_TTL_MS: u64 = 3_600_000;
+
+fn sign_in_key(token_id: &str) -> String {
+    format!("si:{token_id}")
+}
+
+/// V2-10: a seller's sign-in mustn't outlive the sale, so no listing or market approval while one is valid.
+pub fn assert_no_live_sign_in(token_id: &str) {
+    if let Some(until) = raw_get::<u64>(&sign_in_key(token_id)) {
+        require!(env::block_timestamp_ms() >= until, format!("SignedIn: a sign-in as this Pusaka is valid until {until} ms; list it after that"));
+    }
+}
 
 /// UTC, RFC 3339 with milliseconds (days-to-civil, H. Hinnant).
 pub fn iso8601(ms: u64) -> String {
@@ -311,10 +323,12 @@ impl Pusaka {
     pub fn sign_in(&mut self, token_id: TokenId, domain: String, uri: String, chain_id: U64, nonce: String) -> Promise {
         near_sdk::assert_one_yocto();
         self.assert_owner(&token_id);
+        self.assert_free(&token_id); // not while listed, pledged or approved to a market
         let address = self.evm_address(token_id.clone()).unwrap_or_else(|| env::panic_str("NoEvmAddress: call evm_key first"));
         let now = env::block_timestamp_ms();
         let message = siwe_message(&domain, &address, &token_id, &env::predecessor_account_id(), &uri, chain_id.0, &nonce, now);
         let hash = env::keccak256_array(format!("\x19Ethereum Signed Message:\n{}{message}", message.len()).as_bytes());
+        raw_put(&sign_in_key(&token_id), &(now + SIGN_IN_TTL_MS));
         log_only(&token_id, &Event::SignIn { domain, expires_ms: U64(now + SIGN_IN_TTL_MS) });
         Promise::new(self.mpc.clone())
             .function_call_weight(
@@ -325,6 +339,11 @@ impl Pusaka {
                 GasWeight(1),
             )
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).with_unused_gas_weight(0).on_sign_in(message, address))
+    }
+
+    /// Until when (ms) a sign-in as this Pusaka is valid, if one is; it can't be listed or approved before then.
+    pub fn signed_in_until(&self, token_id: TokenId) -> Option<U64> {
+        raw_get::<u64>(&sign_in_key(&token_id)).filter(|u| *u > env::block_timestamp_ms()).map(U64)
     }
 
     /// Callback of `sign_in`.
