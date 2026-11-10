@@ -3634,3 +3634,113 @@ mod f9_sign_in {
         call("mt_transfer"); // e.g. moving the NFT account's own NEAR Intents balance
     }
 }
+
+// ---------- v2 V2-11 (adversarial review 10 Nov): a Pusaka held by another Pusaka's account ----------
+mod v2_11_nested {
+    use super::*;
+
+    /// alice holds #1 and #2, and parks #2 in #1's own account: #1's buyer pays for #2 (and its BTC) too.
+    fn nested() -> Pusaka {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_near(1), vec![]);
+        let _ = c.nft_mint(None);
+        as_contract(vec![PromiseResult::Successful(serde_json::to_vec(MPC_KEY).unwrap())]);
+        c.on_key("2".into());
+        let a = c.account_of("1".into());
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.nft_transfer(a, "2".into(), None, None);
+        c
+    }
+    fn via_account(c: &mut Pusaka, method: &str, args: Value) {
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.account_call("1".into(), false, acc("pusaka.testnet"), method.into(), serde_json::to_vec(&args).unwrap().into(), U128(0), 50);
+    }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_11_no_gift_link_on_a_held_pusaka() {
+        let mut c = nested();
+        via_account(&mut c, "gift", json!({"token_id": "2", "public_key": GIFT_PK}));
+    }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_11_no_listing_of_a_held_pusaka() {
+        let mut c = nested();
+        via_account(&mut c, "list", json!({"token_id": "2", "price": "1"}));
+    }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_11_no_loan_heir_or_agent_on_a_held_pusaka() {
+        let mut c = nested();
+        via_account(&mut c, "request_loan", json!({"token_id": "2"}));
+    }
+
+    #[test]
+    fn v2_11_a_held_pusaka_can_still_be_handed_out() {
+        let mut c = nested();
+        via_account(&mut c, "nft_transfer", json!({"token_id": "2", "receiver_id": "alice.testnet"}));
+    }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_11_no_auth_switch_on_the_intents_verifier() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.account_call("1".into(), false, acc("verifier.testnet"), "disable_auth_by_predecessor_id".into(), vec![].into(), U128(1), 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "OwnAccount")]
+    fn v2_11_a_pusaka_cant_be_sent_into_its_own_account() {
+        let mut c = setup();
+        let a = c.account_of("1".into());
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.nft_transfer(a, "1".into(), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "OwnAccount")]
+    fn v2_11_nor_into_its_named_alias_by_transfer_call() {
+        let mut c = setup();
+        let a = c.alias_of("1".into());
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.nft_transfer_call(a, "1".into(), None, None, String::new());
+    }
+
+    fn at(caller: &str, deposit: NearToken, ms: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_timestamp(ms * 1_000_000).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+
+    #[test]
+    fn v2_11_lowering_the_budget_after_spending_reads_zero_left() {
+        let mut c = setup();
+        let day = 86_400_000u64;
+        at("alice.testnet", NearToken::from_millinear(10), day);
+        c.set_agent("1".into(), acc("agent.testnet"), Some(U128(10)), vec![]);
+        at("agent.testnet", NearToken::from_yoctonear(0), day + 1);
+        let _ = c.agent_send("1".into(), acc("bob.testnet"), U128(10));
+        let since = env::block_height();
+        as_contract(vec![PromiseResult::Successful(vec![])]);
+        c.on_account_call("1".into(), since);
+        at("alice.testnet", NearToken::from_yoctonear(0), day + 2);
+        c.set_agent("1".into(), acc("agent.testnet"), Some(U128(5)), vec![]);
+        assert_eq!(c.agent_of("1".into()).unwrap()["left_today"], json!("0"));
+    }
+
+    #[test]
+    fn v2_11_a_returned_transfer_call_doesnt_bring_the_agent_back() {
+        let mut c = setup();
+        let day = 86_400_000u64;
+        at("alice.testnet", NearToken::from_millinear(10), day);
+        c.set_agent("1".into(), acc("agent.testnet"), Some(U128(10)), vec![]);
+        at("alice.testnet", NearToken::from_yoctonear(1), day);
+        let _ = c.nft_transfer_call(acc("market.testnet"), "1".into(), None, None, String::new());
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        let _ = c.nft_resolve_transfer(acc("alice.testnet"), acc("market.testnet"), "1".into(), None);
+        assert!(c.agent_of("1".into()).is_none());
+    }
+}

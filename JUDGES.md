@@ -2,7 +2,7 @@
 
 Everything below runs without a wallet and without a key, on a fresh clone. Nothing is signed or sent.
 
-## 1. Check every claim against the chains (1–2 minutes)
+## 1. Check the core claims against the chains (about 2 minutes; it stops itself after 5)
 
 ```
 npm install
@@ -22,6 +22,9 @@ Expect `all checks passed`, with these lines (numbers move as the demo is used):
 ✓ all … NEAR transactions cited in the README are on chain: via FastNear's archival index
 ```
 
+If a line starts with ⚠, a Bitcoin explorer (mempool.space or Blockstream) didn't answer from your network: those
+deposits weren't checked either way. Run it again later; nothing is counted as passed that wasn't checked.
+
 What each line means:
 - **Deployed code**: the contract's on-chain code hash equals the sha256 of the wasm CI built in a pinned Docker
   image (`reproducible-wasm` job), and the contract's NEP-330 metadata names that commit.
@@ -38,7 +41,7 @@ What each line means:
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 
 ```
-cd contract && cargo test        # 290 passed (incl. fuzz + invariant tests)
+cd contract && cargo test        # 299 passed (incl. fuzz + invariant tests)
 ```
 
 Tests are named after the attack they stop; the README's [threat model](README.md#why-the-seller-cant-keep-the-bitcoin)

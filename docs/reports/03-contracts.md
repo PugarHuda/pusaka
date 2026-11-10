@@ -62,7 +62,7 @@ SourceScan dan `cargo near verify` mengambil source dari repo GitHub, jadi **lan
 ## Hasil test dan coverage
 | Jenis | Hasil |
 |---|---|
-| Unit + jalur revert | **290 lulus** (`cargo test`) dan **290 lulus** (`cargo test --features mainnet`) |
+| Unit + jalur revert | **299 lulus** (`cargo test`) dan **299 lulus** (`cargo test --features mainnet`) |
 | Fuzz (proptest) | 5 properti: 2.000 kasus untuk fungsi murni, 256 untuk yang membangun kontrak per kasus (bisa dinaikkan lewat `PROPTEST_CASES`). Run 2.000 kasus penuh untuk semuanya juga lulus (728 s, 9 Nov) |
 | Invariant | `inv1` (urutan acak ≤ 24 operasi, 256 urutan per run) |
 | Coverage (`cargo llvm-cov`, `tests.rs` dikecualikan) | **Baris 96,48 %, fungsi 94,38 %, region 91,47 %** (target ≥ 90 % ✓). Per file: `art` 100 %, `btc` 99,4 %, `gift` 97,7 %, `lib` 95,8 %, `upgrade` 98,6 %, `usdc` 95,4 % (baris) |

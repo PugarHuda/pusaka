@@ -3,7 +3,7 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "8c66134f3d2e0cf4ee985b67f3ae46d1ca283379a1736446fdb45a08696f573b",
+    "wasm_sha256": "d3972d98c37ea0d51e654257a2055860229a3c5d42895690a6d06f46a8775edf",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
@@ -44,6 +44,11 @@
         "sha256": "8c66134f3d2e0cf4ee985b67f3ae46d1ca283379a1736446fdb45a08696f573b",
         "tx": "3bk7HsQmkjDRZdgtkMGbR7oue4PYgMGJ2p9opoKRMu4i",
         "how": "DAO proposal 13 + timelock: V2-10 the sign-in record survives a transfer; nft_transfer_call and loans gated too"
+      },
+      {
+        "sha256": "d3972d98c37ea0d51e654257a2055860229a3c5d42895690a6d06f46a8775edf",
+        "tx": "8ufh43d13htBmG1MzfCfRzQ3SHYGFeGgLU79uP6fyGi4",
+        "how": "DAO proposal 14 + timelock: V2-11 the NFT's account can only nft_transfer a Pusaka it holds (adversarial review); auth denylist; agent budget saturating and cleared on nft_transfer_call; no transfer into a token's own account; sign-in gate on gift"
       }
     ]
   },

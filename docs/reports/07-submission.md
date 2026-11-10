@@ -5,7 +5,7 @@ Acuan: `01`–`06`. Aturan resmi: https://nearhackathon.com/HACKATHON.md.
 ## Build & CI (setiap push/PR + harian)
 | Langkah | Status |
 |---|---|
-| `cargo test` testnet + mainnet (290 + 290, termasuk fuzz + invariant) | ✓ |
+| `cargo test` testnet + mainnet (299 + 299, termasuk fuzz + invariant) | ✓ |
 | `cargo audit` | ✓ (1 advisory dev-only di-ignore dengan alasan) |
 | build wasm reproducible + sha256 | ✓ |
 | unit Node (9 file) | ✓ |
@@ -44,7 +44,7 @@ Belum ada (butuh user): link video demo dan post X.
 4. Pembeda: saldo dibuktikan on-chain (light client), satu NFT banyak chain, pasar kredit.
 5. Arsitektur: kontrak ↔ MPC signer ↔ light client ↔ relayer NEP-366 ↔ MCP agen.
 6. Integrasi NEAR: Chain Signatures (3 domain + CKD + foreign-tx), light client, Intents, Omni nBTC, staking, Sputnik DAO, NEP-330/366/413/452/611.
-7. Validasi: 290 tes kontrak (fuzz + invariant, coverage baris 96 %), 135 tes Playwright, `verify.mjs` (cek "upgrades renounced: final"), tx live di README.
+7. Validasi: 299 tes kontrak (fuzz + invariant, coverage baris 96 %), 135 tes Playwright, `verify.mjs` (cek "upgrades renounced: final"), tx live di README.
 8. Next: mainnet (dana), NFT memiliki nama TLA. (Renounce upgrade sudah: proposal 7, 8 Nov.)
 
 ## Teks form submission
@@ -54,7 +54,7 @@ Belum ada (butuh user): link video demo dan post X.
 - Demo post: *(user menerbitkan di X, lalu memberi link)*
 - What they built (≤2000 karakter):
 
-> Pusaka is a NEAR NFT (NEP-171) that holds real Bitcoin. Each token controls its own native Bitcoin address through NEAR Chain Signatures: the key lives in NEAR's MPC network and the contract asks for a signature only when the current NFT owner requests one, so selling the NFT hands over the Bitcoin in one NEAR transaction, with no bridge, wrapped BTC or custodian, and no key the seller could keep. Deposits are proven, not claimed: NEAR's on-chain Bitcoin light client verifies every deposit and the contract subtracts every output it ever signed, so a buyer, lender or agent reads verified_sats from the contract alone. The same MPC keys make each Pusaka a set of wallets that move together: ETH and USDC on three EVM chains (USDC verified by MPC foreign-transaction checks), SOL, and its own NEAR account holding nBTC and staked NEAR. On top: sales with royalties and Dutch auctions, NEP-178/199 sales on outside markets (tested on Mintbase), loans with the BTC as collateral and a standing-offer loan market, inheritance to an heir with guardians, a holder-only room with a sealed letter (MPC confidential key derivation), gas-free actions through a NEP-366 relayer with a NEP-611 gas key, an MCP server for AI agents with spending guards, and a deposit prover in a TEE (Phala TDX, attestation checked on-chain). The contract has no access key and its code is final: a Sputnik DAO vote renounced upgrades, and the deployed wasm is a reproducible NEP-330 build. 290 contract tests (including fuzz and invariant tests, 96% line coverage) are named after the attacks they stop; node scripts/verify.mjs re-checks every README claim against NEAR and Bitcoin without a wallet.
+> Pusaka is a NEAR NFT (NEP-171) that holds real Bitcoin. Each token controls its own native Bitcoin address through NEAR Chain Signatures: the key lives in NEAR's MPC network and the contract asks for a signature only when the current NFT owner requests one, so selling the NFT hands over the Bitcoin in one NEAR transaction, with no bridge, wrapped BTC or custodian, and no key the seller could keep. Deposits are proven, not claimed: NEAR's on-chain Bitcoin light client verifies every deposit and the contract subtracts every output it ever signed, so a buyer, lender or agent reads verified_sats from the contract alone. The same MPC keys make each Pusaka a set of wallets that move together: ETH and USDC on three EVM chains (USDC verified by MPC foreign-transaction checks), SOL, and its own NEAR account holding nBTC and staked NEAR. On top: sales with royalties and Dutch auctions, NEP-178/199 sales on outside markets (tested on Mintbase), loans with the BTC as collateral and a standing-offer loan market, inheritance to an heir with guardians, a holder-only room with a sealed letter (MPC confidential key derivation), gas-free actions through a NEP-366 relayer with a NEP-611 gas key, an MCP server for AI agents with spending guards, and a deposit prover in a TEE (Phala TDX, attestation checked on-chain). The contract has no access key and its code is final: a Sputnik DAO vote renounced upgrades, and the deployed wasm is a reproducible NEP-330 build. 299 contract tests (including fuzz and invariant tests, 96% line coverage) are named after the attacks they stop; node scripts/verify.mjs re-checks every README claim against NEAR and Bitcoin without a wallet.
 
 (1.676 karakter.) Nama lead, email, ukuran tim, akun payout mainnet, dan persetujuan kontak diisi oleh user sendiri.
 

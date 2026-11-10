@@ -56,6 +56,7 @@ impl Pusaka {
     pub fn gift(&mut self, token_id: TokenId, public_key: PublicKey) {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
+        crate::v2::assert_no_live_sign_in(&token_id);
         require!(env::attached_deposit() >= GIFT_DEPOSIT, format!("attach {GIFT_DEPOSIT} (key allowance, the recipient's first NEAR, storage)"));
         let slot = key_slot(&public_key);
         require!(!env::storage_has_key(slot.as_bytes()), "that key is already a gift");
@@ -187,6 +188,7 @@ impl Pusaka {
 
     fn hand_over(&mut self, g: Gift, to: AccountId) {
         require!(to != g.from, "claim it as someone else");
+        crate::v2::assert_not_its_own_account(&g.token_id, &to);
         let token_id = g.token_id.clone();
         self.end_gift(&token_id);
         self.tokens.internal_transfer(&g.from, &to, &token_id, None, None);

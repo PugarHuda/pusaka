@@ -78,6 +78,17 @@ pub fn assert_pq(token_id: &str, owner: &AccountId) {
     }
 }
 
+/// A Pusaka held by its own account (or alias) could never move again: only its owner drives that account.
+pub fn assert_not_its_own_account(token_id: &str, to: &AccountId) {
+    let alias = format!("t{token_id}.{}", env::current_account_id());
+    require!(*to != state_init(token_id).derive_account_id() && to.as_str() != alias, "OwnAccount: a Pusaka can't be held by its own account");
+}
+
+/// `nft_transfer_call` keeps the PQ key (a returned token must stay locked) but not the agent budget.
+pub fn clear_agent(token_id: &str) {
+    env::storage_remove(agent_key(token_id).as_bytes());
+}
+
 /// Every change of owner: the new holder starts without the old holder's PQ key or agent allowance.
 pub fn clear_pq(token_id: &str) {
     env::storage_remove(pq_key(token_id).as_bytes());
@@ -110,7 +121,7 @@ const DAY_MS: u64 = 86_400_000;
 /// right under another name isn't caught (05-security V2-9).
 fn assert_no_grant(method_name: &str) {
     let m = method_name.to_ascii_lowercase();
-    require!(!["approve", "key", "allow", "grant", "delegate"].iter().any(|w| m.contains(w)),
+    require!(!["approve", "key", "allow", "grant", "delegate", "auth"].iter().any(|w| m.contains(w)),
         "AccountGrant: the NFT's account can't grant keys, approvals or allowances (they would outlive a sale)");
 }
 
@@ -231,6 +242,10 @@ impl Pusaka {
         self.assert_free(&token_id);
         require!(gas_tgas <= MAX_CALL_TGAS, "gas_tgas: at most 200");
         assert_no_grant(&method_name);
+        // V2-11: a Pusaka the NFT's account holds can only be handed out, never committed (a gift link, listing,
+        // loan, heir or agent budget on it would outlive the sale of this NFT)
+        require!(receiver_id != env::current_account_id() || method_name == "nft_transfer",
+            "AccountGrant: the NFT's account can only nft_transfer a Pusaka it holds");
         let account = if alias { self.alias_of(token_id.clone()) } else { self.account_of(token_id.clone()) };
         self.log(&token_id, Event::AccountCall { account: account.clone(), receiver: receiver_id.clone(), method: method_name.clone(), deposit });
         self.forward(token_id, account, receiver_id, method_name, args.0, deposit.0, gas_tgas)
@@ -297,7 +312,7 @@ impl Pusaka {
             a.spent = 0;
         }
         let spent = a.spent.saturating_add(amount.0);
-        require!(spent <= a.daily, format!("AgentBudget: {} yoctoNEAR left today", a.daily - a.spent));
+        require!(spent <= a.daily, format!("AgentBudget: {} yoctoNEAR left today", a.daily.saturating_sub(a.spent)));
         a.spent = spent;
         raw_put(&agent_key(&token_id), &a);
         let account = self.account_of(token_id.clone());
@@ -310,7 +325,7 @@ impl Pusaka {
         let owner = self.tokens.owner_by_id.get(&token_id)?;
         raw_get::<AgentAllowance>(&agent_key(&token_id)).filter(|a| a.owner == owner && a.daily > 0).map(|a| {
             let spent = if a.day == env::block_timestamp_ms() / DAY_MS { a.spent } else { 0 };
-            json!({ "agent": a.agent, "daily": U128(a.daily), "to": a.to, "spent_today": U128(spent), "left_today": U128(a.daily - spent) })
+            json!({ "agent": a.agent, "daily": U128(a.daily), "to": a.to, "spent_today": U128(spent), "left_today": U128(a.daily.saturating_sub(spent)) })
         })
     }
 

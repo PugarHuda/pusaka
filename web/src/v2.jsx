@@ -29,10 +29,11 @@ function Intro() {
   return (
     <p className="muted">
       Pusaka v2 runs beside the original contract, which is final and can't change. Same Bitcoin, loans and inheritance,
-      plus three things: <strong>the NFT owns a NEAR account</strong> (an address fixed before it exists, with no keys,
-      answering only to the current holder), <strong>a readable name</strong> for it, and an optional{" "}
-      <strong>post-quantum lock</strong> (ML-DSA-65, checked on-chain). Contract {acctLink(V2)}, upgradeable only
-      through a DAO vote and a 10-minute timelock.
+      plus: <strong>the NFT owns a NEAR account</strong> (an address fixed before it exists, with no keys,
+      answering only to the current holder), <strong>a readable name</strong> for it, an optional{" "}
+      <strong>post-quantum lock</strong> (ML-DSA-65, checked on-chain), an AI agent's daily budget, signing in as the NFT,
+      and its own NEAR Intents balance. Contract {acctLink(V2)}, upgraded through a DAO vote and a 10-minute timelock;
+      until its deploy key is deleted on 13 Nov, the team can also change it directly.
     </p>
   );
 }

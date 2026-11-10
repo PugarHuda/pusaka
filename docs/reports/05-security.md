@@ -38,6 +38,9 @@ Scanner dijalankan ulang di semua komponen.
 | V2-8 | F8: agen menghabiskan isi akun NFT, atau reset budget dengan revoke lalu grant ulang | Sedang | Kontrak membatasi per hari UTC + daftar penerima + token harus bebas; revoke menyimpan catatan pengeluaran hari itu (bug ini ditemukan tes `f8_regranting_does_not_reset_todays_spending` sebelum deploy); budget hilang saat NFT pindah tangan | 9 tes `f8_*` + 4 tolakan live di `#/refused` | **Fixed** (proposal 10) |
 | V2-9 | `account_call` memberi hak yang bertahan setelah NFT dijual | Tinggi (kalau akun NFT punya saldo di NEAR Intents atau memegang NFT lain) | Pemegang lama bisa menyuruh akun `0s…` mendaftarkan kunci miliknya di verifier Intents (`add_public_key`) atau memberi approval, lalu memakainya setelah pembeli membayar | tes `v2_9_*` + tolakan live `AccountGrant` | **Fixed**, proposal 11: `account_call` menolak nama method yang memuat approve/key/allow/grant/delegate. Batas: dicocokkan lewat nama method; kontrak lain yang memberi hak lewat nama lain tidak tertangkap |
 | V2-10 | F9 sign-in sebagai NFT bertahan setelah penjualan | Sedang | Penjual membuat sign-in (berlaku 1 jam) tepat sebelum listing, lalu memakainya setelah pembeli membayar; pesan yang diserahkan ke pihak yang salah bisa dipakai login sebagai NFT di domain itu | review keamanan otomatis atas proposal 11; tes `v2_10_*`; tolakan live `SignedIn` `2Bc5HUNU…` | **Fixed**, proposal 12 + 13: `sign_in` hanya saat token bebas; selama sign-in berlaku (siapa pun pemegangnya sekarang), `list`, `nft_approve`, `nft_transfer_call` (market, NEAR Intents), `request_loan` dan `accept_loan_offer` ditolak (`SignedIn`); catatan tidak dihapus saat transfer, jadi memindahkan NFT ke akun kedua tidak menghapusnya (celah ini ditemukan review otomatis atas proposal 12); teks dibangun kontrak dari field yang divalidasi sehingga tidak bisa jadi transaksi atau payload Intents (JSON); MCP hanya untuk domain di `PUSAKA_SIGN_IN_DOMAINS` plus konfirmasi manusia. Sisa: (1) transfer biasa dan gift link tetap boleh (penerimanya tidak membayar); (2) **sesi yang diberikan situs** setelah memverifikasi pesan bisa lebih lama dari 1 jam, dan kontrak tidak bisa melihat atau mengakhirinya (review otomatis ke-3). Opsi lanjutan, belum dibangun: catat domain sign-in on-chain dan tampilkan ke pembeli, lockout lebih panjang |
+| V2-11 | Pusaka B diparkir di akun milik NFT A; lewat `account_call` penjual memasang gift link / listing / pinjaman / ahli waris / budget agen atas B, menjual A, lalu mengambil B | **Tinggi** | Pembeli A membayar B beserta BTC-nya, lalu kehilangan B | review adversarial 10 Nov (PoC 9 tes di scratchpad), tes `v2_11_*`, tolakan live `FC3P4S5y…` | **Fixed**, proposal 14: akun NFT hanya boleh `nft_transfer` Pusaka yang dipegangnya. Sekalian: `auth` masuk denylist (mematikan auth predecessor di verifier Intents akan membekukan saldo), transfer ke akun milik token itu sendiri ditolak (`OwnAccount`), budget agen dihapus pada `nft_transfer_call`, `saturating_sub` setelah budget diturunkan, gate sign-in di `gift` |
+| V2-12 | Callback MPC lama (`on_signed`, `on_eth_signed`, `on_near_*`, `on_sol_*`) melepas kunci `pending` tanpa cek siapa yang memasangnya | Rendah | Hanya bila callback MPC terlambat >600 blok lalu ada operasi baru | review adversarial | **Known**: hanya `on_account_call` yang memakai `since`; v1 final jadi tidak bisa diubah |
+| V2-13 | `name_account` kedua kali kehilangan 0,02 NEAR (refund ke kontrak) | Rendah | Kesalahan pengguna sendiri | review adversarial | **Known** |
 
 ## Scanner: sebelum vs sesudah
 | Alat | Putaran 1 (8 Nov) | Putaran 2 (9 Nov) |
@@ -66,7 +69,7 @@ Scanner dijalankan ulang di semua komponen.
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
-PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (290 tes, termasuk fuzz dan invariant).
+PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (299 tes, termasuk fuzz dan invariant).
 
 ## Frontend / backend
 | Pemeriksaan | Hasil |
@@ -81,7 +84,7 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 
 ## Catatan verifikasi
 Run GitHub Actions untuk commit putaran ini tidak dimulai karena kuota menit Actions repo private habis atau batas belanja tercapai, jadi bukan karena kegagalan kode. Verifikasinya dijalankan lokal:
-- `cargo test` (290) dan unit Node;
+- `cargo test` (299) dan unit Node;
 - `node api/_nearai.test.mjs` dan `node api/_holder.test.mjs`;
 - 11 tes `live.spec` yang relevan, terhadap produksi.
 

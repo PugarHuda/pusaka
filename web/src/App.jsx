@@ -1619,6 +1619,7 @@ const REFUSED = [
   { v2: true, hash: "Pjvg5Uxab6mjouQtkShBzxWzeheQJ4FrF6cRMB6fBGu", attack: "The previous holder tries to move the NFT's NEAR Intents balance after transferring it", test: "f5_old_holder_loses_the_account_on_transfer" },
   { v2: true, hash: "2Bc5HUNUrbNkT4fux6nBJ3BzG7wZxu1qMbeL51DrSZGT", attack: "The seller lists the NFT while a sign-in as it is still valid (to keep using it after the sale)", test: "v2_10_no_listing_while_the_sellers_sign_in_is_valid" },
   { v2: true, hash: "65pQSqHLy1HTJ5KNRHS9sh2w88Wvocka51mCJMc5VVq8", attack: "The seller sells the NFT into NEAR Intents while a sign-in as it is still valid", test: "v2_10_no_nft_transfer_call_while_a_sign_in_is_valid" },
+  { v2: true, hash: "FC3P4S5yFgkJgDy8Kt4qZaSAzfJmVpRqsEspzgLxssb5", attack: "The seller has the NFT's account put a gift link on another Pusaka it holds, to take that one back after the sale", test: "v2_11_no_gift_link_on_a_held_pusaka" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";
 const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);
@@ -1633,7 +1634,7 @@ function Refused() {
     <section className="mine">
       <h1>What the contract refused</h1>
       <p className="lede">Real attempts against <code>{CONTRACT}</code>, each turned down by the contract itself. Who sent it, what it called and the contract's reason are read from NEAR just now, not stored on this page.</p>
-      <p className="muted">The contract holds no key and its code is final (upgrades renounced 8 Nov), so these rules can't be switched off. Entries marked <em>v2</em> are on Pusaka v2, which changes only through a DAO vote and a timelock. Each one also has a test named after the attack in <code>contract/src/tests.rs</code>.</p>
+      <p className="muted">The contract holds no key and its code is final (upgrades renounced 8 Nov), so these rules can't be switched off. Entries marked <em>v2</em> are on Pusaka v2, which changes through a DAO vote and a timelock (and, until its deploy key is deleted on 13 Nov, by the team). Each one also has a test named after the attack in <code>contract/src/tests.rs</code>.</p>
       {!seen ? <p className="muted">Reading NEAR…</p>
         : seen.error ? <p className="error" role="alert">Couldn't read NEAR's archive: {seen.error}. <button className="ghost" onClick={() => { setSeen(null); setAttempt((n) => n + 1); }}>Try again</button></p>
         : <ol className="refused">{REFUSED_HERE.map((r) => {
@@ -1672,7 +1673,7 @@ function Agents() {
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
-      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo adds 30 more tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo adds 39 more tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
       {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>

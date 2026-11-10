@@ -902,6 +902,7 @@ impl Pusaka {
         match heir.clone() {
             None => clear_heir(&token_id),
             Some(h) => {
+                v2::assert_not_its_own_account(&token_id, &h);
                 require!(h != owner, "you can't be your own heir");
                 require!(after_ms.0 >= HEIR_MIN_MS, format!("after_ms must be at least {HEIR_MIN_MS}"));
                 if !env::storage_has_key(key.as_bytes()) { charge_storage(HEIR_BYTES, 0); }
@@ -2045,6 +2046,7 @@ impl NonFungibleTokenCore for Pusaka {
         self.assert_unlocked(&token_id);
         let from = self.owner_of(&token_id);
         if from == env::predecessor_account_id() { v2::assert_pq(&token_id, &from); }
+        v2::assert_not_its_own_account(&token_id, &receiver_id);
         self.tokens.nft_transfer(receiver_id.clone(), token_id.clone(), approval_id, memo);
         clear_heir(&token_id);
         v2::clear_pq(&token_id);
@@ -2067,8 +2069,10 @@ impl NonFungibleTokenCore for Pusaka {
         v2::assert_no_live_sign_in(&token_id);
         let sender = env::predecessor_account_id();
         if sender == self.owner_of(&token_id) { v2::assert_pq(&token_id, &sender); }
+        v2::assert_not_its_own_account(&token_id, &receiver_id);
         let (from, approvals) = self.tokens.internal_transfer(&sender, &receiver_id, &token_id, approval_id, memo);
         clear_heir(&token_id);
+        v2::clear_agent(&token_id);
         // v2: the PQ key is kept: if the receiver returns the token, the lock must still be on. It binds only its
         // own holder (assert_pq checks the owner), so the receiver is never gated by it.
         raw_put(&transfer_call_key(&token_id), &());
