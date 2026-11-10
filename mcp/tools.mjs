@@ -828,12 +828,18 @@ reg("pusaka_paid_audit", {
   inputSchema: { token_id: z.string(), url: z.string().url().optional().describe("audit endpoint; default PUSAKA_AUDIT_URL or the Pusaka site") },
 }, tool(async ({ token_id, url }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
-  const target = `${url ?? process.env.PUSAKA_AUDIT_URL ?? "https://pusaka-two.vercel.app/api/audit"}?token_id=${encodeURIComponent(token_id)}`;
+  const base = process.env.PUSAKA_AUDIT_URL ?? "https://pusaka-two.vercel.app/api/audit";
+  // only the configured audit server (or this machine): a URL from a prompt can't send the fee elsewhere
+  const endpoint = new URL(url ?? base);
+  if (endpoint.origin !== new URL(base).origin && !["localhost", "127.0.0.1"].includes(endpoint.hostname)) throw new Error(`refusing to pay ${endpoint.origin}: only ${new URL(base).origin} (PUSAKA_AUDIT_URL)`);
+  const target = `${endpoint.origin}${endpoint.pathname}?token_id=${encodeURIComponent(token_id)}`;
   const first = await fetch(target);
   if (first.status !== 402) return { token_id, unpaid_status: first.status, body: await first.json().catch(() => null) };
-  const [req] = decodePaymentRequiredHeader(first.headers.get("payment-required")).accepts;
+  const offers = decodePaymentRequiredHeader(first.headers.get("payment-required")).accepts;
+  const [req] = offers;
   // wNEAR is 1:1 NEAR, so the fee fits under the NEAR spend cap; any other token would need its own cap
-  if (req.network !== `near:${NETWORK}` || !/^wrap./.test(req.asset)) throw new Error(`refusing to pay ${req.amount} of ${req.asset} on ${req.network}: only wNEAR on near:${NETWORK}`);
+  const WNEAR = NETWORK === "mainnet" ? "wrap.near" : "wrap.testnet";
+  if (offers.length !== 1 || req.network !== `near:${NETWORK}` || req.asset !== WNEAR) throw new Error(`refusing to pay ${req?.amount} of ${req?.asset} on ${req?.network}: only one offer, in ${WNEAR} on near:${NETWORK}`);
   const amount = BigInt(req.amount);
   const ft = (method, args) => provider.callFunction({ contractId: req.asset, method, args, blockQuery: { finality: "final" } });
   const short = amount - BigInt(await ft("ft_balance_of", { account_id: ACCOUNT_ID }));
@@ -843,7 +849,17 @@ reg("pusaka_paid_audit", {
   if (storage) await wrap("storage_deposit", storage);
   if (short > 0n) await wrap("near_deposit", short);
   const signer = createLocalNearSigner({ accountId: ACCOUNT_ID, secretKey: process.env.PUSAKA_PRIVATE_KEY });
-  const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}` })(target);
+  // the client pays whatever the server's next 402 asks: pin it to the requirement checked and confirmed above
+  const pinned = async (input, init) => {
+    const r = await fetch(input, init);
+    if (r.status === 402) {
+      const again = decodePaymentRequiredHeader(r.headers.get("payment-required")).accepts;
+      const same = again.length === 1 && ["network", "asset", "amount", "payTo"].every((k) => again[0][k] === req[k]);
+      if (!same) throw new Error("the server changed the price or payee after it was checked; nothing paid");
+    }
+    return r;
+  };
+  const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}`, fetch: pinned })(target);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(`paid call failed ${res.status}: ${JSON.stringify(body).slice(0, 300)}`);
   const { transaction } = decodePaymentResponseHeader(res.headers.get("payment-response"));

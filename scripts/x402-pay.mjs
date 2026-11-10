@@ -43,7 +43,7 @@ if (BigInt(req.amount) > max) throw new Error(`price ${req.amount} is over --max
 // 2. the payer needs the token, not NEAR for gas; wNEAR is just wrapped NEAR, so wrap a little if short
 const bal = BigInt(await view("ft_balance_of", { account_id: from }, req.asset));
 if (bal < BigInt(req.amount)) {
-  if (!req.asset.startsWith("wrap.")) throw new Error(`${from} holds ${bal} of ${req.asset}, needs ${req.amount}`);
+  if (req.asset !== (NETWORK === "mainnet" ? "wrap.near" : "wrap.testnet")) throw new Error(`${from} holds ${bal} of ${req.asset}, needs ${req.amount}`);
   const payer = account(from);
   if (!(await view("storage_balance_of", { account_id: from }, req.asset))) await call(payer, "storage_deposit", {}, { receiver: req.asset, deposit: 1_250_000_000_000_000_000_000n, tgas: 30 });
   await call(payer, "near_deposit", {}, { receiver: req.asset, deposit: BigInt(req.amount) * 5n, tgas: 30 });
@@ -52,7 +52,14 @@ if (bal < BigInt(req.amount)) {
 
 // 3. paid call: x402 signs the delegate, retries with PAYMENT-SIGNATURE, the server settles before answering
 const signer = createLocalNearSigner({ accountId: from, secretKey: key(from), rpcUrls: { [`near:${NETWORK}`]: RPC } });
-const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}` })(target);
+// pinned: the client pays whatever the next 402 asks, so it must be the requirement checked above
+const pinned = async (input, init) => {
+  const r = await fetch(input, init);
+  const again = r.status === 402 ? decodePaymentRequiredHeader(r.headers.get("payment-required")).accepts : null;
+  if (again && !(again.length === 1 && ["network", "asset", "amount", "payTo"].every((k) => again[0][k] === req[k]))) throw new Error("the server changed the price or payee after it was checked; nothing paid");
+  return r;
+};
+const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}`, fetch: pinned })(target);
 const body = await res.json();
 server?.close();
 if (!res.ok) throw new Error(`paid call failed ${res.status}: ${JSON.stringify(body).slice(0, 300)} ${res.headers.get("payment-required") ? decodePaymentRequiredHeader(res.headers.get("payment-required")).error : ""}`);
