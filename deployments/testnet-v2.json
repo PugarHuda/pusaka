@@ -3,7 +3,7 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "ddf231e3403060d96277249b798b24e7d8145a3517edb17303c6f40ff84fcaf4",
+    "wasm_sha256": "fec63dcf6d6e952e01b4950c5f8f4f53a2baca5ed37028d40817f812c1a733d6",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
@@ -64,6 +64,11 @@
         "sha256": "ddf231e3403060d96277249b798b24e7d8145a3517edb17303c6f40ff84fcaf4",
         "tx": "AtRLSQVrss2iXNe78KxiZQfxgy1k9MYXXey3AzjHujYM",
         "how": "DAO proposal 17 + timelock: F12 reservation nonce never repeats per token (no payment replay after a resale); a paid buyer keeps the sale through a proof grace period"
+      },
+      {
+        "sha256": "fec63dcf6d6e952e01b4950c5f8f4f53a2baca5ed37028d40817f812c1a733d6",
+        "tx": "5PTEL1TRmP64pzBLTx9wqLcjXbNsWPYkRQSuMJVzpzNk",
+        "how": "DAO proposal 18 + timelock: a Bitcoin txid that bought a Pusaka is spent for good; the hand-over checks the seller still holds the NFT"
       }
     ]
   },

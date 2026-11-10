@@ -3947,6 +3947,23 @@ mod f10_f13 {
     }
 
     #[test]
+    #[should_panic(expected = "Listed")]
+    fn f12_the_seller_cant_give_it_away_while_it_is_for_sale_for_bitcoin() {
+        let mut c = btc_listed();
+        reserve(&mut c, "bob.testnet", 2_000);
+        at("alice.testnet", NearToken::from_yoctonear(1), 2_001);
+        c.nft_transfer(acc("carol.testnet"), "1".into(), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Listed")]
+    fn f12_nor_hand_it_to_a_market_while_it_is_for_sale_for_bitcoin() {
+        let mut c = btc_listed();
+        at("alice.testnet", NearToken::from_millinear(1), 2_001);
+        let _ = c.nft_approve("1".into(), acc("market.testnet"), None);
+    }
+
+    #[test]
     #[should_panic(expected = "Reserved")]
     fn f12_two_buyers_cant_pay_for_the_same_sale() {
         let mut c = btc_listed();
@@ -4077,6 +4094,27 @@ mod f10_f13 {
         c.list_for_btc("1".into(), U64(50_000), SELLER_SCRIPT.into());
         reserve(&mut c, "bob.testnet", 6_000);
         prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
+    }
+
+    #[test]
+    #[should_panic(expected = "already bought a Pusaka")]
+    fn f12_a_bitcoin_payment_buys_once_even_if_the_nonce_repeats() {
+        // a reservation from before the per-token counter (proposal 16): its nonce could come round again after a
+        // resale, so the txid itself is spent once it bought a Pusaka
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        let tx = payment(SELLER_SCRIPT, 50_000, &memo);
+        let txid = { let mut h = btc::sha256d(&hex::decode(&tx).unwrap()); h.reverse(); hex::encode(h) };
+        prove(&mut c, tx.clone());
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), txid, U64(50_000)));
+        at("bob.testnet", NearToken::from_yoctonear(1), 4_000);
+        c.nft_transfer(acc("alice.testnet"), "1".into(), None, None);
+        at("alice.testnet", NearToken::from_millinear(10), 5_000);
+        c.list_for_btc("1".into(), U64(50_000), SELLER_SCRIPT.into());
+        env::storage_remove(b"bn:1"); // as if the counter had never been written
+        reserve(&mut c, "bob.testnet", 6_000);
+        prove(&mut c, tx);
     }
 
     // ---------- F13 ----------

@@ -156,6 +156,11 @@ fn btc_nonce_key(token_id: &str) -> String {
     format!("bn:{token_id}")
 }
 
+/// A Bitcoin payment that bought a Pusaka: never accepted again, whatever the listing or nonce.
+fn btc_paid_key(txid: &str) -> String {
+    format!("bt:{txid}")
+}
+
 /// The OP_RETURN data a BTC purchase must carry: binds the payment to this contract, token, buyer and reservation.
 pub fn btc_purchase_memo(token_id: &str, buyer: &AccountId, nonce: u64) -> Vec<u8> {
     env::sha256_array(format!("pusaka-buy:{}:{token_id}:{buyer}:{nonce}", env::current_account_id()).as_bytes())[..20].to_vec()
@@ -625,6 +630,7 @@ impl Pusaka {
         let args = btc::proof_args_borsh(&txid_internal, &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof, BTC_MIN_CONFIRMATIONS);
         let mut txid = txid_internal;
         txid.reverse();
+        require!(!env::storage_has_key(btc_paid_key(&hex::encode(txid)).as_bytes()), "this Bitcoin payment already bought a Pusaka");
         Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
             .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(30))
@@ -637,10 +643,20 @@ impl Pusaka {
     pub fn on_btc_purchase_proven(&mut self, token_id: TokenId, buyer: AccountId, nonce: U64, txid: String, sats: U64) -> bool {
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
         let Some(l) = raw_get::<BtcListing>(&btc_listing_key(&token_id)) else { return false };
-        if !ok || l.buyer.as_ref() != Some(&buyer) || l.nonce != nonce.0 {
+        if !ok || l.buyer.as_ref() != Some(&buyer) || l.nonce != nonce.0 || env::storage_has_key(btc_paid_key(&txid).as_bytes()) {
+            return false;
+        }
+        // every transfer path refuses while it's listed for Bitcoin (assert_unlocked); checked again here so a gap
+        // elsewhere can't make internal_transfer panic halfway: the buyer gets the bond back and the listing stays
+        if self.tokens.owner_by_id.get(&token_id).as_ref() != Some(&l.seller) {
+            refund(buyer, NearToken::from_yoctonear(l.bond));
+            env::log_str(&format!("pusaka #{token_id}: Bitcoin sale not completed: the seller no longer holds it"));
             return false;
         }
         env::storage_remove(btc_listing_key(&token_id).as_bytes());
+        raw_put(&btc_paid_key(&txid), &());
+        // also covers reservations made before the per-token counter existed (proposal 16)
+        raw_put(&btc_nonce_key(&token_id), &raw_get::<u64>(&btc_nonce_key(&token_id)).unwrap_or(0).max(l.nonce));
         self.tokens.internal_transfer(&l.seller, &buyer, &token_id, None, None);
         clear_heir(&token_id);
         clear_pq(&token_id);
