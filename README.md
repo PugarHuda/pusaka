@@ -238,6 +238,8 @@ any Pusaka through the NFT standards, so the original contract, whose code is fi
   Every Pusaka gets an instant exit priced by what is provably inside.
 - **Buy pools** (sudoswap's linear curve, per verified sat): `place_pool` is a bid that stays open for several
   Pusakas, its price per sat dropping a step after each fill; what's left of the escrow comes back when it ends.
+  Live: pool [AMYQxi38…](https://testnet.near.rocks/tx/AMYQxi38qBE4xbWnhjX661ycoU4TioZjmwLpFH9XcJkp) (3 fills, 0.1 NEAR per 10k sats, −10% a fill); #15 (3,500 sats)
+  sold into it [44Uqfe1X…](https://testnet.near.rocks/tx/44Uqfe1XohgAoHNr5gPMrDmWMsjSjLopja2y9bpjC4CS) and the pool stayed open one step lower, 2 fills left.
 - **Perpetual callable loans** (the design of Paradigm and Blur's Blend). There is no due date. A lender who wants out
   calls the loan, and a rate auction rises from 0% for 30 minutes; another lender takes it over at the rate they accept,
   paying the first in full. If nobody does, the first lender takes the Pusaka. The market holds the NFT meanwhile and
