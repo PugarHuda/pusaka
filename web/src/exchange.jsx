@@ -136,6 +136,20 @@ function Bids({ accountId }) {
 function Reserves() {
   const [s, setS] = useState(null);
   const [open, setOpen] = useState(null);
+  const [all, setAll] = useState(null); // id -> "…" | { ok, failed: [what] }
+  // every row, one after another, from this browser: NEAR, its MPC signer, its light client and Bitcoin itself
+  async function checkAll() {
+    const { auditToken } = await import("@pusaka/shared/audit");
+    const res = {};
+    for (const r of s.filter((x) => x.sats > 0)) {
+      setAll({ ...res, [r.id]: "…" });
+      try {
+        const checks = await auditToken(r.id);
+        res[r.id] = { ok: checks.every((c) => c.ok), failed: checks.filter((c) => !c.ok).map((c) => c.what) };
+      } catch (e) { res[r.id] = { ok: false, failed: [e.message] }; }
+      setAll({ ...res });
+    }
+  }
   useEffect(() => {
     (async () => {
       const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
@@ -151,12 +165,14 @@ function Reserves() {
     <section className="por">
       <h1>Proof of reserves</h1>
       <p><strong>{(total / 1e8).toFixed(8)} BTC</strong> verified across {s.length} Pusakas on <code>{CONTRACT}</code>.</p>
-      <p className="muted">Open a row to re-check it from your own browser. Also as JSON: <a href="/api/reserves">/api/reserves</a>. <a href="#/docs">How it works</a></p>
-      <table className="ladder"><thead><tr><th>Pusaka</th><th>Verified</th><th>Bitcoin address</th><th>Holder</th><th /></tr></thead>
+      <p><button onClick={checkAll} disabled={all && Object.values(all).includes("…")}>Re-check every Pusaka from this browser</button></p>
+      <p className="muted">Each check asks NEAR, its MPC signer, its Bitcoin light client and Bitcoin itself, not our server. Also as JSON: <a href="/api/reserves">/api/reserves</a>. <a href="#/docs">How it works</a></p>
+      <table className="ladder"><thead><tr><th>Pusaka</th><th>Verified</th><th>Bitcoin address</th><th>Holder</th><th>Checked</th><th /></tr></thead>
         <tbody>{s.map((r) => <tr key={r.id}>
           <td><a href={`#/pusaka/${r.id}`}>#{r.id}</a></td><td>{r.sats.toLocaleString()} sats ({r.deposits} deposit{r.deposits === 1 ? "" : "s"})</td>
           <td><a href={`${EXPLORER}/address/${r.addr}`} target="_blank" rel="noreferrer"><code>{r.addr.slice(0, 14)}…</code></a></td>
           <td>{r.owner}</td>
+          <td>{!all?.[r.id] ? "" : all[r.id] === "…" ? "checking…" : all[r.id].ok ? "✓ all checks" : <span className="error" title={all[r.id].failed.join("; ")}>✗ {all[r.id].failed.length} failed</span>}</td>
           <td><button className="ghost" onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? "Close" : "Check"}</button></td>
         </tr>)}</tbody></table>
       {open && <><h2>Pusaka #{open}</h2><SelfCheck id={open} explorer={EXPLORER} /></>}

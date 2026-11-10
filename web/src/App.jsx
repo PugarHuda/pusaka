@@ -379,11 +379,12 @@ function Home() {
         <h1>NFTs that hold real Bitcoin.</h1>
         <p className="lede">
           Every Pusaka controls its own Bitcoin address. Sell the NFT and the Bitcoin goes with it in one NEAR transaction:
-          no bridge, no custodian, no key left with the seller.
+          no bridge, no custodian, no key left with the seller. And the Bitcoin inside is <strong>proven by NEAR's Bitcoin
+          light client</strong>, not reported by anyone.
         </p>
         <p className="cta-row">
           <a className="pill" href="#/market">Open the market</a>
-          <a className="pill pill-soft" href="#/agents">Connect an AI agent</a>
+          <a className="pill pill-soft" href="#/reserves">Verify every satoshi yourself</a>
           <a className="pill pill-soft" href="#/refused">See what the contract refused</a>
         </p>
       </section>
