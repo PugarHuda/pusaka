@@ -115,14 +115,26 @@ fn agent_key(token_id: &str) -> String {
 
 const DAY_MS: u64 = 86_400_000;
 
-/// V2-9: a right the NFT's account grants elsewhere (a signing key on the NEAR Intents verifier, an NFT
-/// approval, an allowance) would outlive a sale: the old holder could use it after the buyer paid. So the
-/// holder can't make the account grant one. ponytail: matched by method name; a contract that grants a
-/// right under another name isn't caught (05-security V2-9).
+/// V2-9 / V2-11: anything the NFT's account sets up elsewhere that stays behind (a signing key on the NEAR
+/// Intents verifier, an approval, a listing, gift link, loan or heir on an NFT it holds, a switched-off auth)
+/// would outlive a sale: the old holder could use it after the buyer paid. So the account only moves assets,
+/// at once: NEAR, fungible/multi tokens and NFTs out, NEAR Intents withdrawals, wNEAR, storage, staking.
+/// An allowlist, not a denylist, so no method name can slip through.
+pub const ACCOUNT_METHODS: [&str; 15] = ["", "ft_transfer", "ft_transfer_call", "nft_transfer", "mt_transfer",
+    "mt_batch_transfer", "ft_withdraw", "nft_withdraw", "mt_withdraw", "storage_deposit", "near_deposit",
+    "near_withdraw", "deposit_and_stake", "unstake", "withdraw_all"];
 fn assert_no_grant(method_name: &str) {
-    let m = method_name.to_ascii_lowercase();
-    require!(!["approve", "key", "allow", "grant", "delegate", "auth"].iter().any(|w| m.contains(w)),
-        "AccountGrant: the NFT's account can't grant keys, approvals or allowances (they would outlive a sale)");
+    require!(ACCOUNT_METHODS.contains(&method_name),
+        "AccountGrant: the NFT's account only moves assets (transfers, Intents withdrawals, staking), nothing that would outlive a sale");
+}
+
+/// V2-10 with nesting: a Pusaka moved into another Pusaka's account (`0s…` or `t<id>.<contract>`) is sold with
+/// that one, so it mustn't carry a live sign-in there either.
+pub fn assert_no_sign_in_into_a_token_account(token_id: &str, to: &AccountId) {
+    let to = to.as_str();
+    if to.starts_with("0s") || to.ends_with(&format!(".{}", env::current_account_id())) {
+        assert_no_live_sign_in(token_id);
+    }
 }
 
 // ---------- F9: sign in as the NFT (EIP-4361) ----------
@@ -242,8 +254,7 @@ impl Pusaka {
         self.assert_free(&token_id);
         require!(gas_tgas <= MAX_CALL_TGAS, "gas_tgas: at most 200");
         assert_no_grant(&method_name);
-        // V2-11: a Pusaka the NFT's account holds can only be handed out, never committed (a gift link, listing,
-        // loan, heir or agent budget on it would outlive the sale of this NFT)
+        // V2-11: on this contract the account can only hand a Pusaka it holds out (ft_* don't exist here)
         require!(receiver_id != env::current_account_id() || method_name == "nft_transfer",
             "AccountGrant: the NFT's account can only nft_transfer a Pusaka it holds");
         let account = if alias { self.alias_of(token_id.clone()) } else { self.account_of(token_id.clone()) };

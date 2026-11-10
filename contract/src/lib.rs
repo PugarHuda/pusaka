@@ -2047,6 +2047,7 @@ impl NonFungibleTokenCore for Pusaka {
         let from = self.owner_of(&token_id);
         if from == env::predecessor_account_id() { v2::assert_pq(&token_id, &from); }
         v2::assert_not_its_own_account(&token_id, &receiver_id);
+        v2::assert_no_sign_in_into_a_token_account(&token_id, &receiver_id);
         self.tokens.nft_transfer(receiver_id.clone(), token_id.clone(), approval_id, memo);
         clear_heir(&token_id);
         v2::clear_pq(&token_id);

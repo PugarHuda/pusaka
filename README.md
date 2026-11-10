@@ -74,7 +74,7 @@ agent owned and governed by its members (tracks Social Money, Autonomous Busines
 3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.501 within 3 days (about 24% a year), backed by 90,946 verified sats (loan-to-value about 3%); #12, #13 and #14 ask the same, backed by 10,000 sats each. The page also shows what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
    Stock runs out? `node scripts/restock.mjs` mints new demo Pusakas, funds each with 10,000 sats from #1's own BTC (a real withdrawal), proves them through the light client and lists them; re-run it after a Bitcoin confirmation (it needs the demo account's key, so it is for us, not for judges).
 4. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
-5. **See the attacks it refused:** open [#/refused](https://pusaka-two.vercel.app/#/refused). **See:** 11 real transactions against `pusaka-btc.testnet` (the seller withdrawing after a sale or while listed, a front-run signature, a borrower pulling collateral, a lender seizing early, an early heir, relayer dust, early and swapped code), plus 19 against Pusaka v2 (a stranger or the previous holder spending from the NFT's own account, the seller or their AI agent emptying it while listed, a missing or replayed post-quantum unlock, an agent over its budget or paying an unlisted account, a stranger posing as the agent or granting itself a budget), each one's sender, method and the contract's own panic read live from NEAR's archive, with the test that guards it.
+5. **See the attacks it refused:** open [#/refused](https://pusaka-two.vercel.app/#/refused). **See:** 11 real transactions against `pusaka-btc.testnet` (the seller withdrawing after a sale or while listed, a front-run signature, a borrower pulling collateral, a lender seizing early, an early heir, relayer dust, early and swapped code), plus 20 against Pusaka v2 (a stranger or the previous holder spending from the NFT's own account, the seller or their AI agent emptying it while listed, a missing or replayed post-quantum unlock, an agent over its budget or paying an unlisted account, a stranger posing as the agent or granting itself a budget), each one's sender, method and the contract's own panic read live from NEAR's archive, with the test that guards it.
 6. **Don't trust our page:** open any Pusaka (e.g. [#/pusaka/11](https://pusaka-two.vercel.app/#/pusaka/11)) and click *Check it yourself*. **See:** your browser asks NEAR, its MPC signer, its Bitcoin light client and Bitcoin directly (no Pusaka server) and ticks off: no full-access key on the contract, code final, the Bitcoin key is the MPC's derivation for this contract, `verified_sats` = proven deposits never signed away, and each deposit is confirmed on Bitcoin to this address. Same code as `scripts/verify.mjs` (`shared/audit.mjs`).
 
 ## Try it
@@ -87,7 +87,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the 
 cd contract && cargo test
 ```
 
-See: `299 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
+See: `302 passed`. They cover every attack in the [threat model](#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
 
 ### 2. Run the full flow against the deployed contract (~3 min)
 
@@ -264,7 +264,7 @@ account can create names under 65 characters.
 | The new holder uses the same account | [36RLmrAL…](https://testnet.near.rocks/tx/36RLmrALsb8NYmPJqeNNh5BucVb1Ud6tkCjQtWeF3y9y) |
 | The old holder tries: `NotOwner` | [FF9c2dPy…](https://testnet.near.rocks/tx/FF9c2dPyjZtXKja7VfgeGGeoee9LiwaBYE5aDezYqT8K) |
 
-Tests: 53 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`, `f8_agent`, `f9_sign_in`), with real ML-DSA-65 keys and signatures from
+Tests: 56 v2 unit tests in `contract/src/tests.rs` (`v2_tests`, `v2_review_fixes`, `f8_agent`, `f9_sign_in`), with real ML-DSA-65 keys and signatures from
 `@noble/post-quantum` (`scripts/pq-fixture.mjs`), and 3 in `token-account/`.
 
 **Upgraded through the DAO, as designed (9 Nov).** A security review of v2 found three holes, fixed with tests:
@@ -348,8 +348,8 @@ so handing the NFT to a second account first doesn't clear it. Automated securit
 found a way around the earlier version; the fixes went in as DAO proposals 12 and 13. **What this doesn't cover:** a
 site that accepts the message may give the old holder a session that lasts longer than the hour, and the contract can't
 see or end it. So treat a sign-in as a login for sites that check it each time, not as a lasting right that changes hands.
-The same goes for V2-9: it matches method names, so a contract that grants a right under another name isn't caught; an
-allowlist of receivers and methods would close it, at the cost of `account_call` no longer reaching any contract.
+V2-9/V2-11 below are now an allowlist of methods, so no method name can slip through; the cost is that the NFT's
+account only moves assets and no longer calls arbitrary contracts.
 
 **The NFT holds a NEAR Intents balance.** Anyone can deposit into NEAR Intents for the NFT's `0s…` account
 (`ft_transfer_call` to the verifier with `msg` = the account). That balance belongs to whoever holds the NFT: the holder
@@ -369,9 +369,8 @@ unmodified `defuse` verifier:
 **A hole this closed (V2-9).** A right the NFT's account grants somewhere else would outlive a sale. Example: the holder
 has the account register *their own* signing key on the Intents verifier (`add_public_key`), sells, and later signs
 intents that empty the balance the buyer paid for. NFT approvals and allowances work the same way. `account_call`
-now refuses methods that grant keys, approvals or allowances (`AccountGrant`,
-[5VxydhLQ…](https://testnet.near.rocks/tx/5VxydhLQSPDmQXjAyiGV5Lu2RvK1dLmuMQC9RxV7HVMR)). The check matches method
-names, so a contract that grants a right under some other name isn't caught (`docs/reports/05-security.md`, V2-9).
+refuses it (`AccountGrant`, [5VxydhLQ…](https://testnet.near.rocks/tx/5VxydhLQSPDmQXjAyiGV5Lu2RvK1dLmuMQC9RxV7HVMR)).
+It started as a list of refused method names; since proposal 15 it is an allowlist (below).
 F9 and this fix went in through DAO proposal 11 and the timelock, `apply_upgrade`
 ([Eqimmrz6…](https://testnet.near.rocks/tx/Eqimmrz6sg31CBsCr1Y4wjut96y3yHawx71UZ3uNhogN)), sha256 `c786e1e6…d4f838`;
 tests `f9_*`, `v2_9_*` and `v2_10_*` (15). Proposal 12 ([FcFuQZVq…](https://testnet.near.rocks/tx/FcFuQZVqV7zKuSJvBsUwLcFcXxE2YGZ6J9rhFa9gAp3q),
@@ -386,7 +385,15 @@ The same review also led to: `auth` methods refused (switching off the Intents v
 freeze the NFT's Intents balance), no transfer of a Pusaka into its own account (it could never move again), the
 agent budget cleared on `nft_transfer_call`, and no underflow after lowering a budget. DAO proposal 14
 ([8ufh43d1…](https://testnet.near.rocks/tx/8ufh43d13htBmG1MzfCfRzQ3SHYGFeGgLU79uP6fyGi4), sha256 `d3972d98…775edf`),
-tests `v2_11_*` (9).
+tests `v2_11_*` (12).
+
+An automated review of proposal 14 found two ways around it, both closed by DAO proposal 15 ([HegurWNt…](https://testnet.near.rocks/tx/HegurWNt3j2z2mGBoZpwu3tBeYPNKDPXo7q1KC81RQh9), sha256 `5f9bb600…3124c5`; live: a gift link on a v1 Pusaka through #7's account refused, [86Mib8Do…](https://testnet.near.rocks/tx/86Mib8DoggMZUchWQGdRsraT79qhSyjxixt15G7CizfN)):
+- The NFT's account could hold a Pusaka from *another* contract (v1, or any NFT) and put an order on it there. Now
+  `account_call` takes an **allowlist** of methods, whatever the receiver: plain NEAR, `ft_transfer(_call)`,
+  `nft_transfer`, `mt_(batch_)transfer`, the Intents withdrawals (`ft_/nft_/mt_withdraw`), `storage_deposit`, wNEAR
+  and staking (`deposit_and_stake`, `unstake`, `withdraw_all`). It moves assets, at once; it can't leave anything behind.
+- A Pusaka with a live sign-in could be tucked into another Pusaka's account and sold with it. `nft_transfer` into any
+  `0s…` or `t<id>.` account now waits until the sign-in expires.
 
 Costs on testnet:
 - Publishing `token-account` (43,453 bytes) burned 4.35 NEAR, once.
@@ -728,7 +735,7 @@ T3 (late signatures), T7–T9 and T11–T12, and the ETH part of T4, were found 
 | Same, on a second chain (Arbitrum Sepolia, 20 USDC) | [89W2pDYE…](https://testnet.near.rocks/tx/89W2pDYEx6M1kGBZMfMgm5MhHauEQNAoQN48k5PCruzo): attested in 7.3 s; `usdc_info(5)` verified 20 USDC on Arbitrum |
 | Native BTC to nBTC (Omni Bridge) held by the NFT, sent with an MPC-signed `ft_transfer` | deposit [236e5f21…](https://mempool.space/testnet/tx/236e5f21cf6b5816ac494a42eead18f4fd12df3b1e7c1502fa49a1c72ec15998), 3,300 nBTC minted to #5's NEAR account, [FbT94gnj…](https://testnet.near.rocks/tx/FbT94gnj4G5RqqrrhHMJQ9Fh1SNoeXeyChfUU3m3tivi) sent 1,000 |
 | A withdrawal's change below 10,000 sats, proven for free (proposal 5) | #10 held 8,700 sats it could never count again (change of an earlier withdrawal); after the deploy its holder withdrew 1,000 ([22997ae1…](https://mempool.space/testnet/tx/22997ae13f07e4da75e7de3c89c99ae81f2f86d2d90e5380e62df3a8d67629f7)), and the public `/api/prove` proved output 1 (7,400 sats): `verified_sats` 0 → 7,400 |
-| Unit tests | 299 / 299 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
+| Unit tests | 302 / 302 passing, on the testnet and the mainnet build, including proptest fuzz and invariant tests (`fz…`, `inv1_…`); line coverage 96% (`cargo llvm-cov`, in CI) |
 | Demo stock refilled from a Pusaka's own BTC (`scripts/restock.mjs`): #1 funded five new Pusakas with 10,000 sats each, all proven by the light client and listed | [8bfd559a…](https://mempool.space/testnet/tx/8bfd559ab7c7dd3241ae54a7669a192990b28d40235fad3e98d2bfb4932829bf) and four more chained withdrawals; #1's change ([92a51d2a…](https://mempool.space/testnet/tx/92a51d2a7a328692cee0c286f837f5e339dee2ac4bf297a37988db93d421d57b)) re-proven, 101,446 sats |
 | The README's try-it path through the web app with a real wallet (Intear, driven by Playwright: `node web/e2e/wallet-qa.mjs <profile> judge 10 12`, then `repay pusaka-buyer.testnet 12`), current build | *Buy* #10: one wallet approval, "You own Pusaka #10…" in 9 s; *Lend* on #12: "Loan funded. The NEAR went to the borrower." in 8 s; the borrower's *Repay*: "Loan repaid. The Pusaka is unlocked." in 7 s. It also showed the old demo terms as 1,217% a year, so the asks now repay 0.501 for 0.5 (about 24% a year) |
 | The loan market's web forms with a real wallet (Intear, `node web/e2e/wallet-qa.mjs <profile> offer pusaka-seller.testnet 15`, then `refinance pusaka-buyer.testnet 15`) | a lender posted a standing offer through the form and cancelled it (8 s each); the borrower of a funded loan saw a cheaper-per-day offer "pays off the 0.102 NEAR owed to pusaka-seller.testnet; 0.008 NEAR comes to you" and clicked Refinance: one wallet approval, `LoanRefinanced` [4HiEGnAW…](https://testnet.near.rocks/tx/4HiEGnAWEvAj8bcZTYTtG2vdhd8pkMQQQxAnLZ11zfoe). This QA found the amount inputs refusing 0.501-style values (`step=0.01`), fixed |

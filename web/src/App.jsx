@@ -1620,6 +1620,7 @@ const REFUSED = [
   { v2: true, hash: "2Bc5HUNUrbNkT4fux6nBJ3BzG7wZxu1qMbeL51DrSZGT", attack: "The seller lists the NFT while a sign-in as it is still valid (to keep using it after the sale)", test: "v2_10_no_listing_while_the_sellers_sign_in_is_valid" },
   { v2: true, hash: "65pQSqHLy1HTJ5KNRHS9sh2w88Wvocka51mCJMc5VVq8", attack: "The seller sells the NFT into NEAR Intents while a sign-in as it is still valid", test: "v2_10_no_nft_transfer_call_while_a_sign_in_is_valid" },
   { v2: true, hash: "FC3P4S5yFgkJgDy8Kt4qZaSAzfJmVpRqsEspzgLxssb5", attack: "The seller has the NFT's account put a gift link on another Pusaka it holds, to take that one back after the sale", test: "v2_11_no_gift_link_on_a_held_pusaka" },
+  { v2: true, hash: "86Mib8DoggMZUchWQGdRsraT79qhSyjxixt15G7CizfN", attack: "The same, on a Pusaka from the other contract (v1) the NFT's account holds", test: "v2_11_no_standing_order_on_a_pusaka_held_from_another_contract" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";
 const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);

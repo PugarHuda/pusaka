@@ -3743,4 +3743,35 @@ mod v2_11_nested {
         let _ = c.nft_resolve_transfer(acc("alice.testnet"), acc("market.testnet"), "1".into(), None);
         assert!(c.agent_of("1".into()).is_none());
     }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_11_no_standing_order_on_a_pusaka_held_from_another_contract() {
+        // v2's account holding a v1 Pusaka (another contract): a gift link there is refused too
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.account_call("1".into(), false, acc("pusaka-btc.testnet"), "gift".into(), vec![].into(), U128(0), 50);
+    }
+
+    #[test]
+    fn v2_11_moving_assets_still_works_on_any_contract() {
+        let mut c = setup();
+        for m in ["ft_transfer", "nft_transfer", "ft_withdraw", "deposit_and_stake"] {
+            ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+            let _ = c.account_call("1".into(), false, acc("other.testnet"), m.into(), vec![].into(), U128(1), 50);
+            let since = env::block_height(); // the callback frees the in-flight lock, as on chain
+            as_contract(vec![PromiseResult::Successful(vec![])]);
+            c.on_account_call("1".into(), since);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "SignedIn")]
+    fn v2_11_a_signed_in_pusaka_cant_be_tucked_into_another_pusakas_account() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_yoctonear(1), 1_000_000);
+        let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        c.nft_transfer(acc("0s0000000000000000000000000000000000000000"), "1".into(), None, None);
+    }
 }
