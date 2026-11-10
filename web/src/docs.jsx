@@ -43,7 +43,8 @@ const SECTIONS = [
   ["call", "Call options", <>
     <p>The holder can sell the right to buy their Pusaka at a fixed price until a date, and keeps the premium either way. While the
       option is open the Pusaka is held: its Bitcoin can't leave, and it can't be sold elsewhere. The option can be passed on;
-      exercising pays the holder like a sale, royalty included.</p>
+      exercising pays the holder like a sale, royalty included. The price can also be set in Bitcoin: the option's holder reserves,
+      pays on Bitcoin with the reservation's OP_RETURN, and NEAR's light client proves it before the Pusaka moves.</p>
   </>],
   ["agent", "An agent's budget", <>
     <p>The holder can let an AI agent spend from the NFT's account, up to a daily amount and only to listed accounts. The contract
