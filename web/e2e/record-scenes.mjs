@@ -17,6 +17,10 @@ const WITHDRAW_TO = process.env.CLIP_WITHDRAW_TO ?? "tb1q4jyg3kjgre5r59fukjsrxmf
 const HEIR_TOKEN = process.env.CLIP_HEIR_TOKEN ?? "3", HEIR = process.env.CLIP_HEIR ?? "pusaka-seller.testnet";
 const GIFT_TOKEN = process.env.CLIP_GIFT_TOKEN ?? "3", GIFTER = process.env.CLIP_GIFTER ?? HEIR; // the heir gives #3 on
 const V2_TOKEN = process.env.CLIP_V2 ?? "7", V2_HOLDER = process.env.CLIP_V2_HOLDER ?? "pusaka-seller.testnet";
+// vault + covered call: Smart Pusakas #1 / #2 held by V2_OWNER; the Bitcoin-strike payment proven earlier on #5
+const V2_OWNER = process.env.CLIP_V2_OWNER ?? "pusaka-admin.testnet", VAULT_TOKEN = process.env.CLIP_VAULT ?? "1", VAULT_RECOVERY = process.env.CLIP_RECOVERY ?? HEIR;
+const CALL_TOKEN = process.env.CLIP_CALL ?? "2", CALL_BUYER = process.env.CLIP_CALL_BUYER ?? BUYER, CALL_PAY_TO = process.env.CLIP_PAY_TO ?? WITHDRAW_TO;
+const CALL_PROOF_TX = "2tzxAe31dPPanqq7YVxzz4kCYq8o6YWrC5DFEDGWexDV", CALL_BTC_TX = "0b856ff69009bfa82c1da65b9946f955304ab79d2acd3bcf7451281b9e626a89";
 const KEYS = path.join(import.meta.dirname, "..", "..", ".keys");
 const PROFILE = process.env.WQ_PROFILE ?? path.join(os.tmpdir(), "wq", "profile");
 const OUT = path.join(import.meta.dirname, "..", "..", "video", "public", "clips");
@@ -522,6 +526,85 @@ const scenes = {
     await h.status("proof", p, /./);
     await h.pause(4000);
   },
+  // Vault (F14) on a Smart Pusaka: the holder vaults it (1 min delay), its own action is refused (VaultLocked), it asks
+  // for an unlock, and the recovery account claws it back during the delay.
+  vault: async (h) => {
+    const { p } = h;
+    const below = (name) => p.getByRole("heading", { name, exact: true }).first().locator("xpath=following-sibling::*[1]");
+    await tokenPage(h, VAULT_TOKEN, "v2");
+    await h.connect(V2_OWNER);
+    await tokenPage(h, VAULT_TOKEN, "v2");
+    const vault = below("Vault");
+    await h.scrollTo(vault); await h.mark("form", vault); await h.pause(1500);
+    await h.type("recovery", vault.locator("input").first(), VAULT_RECOVERY);
+    await h.type("delay", vault.locator("input[type=number]").first(), "1");
+    await h.pause(600);
+    await h.approve("vault", vault.getByRole("button", { name: "Put it in a vault" }));
+    await h.status("vaulted", below("Vault"), /vault|rror|fail/i);
+    await h.pause(1500);
+    await h.mark("locked", below("Vault").locator("p").first()); await h.pause(3000);
+    // the holder's own key tries an owner action at once (what a thief would do): refused on-chain
+    const send = p.locator("form").filter({ has: p.getByRole("heading", { name: "Send NEAR from its account" }) }).first();
+    await h.scrollTo(send); await h.mark("send-form", send);
+    await h.type("send-to", send.locator("input").first(), VAULT_RECOVERY);
+    await h.approve("send", send.getByRole("button", { name: "Send" }));
+    await h.status("refused", p.locator(".v2 div.actions").first(), /VaultLocked|Sent|rror|fail/i);
+    await h.pause(4000);
+    await h.scrollTo(below("Vault")); await h.pause(500);
+    await h.approve("unlock", below("Vault").getByRole("button", { name: "Request an unlock" }));
+    await h.status("unlocking", below("Vault"), /Unlock requested|rror|fail/i);
+    await h.pause(1000);
+    await h.mark("pending", below("Vault").locator("p").first()); await h.pause(3500);
+    // the recovery account, within the minute
+    await h.connect(VAULT_RECOVERY);
+    await tokenPage(h, VAULT_TOKEN, "v2");
+    await h.scrollTo(below("Vault")); await h.pause(800);
+    await h.approve("claw", below("Vault").getByRole("button", { name: "Claw it back to me" }));
+    await h.status("clawed", below("Vault"), /Clawed|rror|fail/i);
+    await h.pause(1500);
+    await p.evaluate(() => scrollTo({ top: 0, behavior: "smooth" })); await h.pause(1500);
+    await h.mark("owner", p.getByText(/^Held by/).first()); await h.pause(4000);
+  },
+  // Covered call (F15/F16) whose strike is paid in Bitcoin: the holder offers it, another account buys it and reserves a
+  // Bitcoin exercise (the OP_RETURN to pay with); then a payment proven earlier on #5, on NEAR and on Bitcoin.
+  call: async (h) => {
+    const { p } = h;
+    const below = (name) => p.getByRole("heading", { name, exact: true }).first().locator("xpath=following-sibling::*[1]");
+    await tokenPage(h, CALL_TOKEN, "v2");
+    await h.connect(V2_OWNER);
+    await tokenPage(h, CALL_TOKEN, "v2");
+    const call = below("Call option");
+    await h.scrollTo(call); await h.mark("form", call); await h.pause(1500);
+    await h.click("inbtc", call.locator("input[type=checkbox]").first());
+    await h.pause(1200);
+    await h.mark("btc-form", call);
+    await h.type("sats", call.locator("input[type=number]").first(), "10000");
+    await h.type("payto", call.locator("input:not([type])").first(), CALL_PAY_TO);
+    await h.type("premium", call.locator("input[type=number]").nth(1), "0.01");
+    await h.type("days", call.locator("input[type=number]").nth(2), "1");
+    await h.pause(600);
+    await h.approve("write", call.getByRole("button", { name: "Offer a call option" }));
+    await h.status("written", below("Call option"), /offered|rror|fail/i);
+    await h.pause(1500);
+    await h.mark("offer", below("Call option").locator("p").first()); await h.pause(3000);
+    await h.connect(CALL_BUYER);
+    await tokenPage(h, CALL_TOKEN, "v2");
+    await h.scrollTo(below("Call option")); await h.pause(800);
+    await h.approve("buy", below("Call option").getByRole("button", { name: /^Buy the option/ }));
+    await h.status("bought", below("Call option"), /yours|rror|fail/i);
+    await h.pause(2000);
+    await h.approve("reserve", below("Call option").getByRole("button", { name: /^Exercise: pay/ }));
+    await h.status("reserved", below("Call option"), /Reserved|rror|fail/i);
+    const pay = below("Call option").locator("p").filter({ hasText: "OP_RETURN" }).first();
+    await pay.waitFor({ timeout: 60_000 });
+    await h.scrollTo(pay); await h.mark("opreturn", pay); await h.pause(6000);
+    // the same flow, paid and proven by script on Smart Pusaka #5
+    await h.explorer("proof", CALL_PROOF_TX); await h.pause(5000);
+    await p.goto(`https://blockstream.info/testnet/tx/${CALL_BTC_TX}`);
+    await p.waitForLoadState("networkidle").catch(() => {});
+    await h.pause(3000);
+    await h.mark("btc", p.locator("body")); await h.pause(5000);
+  },
   // The second market contract: standing bids per verified sat, buy pools, perpetual loans.
   bids: async (h) => {
     const { p } = h;
@@ -585,7 +668,7 @@ ${JSON.stringify(terms, null, 2)}`;
   },
 };
 
-const WALLET_SCENES = ["buy", "withdraw", "loan", "repay", "heir", "claim", "letter", "gift", "v2-act"];
+const WALLET_SCENES = ["buy", "withdraw", "loan", "repay", "heir", "claim", "letter", "gift", "v2-act", "vault", "call"];
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "import") { // add an account from .keys/<id>.json to the recorder's Intear profile (key typed, never printed)
   const k = JSON.parse(fs.readFileSync(rest[0], "utf8"));

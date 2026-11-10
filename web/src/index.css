@@ -411,6 +411,7 @@ footer p { max-width: var(--measure); margin: 0; }
 .row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
 .row label { display: flex; align-items: center; gap: 0.6rem; }
 .row input { width: 7rem; }
+.row input[type=checkbox] { width: auto; height: auto; flex: none; }
 .stack { display: flex; flex-direction: column; gap: 0.8rem; align-items: flex-start; padding: 1.3rem 1.4rem; background: var(--panel); border-radius: 20px; width: 100%; }
 .stack h2 { margin: 0; }
 .stack label { display: flex; flex-direction: column; gap: 0.3rem; width: 100%; font-weight: 500; }

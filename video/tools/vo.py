@@ -22,13 +22,13 @@ async def one(job):
 
 async def main():
     for job in json.load(open(sys.argv[1], encoding="utf-8")):
-        for attempt in range(3):
+        for attempt in range(20):
             try:
-                await one(job)
+                await asyncio.wait_for(one(job), 60)  # the stream sometimes stalls without closing
                 break
             except Exception as e:  # the service drops connections now and then
                 print("retry", job["file"], e)
-                await asyncio.sleep(3)
+                await asyncio.sleep(5)
         else:
             sys.exit(f"edge-tts failed for {job['file']}")
 

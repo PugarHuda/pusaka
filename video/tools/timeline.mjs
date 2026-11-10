@@ -155,7 +155,7 @@ function resolveScene(id, comp) {
     zooms,
     boxes: timed(s.box, 3).filter((b) => b.r).map((b) => ({ f0: b.f0, f1: b.f1, box: b.r.box, popup: b.r.popup ?? null, label: b.label ?? null })),
     callouts: timed(s.callout, 4).filter((c) => c.r).map((c) => ({ f0: c.f0, f1: c.f1, box: c.r.box, popup: c.r.popup ?? null, text: c.text })),
-    waits: cuts.map((c) => ({ f0: F(map(c.a)), f1: F(map(c.a) + 2.8), text: c.label.replace("{s}", Math.round(c.b - c.a)) })),
+    waits: cuts.filter((c) => c.label).map((c) => ({ f0: F(map(c.a)), f1: F(map(c.a) + 2.8), text: c.label.replace("{s}", Math.round(c.b - c.a)) })),
     vo: lines,
     subs,
   };
