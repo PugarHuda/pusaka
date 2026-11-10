@@ -52,8 +52,9 @@ try {
     await p.goto("https://wallet.intear.tech/");
     await p.getByRole("button", { name: "I already have a NEAR wallet" }).click();
     await p.locator("text=Private Key").click();
+    // Intear only looks the key up once its terms are accepted (Nov 2026), so accept first, then type the key
+    for (const cb of await p.locator("input[type=checkbox]").all()) if (!(await cb.isChecked())) await cb.evaluate((e) => e.click());
     await p.locator("input[type=text]:visible").first().fill(JSON.parse(fs.readFileSync(keyFile, "utf8")).private_key);
-    for (const cb of await p.locator("input[type=checkbox]:visible").all()) await cb.check();
     await p.waitForTimeout(15000); // Intear looks the key up; slower for some accounts
     const who = JSON.parse(fs.readFileSync(keyFile, "utf8")).account_id ?? "pusaka-buyer.testnet";
     await p.getByText(who).first().click({ timeout: 60_000 });

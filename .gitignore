@@ -9,3 +9,7 @@ dist/
 test-results/
 playwright-report/
 media/
+
+video/node_modules
+video/out
+video/public/clips

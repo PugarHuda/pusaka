@@ -1,0 +1,23 @@
+{
+  "name": "pusaka-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "vo": "python tools/vo.py",
+    "timeline": "node tools/timeline.mjs",
+    "studio": "remotion studio src/index.js",
+    "render:full": "node tools/timeline.mjs && remotion render src/index.js Full out/pusaka-full.mp4 --concurrency=1 --codec=h264 --audio-codec=aac",
+    "render:x": "node tools/timeline.mjs && remotion render src/index.js X out/pusaka-x.mp4 --concurrency=1 --codec=h264 --audio-codec=aac",
+    "render:preview": "node tools/timeline.mjs && remotion render src/index.js Preview out/pusaka-preview.mp4 --concurrency=1 --codec=h264 --audio-codec=aac"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.540",
+    "remotion": "4.0.540",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/react": "19.2.2"
+  }
+}
