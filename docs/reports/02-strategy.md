@@ -22,7 +22,7 @@ Brief track, dikutip:
 |---|---|---|
 | Reproduksibilitas (penyaring AI) | 9 | Repo publik. Sisanya sudah ada: `npm run demo`, `verify.mjs`, JUDGES.md, CI hijau lagi sejak `44bda6a` |
 | Klaim = kenyataan on-chain | 10 | Pertahankan: `verify.mjs` harian di CI |
-| Technical implementation | 9 | — (275 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
+| Technical implementation | 9 | — (284 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
 | Kesesuaian `nfts` ("NFT sebagai akun yang memiliki uang") | 9 | Brief track praktis mendeskripsikan Pusaka |
 | Kesesuaian `defi` ("settle… through NEAR Intents", "nobody to switch it off") | 6 | Intents di Pusaka hanya **quote dry-run**: likuiditas 1Click hanya ada di mainnet. Pemimpin `defi` (Warrant, setllend) **di mainnet**, dan Warrant menyelesaikan transaksinya di dalam `intents.near`. Untuk naik: deploy mainnet + satu jalur keluar Intents yang benar-benar dieksekusi |
 | Kesesuaian `open` | 8 | Kombinasi BTC × agen AI (MCP) × pewarisan sudah unik |
@@ -117,7 +117,7 @@ Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", bar
 **Aksi, urut kenaikan skor per jam:**
 1. Repo publik (user), paling lambat 12 Nov. Repro 1 → 9, dan CI jadi gratis lagi sehingga badge hijau.
 2. Video 2–2,5 menit + post X (user). Kalimat pembuka: "BTC native, dibuktikan light client". Tunjukkan layar nyata + explorer, bukan animasi.
-3. ~~Samakan angka tes~~: selesai (275 di semua dokumen).
+3. ~~Samakan angka tes~~: selesai (284 di semua dokumen).
 4. ~~Kotak "What's real / not"~~: selesai, di atas README.
 5. ~~`verify.mjs` mengecek v2~~: selesai. Hapus key v2 pada 13 Nov.
 6. Mainnet (user, butuh dana) adalah satu-satunya cara mengejar Contri, Hallmark dan Warrant di "impact".
@@ -161,6 +161,9 @@ Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", bar
 | F6 | Kunci post-quantum ML-DSA | — | Nol | — | — | — | — | **BANGUN — selesai 9 Nov di v2**: `set_pq_key` + `pq_unlock` diverifikasi on-chain dengan `env::ml_dsa_verify` (NEP-645, 3,5 TGas); UI `#/v2`, tool MCP `pusaka_pq_unlock` |
 | F7 | Nama TLA milik NFT | sesuai brief `nfts` | Rendah | — | 1–2 hari | Mainnet + sewa | — | **BANGUN (versi testnet) — 9 Nov**: nama TLA mustahil (hanya `registrar` bisa membuat nama < 65 karakter), jadi alias `t<id>.pusaka-v2.testnet` dengan aturan yang sama |
 | F8 | **Budget harian agen AI yang dipaksakan kontrak** (diadopsi dari Hallmark/Veto) | Agen yang dibajak paling banyak kehilangan budget sehari, hanya ke akun yang didaftar pemegang | Sedang (nfts "ownership with behavior" + open) | Hallmark (off-NFT), Veto (TEE) | 4 j | Rendah | — | **BANGUN — selesai 10 Nov di v2** lewat DAO proposal 10: `set_agent`/`agent_send`/`agent_of`, 9 tes `f8_*`, live 1 bayar + 4 tolakan on-chain, tool MCP + UI `#/v2/7` |
+| F9 | **Sign in sebagai NFT** (EIP-4361, kunci EVM MPC milik NFT) | Login/akses milik alamat NFT ikut pindah ke pemegang baru | Sedang (nfts "carry credentials") | — | 3 j | Rendah | — | **SELESAI 10 Nov** (proposal 11): `sign_in`, 6 tes `f9_*`, live `BBN85r1K…` + tolakan `NotOwner`, tool MCP `pusaka_sign_in`, tombol di `#/v2/<id>` |
+| I1 | **NFT dijual utuh lewat NEAR Intents** (`nft_transfer_call` ke verifier defuse, `token_diff` NEP-413) | Pusaka #15 (10.000 sats) terjual 5 USDC dalam satu tx; harga tidak cocok ditolak dan NFT kembali | Tinggi (defi: Intents dipakai sebagai settlement aset nyata) | — | 2 j | Rendah | — | **SELESAI 10 Nov** tanpa ubah kontrak: `scripts/intents-nft-sale.mjs`, tx `ALQN3eLY…` |
+| I2 | **NFT punya saldo NEAR Intents sendiri**, ikut pindah saat NFT dipindah | Saldo dikendalikan pemegang saat ini saja; celah V2-9 ditutup | Sedang (defi + nfts) | — | 2 j | Rendah | — | **SELESAI 10 Nov**: `scripts/v2-intents-balance.mjs`, tampil di `#/v2/<id>` |
 
 ## 8. Spesifikasi fitur terpilih
 ### F2 — Refusal room

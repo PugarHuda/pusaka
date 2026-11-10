@@ -102,6 +102,54 @@ fn agent_key(token_id: &str) -> String {
 }
 
 const DAY_MS: u64 = 86_400_000;
+
+/// V2-9: a right the NFT's account grants elsewhere (a signing key on the NEAR Intents verifier, an NFT
+/// approval, an allowance) would outlive a sale: the old holder could use it after the buyer paid. So the
+/// holder can't make the account grant one. ponytail: matched by method name; a contract that grants a
+/// right under another name isn't caught (05-security V2-9).
+fn assert_no_grant(method_name: &str) {
+    let m = method_name.to_ascii_lowercase();
+    require!(!["approve", "key", "allow", "grant", "delegate"].iter().any(|w| m.contains(w)),
+        "AccountGrant: the NFT's account can't grant keys, approvals or allowances (they would outlive a sale)");
+}
+
+// ---------- F9: sign in as the NFT (EIP-4361) ----------
+
+/// How long a sign-in message stays valid: also how long it outlives a sale.
+pub const SIGN_IN_TTL_MS: u64 = 3_600_000;
+
+/// UTC, RFC 3339 with milliseconds (days-to-civil, H. Hinnant).
+pub fn iso8601(ms: u64) -> String {
+    let (secs, milli) = (ms / 1000, ms % 1000);
+    let (days, sod) = ((secs / 86_400) as i64, secs % 86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{milli:03}Z", sod / 3600, sod / 60 % 60, sod % 60)
+}
+
+/// The EIP-4361 message the NFT signs. Every field is checked, so the text can only ever be a sign-in: it
+/// can't be read as a transaction or as a NEAR Intents payload (those are JSON).
+#[allow(clippy::too_many_arguments)]
+pub fn siwe_message(domain: &str, address: &str, token_id: &str, holder: &AccountId, uri: &str, chain_id: u64,
+                    nonce: &str, now_ms: u64) -> String {
+    require!(!domain.is_empty() && domain.len() <= 100
+        && domain.bytes().all(|b| b.is_ascii_alphanumeric() || b"-.:".contains(&b)), "domain: a host name (and port)");
+    require!(uri.len() <= 200 && uri.contains("://") && uri.bytes().all(|b| b.is_ascii_graphic()), "uri: an absolute URI");
+    require!((8..=64).contains(&nonce.len()) && nonce.bytes().all(|b| b.is_ascii_alphanumeric()), "nonce: 8 to 64 letters or digits");
+    require!(chain_id > 0, "chain_id: an EVM chain id");
+    format!("{domain} wants you to sign in with your Ethereum account:\n{address}\n\n\
+             Sign in as Pusaka #{token_id} ({}), held by {holder}.\n\n\
+             URI: {uri}\nVersion: 1\nChain ID: {chain_id}\nNonce: {nonce}\nIssued At: {}\nExpiration Time: {}",
+        env::current_account_id(), iso8601(now_ms), iso8601(now_ms + SIGN_IN_TTL_MS))
+}
+
 pub const MAX_AGENT_RECEIVERS: usize = 5;
 
 #[near]
@@ -169,6 +217,7 @@ impl Pusaka {
         self.assert_owner(&token_id);
         self.assert_free(&token_id);
         require!(gas_tgas <= MAX_CALL_TGAS, "gas_tgas: at most 200");
+        assert_no_grant(&method_name);
         let account = if alias { self.alias_of(token_id.clone()) } else { self.account_of(token_id.clone()) };
         self.log(&token_id, Event::AccountCall { account: account.clone(), receiver: receiver_id.clone(), method: method_name.clone(), deposit });
         self.forward(token_id, account, receiver_id, method_name, args.0, deposit.0, gas_tgas)
@@ -250,6 +299,39 @@ impl Pusaka {
             let spent = if a.day == env::block_timestamp_ms() / DAY_MS { a.spent } else { 0 };
             json!({ "agent": a.agent, "daily": U128(a.daily), "to": a.to, "spent_today": U128(spent), "left_today": U128(a.daily - spent) })
         })
+    }
+
+    // ---------- F9: sign in as the NFT ----------
+
+    /// Owner: the NFT's own EVM key (NEAR MPC, the key that holds its BTC) signs an EIP-4361 "Sign-In with
+    /// Ethereum" message for `domain`, naming the current holder and expiring in an hour. Any SIWE site sees
+    /// the NFT's address as the user, so whatever that address holds or is allowed in to goes with the NFT.
+    /// Returns `{message, address, signature}` (the MPC's secp256k1 signature of the EIP-191 hash). Attach 1 yocto.
+    #[payable]
+    pub fn sign_in(&mut self, token_id: TokenId, domain: String, uri: String, chain_id: U64, nonce: String) -> Promise {
+        near_sdk::assert_one_yocto();
+        self.assert_owner(&token_id);
+        let address = self.evm_address(token_id.clone()).unwrap_or_else(|| env::panic_str("NoEvmAddress: call evm_key first"));
+        let now = env::block_timestamp_ms();
+        let message = siwe_message(&domain, &address, &token_id, &env::predecessor_account_id(), &uri, chain_id.0, &nonce, now);
+        let hash = env::keccak256_array(format!("\x19Ethereum Signed Message:\n{}{message}", message.len()).as_bytes());
+        log_only(&token_id, &Event::SignIn { domain, expires_ms: U64(now + SIGN_IN_TTL_MS) });
+        Promise::new(self.mpc.clone())
+            .function_call_weight(
+                "sign",
+                json!({"request": {"path": btc_path(&token_id), "payload_v2": {"Ecdsa": hex::encode(hash)}, "domain_id": 0}}).to_string().into_bytes(),
+                NearToken::from_yoctonear(1),
+                Gas::from_tgas(SIGN_TGAS),
+                GasWeight(1),
+            )
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).with_unused_gas_weight(0).on_sign_in(message, address))
+    }
+
+    /// Callback of `sign_in`.
+    #[private]
+    pub fn on_sign_in(&self, message: String, address: String) -> Value {
+        let signature: Option<Value> = env::promise_result_checked(0, 1024).ok().and_then(|b| serde_json::from_slice(&b).ok());
+        json!({ "message": message, "address": address, "signature": signature })
     }
 
     // ---------- F6: post-quantum (ML-DSA-65) ----------

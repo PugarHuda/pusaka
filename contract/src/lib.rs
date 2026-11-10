@@ -261,6 +261,8 @@ pub enum Event {
     AgentSet { agent: AccountId, daily: U128, to: Vec<AccountId> },
     /// v2: the agent sent NEAR from the NFT's own account, within its budget.
     AgentSend { agent: AccountId, receiver: AccountId, amount: U128, spent_today: U128 },
+    /// v2: the holder signed in somewhere as the NFT (EIP-4361, the NFT's own EVM key); valid until `expires_ms`.
+    SignIn { domain: String, expires_ms: U64 },
 }
 
 /// The kinds of transaction the contract signs from a Pusaka's own NEAR account.

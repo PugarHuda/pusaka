@@ -15,7 +15,7 @@ import {
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
   nearTxParams, finalizeNear, broadcastNear, NEAR_EXPLORER, NBTC, nbtcBalances, nearProvider, exitQuote, stakingPools, stakeBalances, POOL_SUFFIX,
   testnet4Coins, swapQuote, broadcastTestnet4, submitDeposit, swapStatus, TIDEPOOL_USDC,
-  MPC, btcFetch, ckdEphemeral, ckdSecret, ckdKey, ckdAppId, sealCkd, openCkd, LETTER_PURPOSE,
+  MPC, btcFetch, ckdEphemeral, ckdSecret, ckdKey, ckdAppId, sealCkd, openCkd, LETTER_PURPOSE, signInSignature,
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
@@ -652,6 +652,20 @@ reg("pusaka_agent_send", {
   const o = await account.callFunctionRaw({ contractId: V2C, methodName: "agent_send", gas: teraToGas(100),
     args: { token_id, receiver_id: receiver, amount: toYocto(near).toString() } });
   return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, budget: await v2view("agent_of", { token_id }) };
+}));
+
+reg("pusaka_sign_in", {
+  description: "Pusaka v2, holder: sign in to a website as the NFT. Its own EVM key (the NEAR MPC key that holds its Bitcoin) signs a standard EIP-4361 Sign-In with Ethereum message naming the holder, valid for an hour; returns the message and the 65-byte signature to hand to the site. Only for domains in PUSAKA_SIGN_IN_DOMAINS: a sign-in handed to the wrong party lets it log in as the NFT there.",
+  inputSchema: { token_id: z.string(), domain: z.string(), uri: z.string().url(), chain_id: z.number().int().positive().default(1), nonce: z.string().regex(/^[A-Za-z0-9]{8,64}$/) },
+}, tool(async ({ token_id, domain, uri, chain_id, nonce }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const allowed = (process.env.PUSAKA_SIGN_IN_DOMAINS ?? "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
+  if (!allowed.includes(domain.toLowerCase())) throw new Error(`${domain} isn't in PUSAKA_SIGN_IN_DOMAINS: this agent signs in only where the person allowed.`);
+  await confirm(`The agent wants to sign in to ${domain} as Pusaka v2 #${token_id} (valid for an hour).`);
+  const o = await account.callFunctionRaw({ contractId: V2C, methodName: "sign_in", gas: teraToGas(300), deposit: 1n,
+    args: { token_id, domain, uri, chain_id: String(chain_id), nonce } });
+  const signed = getTransactionLastResult(o);
+  return { message: signed.message, address: signed.address, signature: await signInSignature(signed), explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
 reg("pusaka_pq_unlock", {

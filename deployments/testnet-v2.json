@@ -3,7 +3,7 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "86180591a701e193045ebdec5eda3050ff601a7749f79e8fdf1d75e5db777d12",
+    "wasm_sha256": "c786e1e64c45dca6821a4abdd991f2978b66f5dd1659773560fd2a5112d4f838",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
@@ -29,6 +29,11 @@
         "sha256": "86180591a701e193045ebdec5eda3050ff601a7749f79e8fdf1d75e5db777d12",
         "tx": "GLiiH86JNick5MPpyh4sHudQJPsQDuKQABvnUM2pS92c",
         "how": "DAO proposal 10 + timelock: F8 agent budget (set_agent, agent_send, agent_of)"
+      },
+      {
+        "sha256": "c786e1e64c45dca6821a4abdd991f2978b66f5dd1659773560fd2a5112d4f838",
+        "tx": "Eqimmrz6sg31CBsCr1Y4wjut96y3yHawx71UZ3uNhogN",
+        "how": "DAO proposal 11 + timelock: F9 sign in as the NFT (EIP-4361); V2-9 account_call refuses lasting grants"
       }
     ]
   },

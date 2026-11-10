@@ -3489,3 +3489,85 @@ mod v2_review_fixes {
         assert!(c.pq_key_of("1".into()).is_some(), "alice's lock is still on");
     }
 }
+
+// ---------- v2 F9: sign in as the NFT; V2-9: the NFT's account can't grant lasting rights ----------
+mod f9_sign_in {
+    use super::*;
+    use crate::v2::{iso8601, siwe_message};
+
+    fn at(caller: &str, deposit: NearToken, ms: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_timestamp(ms * 1_000_000).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+    fn sign_in(who: &str, domain: &str, nonce: &str) {
+        let mut c = setup();
+        at(who, NearToken::from_yoctonear(1), 1_793_986_788_279);
+        let _ = c.sign_in("1".into(), domain.into(), "https://app.example/login".into(), U64(1), nonce.into());
+    }
+
+    #[test]
+    fn f9_dates_are_rfc3339_utc() {
+        assert_eq!(iso8601(0), "1970-01-01T00:00:00.000Z");
+        assert_eq!(iso8601(951_782_400_123), "2000-02-29T00:00:00.123Z");
+        assert_eq!(iso8601(1_793_986_788_279), "2026-11-06T17:39:48.279Z");
+        assert_eq!(iso8601(4_102_444_799_999), "2099-12-31T23:59:59.999Z");
+    }
+
+    #[test]
+    fn f9_the_message_is_an_eip4361_sign_in_that_expires_in_an_hour() {
+        at("alice.testnet", NearToken::from_yoctonear(0), 0);
+        let m = siwe_message("app.example:8080", "0xabc", "7", &acc("alice.testnet"), "https://app.example/login", 1, "abcd1234", 1_793_986_788_279);
+        assert_eq!(m, "app.example:8080 wants you to sign in with your Ethereum account:\n0xabc\n\n\
+            Sign in as Pusaka #7 (pusaka.testnet), held by alice.testnet.\n\n\
+            URI: https://app.example/login\nVersion: 1\nChain ID: 1\nNonce: abcd1234\n\
+            Issued At: 2026-11-06T17:39:48.279Z\nExpiration Time: 2026-11-06T18:39:48.279Z");
+    }
+
+    #[test]
+    fn f9_the_holder_signs_in_as_the_nft() {
+        sign_in("alice.testnet", "app.example", "abcd1234");
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f9_only_the_holder_signs_in_as_the_nft() {
+        sign_in("bob.testnet", "app.example", "abcd1234");
+    }
+
+    #[test]
+    #[should_panic(expected = "domain")]
+    fn f9_the_text_can_only_be_a_sign_in() {
+        // a domain that would smuggle in more lines, or JSON a NEAR Intents verifier would read as a payload
+        sign_in("alice.testnet", "{\"intents\":[]}\nURI", "abcd1234");
+    }
+
+    #[test]
+    #[should_panic(expected = "nonce")]
+    fn f9_nonce_is_eip4361() {
+        sign_in("alice.testnet", "app.example", "short");
+    }
+
+    fn call(method: &str) {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_yoctonear(1), 100);
+        let _ = c.account_call("1".into(), false, acc("verifier.testnet"), method.into(), vec![].into(), U128(1), 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_9_no_signing_key_for_the_nfts_account_on_the_intents_verifier() {
+        call("add_public_key");
+    }
+
+    #[test]
+    #[should_panic(expected = "AccountGrant")]
+    fn v2_9_no_nft_approval_from_the_nfts_account() {
+        call("nft_approve");
+    }
+
+    #[test]
+    fn v2_9_other_calls_still_go_through() {
+        call("mt_transfer"); // e.g. moving the NFT account's own NEAR Intents balance
+    }
+}

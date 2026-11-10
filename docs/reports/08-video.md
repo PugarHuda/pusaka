@@ -14,7 +14,7 @@ Ada 81 video pesaing yang sudah ditonton (9 Nov). Nilai Demo 9 hanya didapat vid
 
 ## Footage siap pakai (10 Nov)
 `node web/e2e/record-clips.mjs` merekam adegan tanpa wallet dari app live, 1080p, satu file per adegan, ke `media/clips/`:
-`01-landing`, `02-token`, `03-refused` (24 tx ditolak, lalu satu dibuka di explorer), `04-chains`, `05-check` ("Check it yourself" sampai selesai), `06-v2-agent` (budget agen on-chain di v2 #7).
+`01-landing`, `02-token`, `03-refused` (27 tx ditolak, lalu satu dibuka di explorer), `04-chains`, `05-check` ("Check it yourself" sampai selesai), `06-v2-agent` (budget agen on-chain di v2 #7).
 Kamu tinggal merekam adegan yang butuh wallet (beli dan withdraw), lalu memotong dan menambah suara/subtitle.
 **Catatan:** #11 sudah dibeli (`pusaka-buyer.testnet`); pakai Pusaka lain yang masih dijual di `#/market`, atau `node scripts/restock.mjs`.
 
@@ -22,7 +22,7 @@ Kamu tinggal merekam adegan yang butuh wallet (beli dan withdraw), lalu memotong
 | # | Langkah | Status / perintah |
 |---|---|---|
 | 1 | Wallet perekam `pusaka-w-mvzhtaw8.testnet` punya cukup NEAR | **Sudah**: dikirim 2 NEAR testnet dari `pusaka-seller` (tx `2ZnUKG6JdgHQssGPgub8xPGz9sPR8nUo8w5u2NNAH2hp`); saldo ±2,5 NEAR |
-| 2 | Pusaka yang akan dibeli masih dijual | Utama **#11** (10.000 sats terverifikasi, 0,5 NEAR). Cadangan **#15** dan **#4** (Dutch auction 0,6 → 0,45 NEAR). Cek di https://pusaka-two.vercel.app/#/market. Kalau semua sudah terjual: `node scripts/restock.mjs` |
+| 2 | Pusaka yang akan dibeli masih dijual | Utama **#11** (10.000 sats terverifikasi, 0,5 NEAR). Cadangan **#10** dan **#4** (Dutch auction 0,6 → 0,45 NEAR). Cek di https://pusaka-two.vercel.app/#/market. Kalau semua sudah terjual: `node scripts/restock.mjs` |
 | 3 | Alamat tujuan withdraw | `tb1q4jyg3kjgre5r59fukjsrxmf5fjgcxq9pxfw3vj`: alamat Bitcoin **Pusaka #3, milikmu sendiri**, jadi BTC-nya tetap di tanganmu |
 | 4 | Browser | Chrome profil bersih, zoom 110 %, bookmark bar disembunyikan (Ctrl+Shift+B), ekstensi lain disembunyikan kecuali wallet, notifikasi Windows dimatikan (Focus assist) |
 | 5 | Tab yang dibuka dulu (urut) | ① https://pusaka-two.vercel.app ② `…/#/pusaka/11` ③ https://mempool.space/testnet/address/tb1q09m27tfxggpl2au9dgum9wk7v9dksjeg79sx46 (alamat #11) ④ `…/#/refused` |
@@ -57,7 +57,7 @@ Narasi dalam bahasa Inggris (±290 kata, tempo santai). Kolom **Caption** berisi
 ## Kalau ada yang meleset saat merekam
 | Masalah | Solusi |
 |---|---|
-| #11 sudah dibeli orang lain (juri bisa membeli juga) | Pakai #15, atau #4 (harga Dutch auction turun, malah menarik di video). Ganti angka di narasi |
+| #11 sudah dibeli orang lain (juri bisa membeli juga) | Pakai #10, atau #4 (harga Dutch auction turun, malah menarik di video). Ganti angka di narasi |
 | Wallet menolak/timeout | Rekam ulang potongan itu saja; urutannya sengaja per segmen |
 | Withdraw lama (MPC > 1 menit) | Potong, beri label "⏩ 1 min, NEAR MPC signing" |
 | Mempool belum menampilkan tx | Refresh tab ③ beberapa detik kemudian; tx yang baru disiarkan muncul sebagai unconfirmed |

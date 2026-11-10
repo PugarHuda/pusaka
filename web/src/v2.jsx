@@ -1,13 +1,22 @@
 // #/v2: Pusaka v2 (pusaka-v2.testnet). The NFT's own account (NEP-616 `0s…`), its name (t<id>.pusaka-v2.testnet)
 // and the post-quantum lock (ML-DSA-65, verified on-chain). Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
-import { MINT_DEPOSIT, NEAR_EXPLORER, mintedTokenId } from "@pusaka/shared";
+import { MINT_DEPOSIT, NEAR_EXPLORER, mintedTokenId, signInSignature } from "@pusaka/shared";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
 import { base64, hex } from "@scure/base";
 import { callRaw, connector, near, provider, yocto } from "./near.js";
 
 export const V2 = "pusaka-v2.testnet";
-const view = (method, args = {}) => provider.callFunction({ contractId: V2, method, args, blockQuery: { finality: "optimistic" } });
+const view = (method, args = {}, contractId = V2) => provider.callFunction({ contractId, method, args, blockQuery: { finality: "optimistic" } });
+// NEAR Intents on testnet: NEAR's unmodified `defuse` verifier, as Tidepool deploys it (README)
+const VERIFIER = "verifier.tidepool-sandbox.testnet", USDC = "usdc.tidepool-sandbox.testnet";
+const amountOf = (t, a) => t === `nep141:${USDC}` ? `${Number(a) / 1e6} USDC` : `${a} ${t}`;
+/** What the NFT's own account holds inside NEAR Intents: [[token, amount]]. */
+async function intentsOf(account) {
+  const ids = (await view("mt_tokens_for_owner", { account_id: account, limit: 20 }, VERIFIER)).map((t) => t.token_id);
+  const amounts = ids.length ? await view("mt_batch_balance_of", { account_id: account, token_ids: ids }, VERIFIER) : [];
+  return ids.map((t, i) => [t, amounts[i]]).filter(([, a]) => a !== "0");
+}
 const accountOf = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "optimistic" } }).catch(() => null);
 const link = (h) => <a href={`${NEAR_EXPLORER}/tx/${h}`} target="_blank" rel="noreferrer">view transaction</a>;
 const acctLink = (a) => <a href={`${NEAR_EXPLORER}/account/${a}`} target="_blank" rel="noreferrer"><code>{a}</code></a>;
@@ -64,8 +73,8 @@ function V2Token({ id, accountId }) {
       const info = await view("token_info", { token_id: id });
       if (!info) return { error: `There is no Pusaka v2 #${id}.` };
       const [acct, alias, pq, ag] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }), view("agent_of", { token_id: id })]);
-      const [a, b] = await Promise.all([accountOf(acct), accountOf(alias)]);
-      return { info, acct, alias, pq, ag, a, b };
+      const [a, b, intents] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null)]);
+      return { info, acct, alias, pq, ag, a, b, intents };
     })().catch((e) => ({ error: e.message })).then((x) => live && setS(x));
     return () => { live = false; };
   }, [id, tick]);
@@ -87,6 +96,12 @@ function V2Token({ id, accountId }) {
       <p className="muted">The address is fixed by its content before it exists, so anyone can send NEAR or tokens to it. Only the
         current holder can move them, through the contract, and only while the Pusaka isn't for sale, pledged or signing.
         When it changes hands, the account goes with it.</p>
+      <h2>Its NEAR Intents balance</h2>
+      {s.intents?.length ? <p>{s.intents.map(([t, a]) => amountOf(t, a)).join(", ")}, held by its account inside NEAR Intents.</p>
+        : <p className="muted">{s.intents ? "Nothing yet." : "Couldn't read the verifier."} Anyone can deposit into NEAR Intents for its account
+          (<code>ft_transfer_call</code> to <code>{VERIFIER}</code> with <code>msg</code> = the account above).</p>}
+      <p className="muted">The balance changes hands with the NFT. The account has no keys and the contract refuses to give it a signing
+        key on the verifier, so only the current holder can move it.</p>
       <h2>Post-quantum lock</h2>
       {s.pq ? <p>On: every action by the holder needs a fresh unlock signed with their ML-DSA-65 key and checked on-chain
         {s.pq.open ? <> (<strong>open now</strong>, until block {s.pq.unlocked_until_block})</> : <> (<strong>locked</strong>)</>}. Unlocks used: {s.pq.nonce}.</p>
@@ -117,6 +132,7 @@ function Owner({ id, s, owner, reload }) {
   const [agent, setAgent] = useState(s.ag?.agent ?? "");
   const [daily, setDaily] = useState("0.05");
   const [agentTo, setAgentTo] = useState("");
+  const [signedIn, setSignedIn] = useState(null);
 
   async function run(label, fn) {
     setBusy(label); setMsg(null);
@@ -165,6 +181,26 @@ function Owner({ id, s, owner, reload }) {
         <label>Only to (optional, up to 5) <input value={agentTo} onChange={(e) => setAgentTo(e.target.value)} placeholder="shop.testnet, rent.testnet" spellCheck="false" autoCapitalize="none" /></label>
         <button disabled={!!busy}>{busy === "agent" ? "Saving…" : "Save the budget (0.01 NEAR storage)"}</button>
       </form>
+      {s.intents?.some(([t]) => t === `nep141:${USDC}`) && <button className="ghost" disabled={!!busy} onClick={() => run("intents", async () => {
+        const [, all] = s.intents.find(([t]) => t === `nep141:${USDC}`);
+        if (!(await view("storage_balance_of", { account_id: owner }, USDC))) throw new Error(`Register ${owner} with ${USDC} first (storage_deposit), or the verifier refunds the withdrawal.`);
+        const args = base64.encode(new TextEncoder().encode(JSON.stringify({ token: USDC, receiver_id: owner, amount: all })));
+        const o = await tx("account_call", { token_id: id, alias: false, receiver_id: VERIFIER, method_name: "ft_withdraw", args, deposit: "1", gas_tgas: 60 }, 1n, 150);
+        return <>Withdrew {amountOf(`nep141:${USDC}`, all)} from its NEAR Intents balance to you. {link(o.transaction.hash)}</>;
+      })}>{busy === "intents" ? "Withdrawing…" : "Withdraw its Intents USDC to me"}</button>}
+      <div className="stack">
+        <h3>Sign in as this Pusaka</h3>
+        <p className="muted">Its own EVM key (the NEAR MPC key that holds its Bitcoin) signs a standard Sign-In with Ethereum message
+          naming you as the holder, valid for an hour. Any site that accepts it sees the Pusaka's address as the user.</p>
+        <button disabled={!!busy} onClick={() => run("signin", async () => {
+          const nonce = hex.encode(crypto.getRandomValues(new Uint8Array(8)));
+          const o = await tx("sign_in", { token_id: id, domain: location.host, uri: location.href.split("#")[0], chain_id: "1", nonce }, 1n);
+          const signed = JSON.parse(new TextDecoder().decode(base64.decode(o.status.SuccessValue)));
+          setSignedIn({ ...signed, signature: await signInSignature(signed) });
+          return <>Signed in as {signed.address}; the signature recovers to it. {link(o.transaction.hash)}</>;
+        })}>{busy === "signin" ? "Signing…" : `Sign in to ${location.host} as Pusaka v2 #${id}`}</button>
+        {signedIn && <pre className="siwe">{`${signedIn.message}\n\n${signedIn.signature}`}</pre>}
+      </div>
       {!s.pq ? (
         <div className="stack">
           <h3>Turn on the post-quantum lock</h3>

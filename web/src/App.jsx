@@ -1613,6 +1613,10 @@ const REFUSED = [
   { v2: true, hash: "CTzsoRZfZDc3KPxYstgrY8PfVy4YvkabCjDVVsmF1hVd", attack: "The seller's AI agent empties the NFT's account while it's listed", test: "f8_agent_cannot_empty_the_account_while_listed" },
   { v2: true, hash: "7Xzm8uSiegXsietaJMoKkfpfTE8ufeR2gyj59X5m4vjk", attack: "A stranger gives itself a spending budget on someone's Pusaka", test: "f8_only_the_holder_grants_a_budget" },
   { v2: true, hash: "7fyVPGUskcnXnAE3Kmj2EVUg31DVTwtfXuucEpxGDuqo", attack: "The agent keeps spending after the holder revoked its budget", test: "f8_regranting_does_not_reset_todays_spending" },
+  // Pusaka v2: signing in as the NFT, and its NEAR Intents balance
+  { v2: true, hash: "3XfwhfudVHo2kzYDV6xv5fkpV9rr1W69hFdp7LFb784p", attack: "A stranger tries to sign in to a website as someone's Pusaka", test: "f9_only_the_holder_signs_in_as_the_nft" },
+  { v2: true, hash: "5VxydhLQSPDmQXjAyiGV5Lu2RvK1dLmuMQC9RxV7HVMR", attack: "The holder gives the NFT's account a signing key on the NEAR Intents verifier, to keep using it after a sale", test: "v2_9_no_signing_key_for_the_nfts_account_on_the_intents_verifier" },
+  { v2: true, hash: "Pjvg5Uxab6mjouQtkShBzxWzeheQJ4FrF6cRMB6fBGu", attack: "The previous holder tries to move the NFT's NEAR Intents balance after transferring it", test: "f5_old_holder_loses_the_account_on_transfer" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";
 const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);

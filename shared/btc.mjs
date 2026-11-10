@@ -270,7 +270,7 @@ export async function broadcast(txHex) {
 }
 
 // ---------- EVM: the same MPC key also owns one address on every EVM chain ----------
-import { keccak256, getAddress, serializeTransaction, recoverAddress, toHex as viemHex, encodeFunctionData, erc20Abi } from "viem";
+import { keccak256, getAddress, serializeTransaction, recoverAddress, recoverMessageAddress, serializeSignature, toHex as viemHex, encodeFunctionData, erc20Abi } from "viem";
 /** Every EVM chain the contract signs for (EVM_CHAINS). */
 export const EVM_CHAINS = CONFIG.evm;
 export const EVM = EVM_CHAINS[0];
@@ -350,6 +350,17 @@ export async function finalizeEth(tx, signed, expectedFrom) {
   const from = await recoverAddress({ hash: "0x" + signed.sighash, signature });
   if (from !== expectedFrom) throw new Error(`signature recovers to ${from}, not ${expectedFrom}`);
   return serializeTransaction(tx, signature);
+}
+
+/** v2 F9: the MPC's answer to `sign_in` as a 65-byte personal_sign signature, checked to recover to the NFT's address. */
+export async function signInSignature({ message, address, signature: sig }) {
+  if (!sig) throw new Error("the MPC network returned no signature");
+  let s = BigInt("0x" + sig.s.scalar), yParity = sig.recovery_id;
+  if (s > N / 2n) { s = N - s; yParity ^= 1; }
+  const signature = serializeSignature({ r: viemHex(BigInt("0x" + sig.big_r.affine_point.slice(2)), { size: 32 }), s: viemHex(s, { size: 32 }), yParity });
+  const from = await recoverMessageAddress({ message, signature });
+  if (from.toLowerCase() !== address.toLowerCase()) throw new Error(`signature recovers to ${from}, not ${address}`);
+  return signature;
 }
 
 export async function broadcastEth(raw, chainId) {
