@@ -313,7 +313,8 @@ const scenes = {
     const { p } = h;
     await tokenPage(h);
     await h.connect(BUYER);
-    const form = section(p, "Withdraw");
+    // the form itself: section() would match the whole holder panel that contains it
+    const form = p.locator("form").filter({ has: p.getByRole("heading", { name: "Withdraw", exact: true }) }).first();
     await h.scrollTo(form);
     await h.mark("form", form);
     await h.type("to", form.locator("input").first(), WITHDRAW_TO);
@@ -326,7 +327,8 @@ const scenes = {
     const link = st.getByRole("link", { name: /Bitcoin transaction/ });
     if (await link.count()) {
       await h.move(link); await h.mark("open-btc", link);
-      await p.goto(await link.getAttribute("href"));
+      // mempool.space doesn't answer from the recording machine; Blockstream shows the same Bitcoin tx
+      await p.goto((await link.getAttribute("href")).replace("https://mempool.space/testnet/", "https://blockstream.info/testnet/"));
       await p.waitForLoadState("networkidle").catch(() => {});
       await h.pause(3000);
       await h.mark("mempool", p.locator("body"));

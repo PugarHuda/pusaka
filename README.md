@@ -153,7 +153,7 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 - The NFT owns a keyless NEAR account and a NEAR Intents balance; a post-quantum (ML-DSA-65) lock; an AI agent's daily budget enforced on-chain.
 - Sign in to websites as the NFT (SIWE), prove its Bitcoin address (BIP-322), rent its use (ERC-4907).
 - **Buy it with native Bitcoin**, the payment proven by the light client (bought live with real testnet BTC).
-- **A vault** (Bitcoin covenant vaults' delay and clawback, enforced by the contract) and **covered call options**, whose strike can be paid in native Bitcoin, proven by the light client.
+- **A vault** (Bitcoin covenant vaults' delay and clawback, enforced by the contract) and **covered call options**, whose strike can be paid in native Bitcoin, proven by the light client (exercised live: [2tzxAe31…](https://testnet.near.rocks/tx/2tzxAe31dPPanqq7YVxzz4kCYq8o6YWrC5DFEDGWexDV)).
 
 **Markets and agents**
 - A market contract: bids and buy pools priced per verified sat, perpetual loans with rate auctions. [How](docs/FEATURES.md#bids-per-verified-sat-and-loans-with-no-due-date-a-second-market-contract)
