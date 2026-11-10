@@ -127,5 +127,17 @@ if (fs.existsSync(V2)) {
   ok(!bad.length, `every opened v2 NFT account (${opened} of ${toks.length}) is keyless and runs token-account ${d.token_account.global_contract_hash_base58.slice(0, 8)}…`, bad.join(", "));
 }
 
+// 8. The market contract (testnet): its code is the recorded build; its key is reported until it's deleted.
+const MK = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}-market.json`);
+if (fs.existsSync(MK)) {
+  const d = JSON.parse(fs.readFileSync(MK, "utf8"));
+  console.log(`
+Market: ${d.contract}`);
+  const a = await rpc("query", { request_type: "view_account", finality: "final", account_id: d.contract });
+  ok(hex(base58.decode(a.code_hash)) === d.code.wasm_sha256, "market code = the build recorded in deployments", `${d.code.wasm_sha256.slice(0, 16)}…`);
+  const k = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: d.contract })).keys;
+  console.log(`${k.length ? "ℹ" : "✓"} market account keys: ${k.length ? `${k.length} (deleted at the final deploy, 13 Nov)` : "none: the code can never change"}`);
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : inconclusive ? "\nall checks passed; some Bitcoin lookups couldn't be made from here (⚠ above)" : "\nall checks passed");
 process.exit(failed ? 1 : 0);

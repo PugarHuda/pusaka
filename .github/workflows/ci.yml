@@ -25,6 +25,8 @@ jobs:
         working-directory: contract
       - run: cargo test   # v2's token-bound account (global contract)
         working-directory: token-account
+      - run: cargo test   # the market contract: bids per verified sat, perpetual loans
+        working-directory: market
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-audit }
       - run: cargo audit   # RustSec advisories for every crate in Cargo.lock
@@ -69,6 +71,7 @@ jobs:
       - run: node shared/esplora.test.mjs  # Bitcoin reads fail over mempool.space -> Blockstream
       - run: node shared/failover.test.mjs  # NEAR reads skip a rate-limited RPC; a contract panic is not retried
       - run: node shared/intents.test.mjs  # NEAR Intents exit quote: dry run only, refusals keep their reason
+      - run: node shared/bip322.test.mjs  # BIP-322: the BIP's own vectors and signatures (independent of the contract's Rust)
       - run: node shared/siwe.test.mjs  # v2 sign-in: the MPC signature (high or low s) recovers to the NFT, nothing else
       - run: node api/_prices.test.mjs  # a price-source failure serves the last good answer, marked stale
       - run: node api/_relayer.test.mjs  # gas-free loan acceptance only when the contract would take it

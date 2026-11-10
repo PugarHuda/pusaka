@@ -263,6 +263,17 @@ pub enum Event {
     AgentSend { agent: AccountId, receiver: AccountId, amount: U128, spent_today: U128 },
     /// v2: the holder signed in somewhere as the NFT (EIP-4361, the NFT's own EVM key); valid until `expires_ms`.
     SignIn { domain: String, expires_ms: U64 },
+    /// v2: the NFT's Bitcoin key signed a BIP-322 proof of its address.
+    BtcMessageSigned { sighash: String },
+    /// v2: the holder rented the Pusaka's use (not its assets) to `user` until `expires_ms`.
+    UserSet { user: AccountId, expires_ms: U64 },
+    /// v2: listed for native Bitcoin.
+    ListedForBtc { price_sats: U64 },
+    BtcListingCancelled,
+    /// v2: a buyer reserved the BTC sale; their payment must carry `op_return`.
+    BtcPurchaseReserved { buyer: AccountId, until_ms: U64, op_return: String },
+    /// v2: sold for Bitcoin, the payment proven by NEAR's Bitcoin light client.
+    BtcSale { from: AccountId, to: AccountId, sats: U64, txid: String },
 }
 
 /// The kinds of transaction the contract signs from a Pusaka's own NEAR account.
@@ -1017,6 +1028,7 @@ impl Pusaka {
         if self.listings.remove(&token_id).is_some() {
             self.log(&token_id, Event::Unlisted);
         }
+        v2::end_btc_listing_for_heir(&token_id); // refused while a Bitcoin buyer is paying
         self.end_gift(&token_id); // an open gift link dies with the holder's will
         // internal_transfer also clears NEP-178 approvals, so no market can sell it afterwards
         self.tokens.internal_transfer(&owner, &h.heir, &token_id, None, None);
@@ -1722,7 +1734,7 @@ impl Pusaka {
         require!(self.btc_keys.contains_key(token_id), "KeyNotReady");
         require!(!self.pending.contains_key(token_id), "SignPending");
         require!(!in_transfer_call(token_id), "TransferCallPending");
-        require!(!self.listings.contains_key(token_id), "Listed");
+        require!(!self.listings.contains_key(token_id) && !v2::btc_listed(token_id), "Listed");
         require!(!self.loans.contains_key(token_id), "Collateralised");
         require!(!gift::is_gifted(token_id), "Gifted: cancel the gift first");
     }

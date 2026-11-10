@@ -1,0 +1,12 @@
+{
+  "network": "testnet",
+  "contract": "pusaka-market.testnet",
+  "note": "market/: standing bids priced per verified sat and perpetual callable loans, against Pusakas through NEP-171/178/199. No upgrade path in the code; the account's key is deleted at the final deploy (13 Nov), after which the code can never change.",
+  "code": {
+    "wasm_sha256": "5b80222ac9bf3583473ffdd54e9c04ab436ba33411936033cf4073f91b2d89fa",
+    "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0), in market/",
+    "created_tx": "Ek3Hdd7W8WjJGCfgmX44h5w3gQPcHKh3VMm8aVLxmXxa",
+    "deployed_tx": "6uG46TDQgFwFEPdh9VrJMsDQ4Q3fhuQ1cMHZzJQV87rJ",
+    "init_tx": "6zYF263P85cVPfDYRNKFTAzMVxZAeYNZc6kz3VtAa2YN"
+  }
+}

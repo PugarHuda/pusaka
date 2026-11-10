@@ -6,7 +6,8 @@
     ".": "./btc.mjs",
     "./ckd": "./ckd.mjs",
     "./audit": "./audit.mjs",
-    "./pq": "./pq.mjs"
+    "./pq": "./pq.mjs",
+    "./bip322": "./bip322.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

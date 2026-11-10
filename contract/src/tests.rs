@@ -3517,7 +3517,7 @@ mod f9_sign_in {
     #[test]
     fn f9_the_message_is_an_eip4361_sign_in_that_expires_in_an_hour() {
         at("alice.testnet", NearToken::from_yoctonear(0), 0);
-        let m = siwe_message("app.example:8080", "0xabc", "7", &acc("alice.testnet"), "https://app.example/login", 1, "abcd1234", 1_793_986_788_279);
+        let m = siwe_message("app.example:8080", "0xabc", "7", &acc("alice.testnet"), None, "https://app.example/login", 1, "abcd1234", 1_793_986_788_279);
         assert_eq!(m, "app.example:8080 wants you to sign in with your Ethereum account:\n0xabc\n\n\
             Sign in as Pusaka #7 (pusaka.testnet), held by alice.testnet.\n\n\
             URI: https://app.example/login\nVersion: 1\nChain ID: 1\nNonce: abcd1234\n\
@@ -3773,5 +3773,281 @@ mod v2_11_nested {
         let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
         ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
         c.nft_transfer(acc("0s0000000000000000000000000000000000000000"), "1".into(), None, None);
+    }
+}
+
+// ---------- v2 F10 BIP-322, F11 renter, F12 buy with Bitcoin, F13 reserves (proposal 16) ----------
+mod f10_f13 {
+    use super::*;
+    use base64::Engine;
+
+    fn display(h: [u8; 32]) -> String {
+        let mut h = h;
+        h.reverse();
+        hex::encode(h)
+    }
+
+    // BIP-322 basic-test-vectors.json (bitcoin/bips, bip-0322/)
+    #[test]
+    fn f10_bip322_message_hash_and_virtual_txs_match_the_spec() {
+        let pubkey = hex::decode("02c7f12003196442943d8588e01aee840423cc54fc1521526a3b85c2b0cbd58872").unwrap();
+        let pkh = btc::hash160(&pubkey);
+        for (msg, mh, spend, sign) in [
+            ("", "c90c269c4f8fcbe6880f72a721ddfbf1914268a794cbb21cfafee13770ae19f1",
+             "c5680aa69bb8d860bf82d4e9cd3504b55dde018de765a91bb566283c545a99a7",
+             "1e9654e951a5ba44c8604c4de6c67fd78a27e81dcadcfe1edf638ba3aaebaed6"),
+            ("Hello World", "f0eb03b1a75ac6d9847f55c624a99169b5dccba2a31f5b23bea77ba270de0a7a",
+             "b79d196740ad5217771c1098fc4a4b51e0535c32236c71f1ea4d61a2d603352b",
+             "88737ae86f2077145f93cc4b153ae9a1cb8d56afa511988c149c5c8c9d93bddf"),
+        ] {
+            assert_eq!(hex::encode(btc::bip322_message_hash(msg.as_bytes())), mh);
+            let spend_txid = btc::sha256d(&btc::bip322_to_spend(&pkh, msg.as_bytes()));
+            assert_eq!(display(spend_txid), spend);
+            assert_eq!(display(btc::sha256d(&btc::bip322_to_sign(&spend_txid))), sign);
+        }
+    }
+
+    /// The spec's own signature for "Hello World" verifies against our sighash: the key signed exactly this digest.
+    #[test]
+    fn f10_bip322_spec_signature_verifies_against_our_sighash() {
+        let w = base64::engine::general_purpose::STANDARD
+            .decode("AkcwRAIgZRfIY3p7/DoVTty6YZbWS71bc5Vct9p9Fia83eRmw2QCICK/ENGfwLtptFluMGs2KsqoNSk89pO7F29zJLUx9a/sASECx/EgAxlkQpQ9hYjgGu6EBCPMVPwVIVJqO4XCsMvViHI=")
+            .unwrap();
+        assert_eq!(w[0], 2);
+        let der = &w[2..2 + w[1] as usize - 1]; // without the sighash-type byte
+        let pubkey = &w[2 + w[1] as usize + 1..];
+        let hash = btc::bip322_sighash(&btc::hash160(pubkey), b"Hello World");
+        let ctx = secp256k1::Secp256k1::verification_only();
+        let mut sig = secp256k1::ecdsa::Signature::from_der(der).unwrap();
+        sig.normalize_s();
+        ctx.verify_ecdsa(&secp256k1::Message::from_slice(&hash).unwrap(), &sig, &secp256k1::PublicKey::from_slice(pubkey).unwrap())
+            .expect("the spec's signature is over our sighash");
+    }
+
+    #[test]
+    fn f10_holder_signs_a_bitcoin_message() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.sign_btc_message("1".into(), "reserve audit 2026-11".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f10_only_the_holder_signs_a_bitcoin_message() {
+        let mut c = setup();
+        ctx("bob.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.sign_btc_message("1".into(), "mine now".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "one line")]
+    fn f10_bitcoin_message_is_one_line() {
+        let mut c = setup();
+        ctx("alice.testnet", NearToken::from_yoctonear(1), vec![]);
+        let _ = c.sign_btc_message("1".into(), "a\nb".into());
+    }
+
+    // ---------- F11 ----------
+    fn at(caller: &str, deposit: NearToken, ms: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_timestamp(ms * 1_000_000).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+    fn rented() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.set_user("1".into(), Some(acc("renter.testnet")), U64(10_000_000));
+        c
+    }
+    fn renter_signs_in(c: &mut Pusaka, who: &str, ms: u64) {
+        at(who, NearToken::from_yoctonear(1), ms);
+        let _ = c.sign_in("1".into(), "app.example".into(), "https://app.example/".into(), U64(1), "abcd1234".into());
+    }
+
+    #[test]
+    fn f11_the_renter_signs_in_as_the_nft_while_the_rental_lasts() {
+        let mut c = rented();
+        assert_eq!(c.user_of("1".into()).unwrap()["user"], json!("renter.testnet"));
+        renter_signs_in(&mut c, "renter.testnet", 2_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f11_an_expired_rental_signs_nothing() {
+        let mut c = rented();
+        renter_signs_in(&mut c, "renter.testnet", 10_000_001);
+    }
+
+    #[test]
+    #[should_panic(expected = "NotOwner")]
+    fn f11_the_renter_cant_move_the_nft() {
+        let mut c = rented();
+        at("renter.testnet", NearToken::from_yoctonear(0), 2_000);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    fn f11_the_rental_ends_when_the_nft_changes_hands() {
+        let mut c = rented();
+        at("alice.testnet", NearToken::from_yoctonear(1), 2_000);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        assert!(c.user_of("1".into()).is_none());
+    }
+
+    #[test]
+    fn f11_the_renters_sign_in_names_holder_and_renter() {
+        at("alice.testnet", NearToken::from_yoctonear(0), 0);
+        let m = crate::v2::siwe_message("app.example", "0xabc", "1", &acc("alice.testnet"), Some(&acc("renter.testnet")),
+            "https://app.example/", 1, "abcd1234", 0);
+        assert!(m.contains("held by alice.testnet, used by renter.testnet (rented)."));
+    }
+
+    // ---------- F12 ----------
+    const SELLER_SCRIPT: &str = "00141111111111111111111111111111111111111111";
+    fn btc_listed() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.list_for_btc("1".into(), U64(50_000), SELLER_SCRIPT.into());
+        c
+    }
+    fn reserve(c: &mut Pusaka, who: &str, ms: u64) -> String {
+        at(who, NearToken::from_millinear(100), ms);
+        c.reserve_btc_purchase("1".into())
+    }
+    /// A one-input transaction paying `sats` to `script` and carrying `memo` as OP_RETURN (non-witness serialization).
+    fn payment(script: &str, sats: u64, memo: &str) -> String {
+        let mut t = hex::decode("02000000").unwrap();
+        t.push(1);
+        t.extend_from_slice(&[0x42; 32]);
+        t.extend_from_slice(&[0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+        t.push(2);
+        t.extend_from_slice(&sats.to_le_bytes());
+        let s = hex::decode(script).unwrap();
+        t.push(s.len() as u8);
+        t.extend_from_slice(&s);
+        t.extend_from_slice(&0u64.to_le_bytes());
+        let m = hex::decode(memo).unwrap();
+        t.push(m.len() as u8 + 2);
+        t.extend_from_slice(&[0x6a, m.len() as u8]);
+        t.extend_from_slice(&m);
+        t.extend_from_slice(&[0, 0, 0, 0]);
+        hex::encode(t)
+    }
+    fn prove(c: &mut Pusaka, tx: String) {
+        at("anyone.testnet", NearToken::from_yoctonear(0), 3_000);
+        let _ = c.prove_btc_purchase("1".into(), tx, 0, 1, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Listed")]
+    fn f12_a_btc_listing_locks_the_pusaka() {
+        let mut c = btc_listed();
+        at("alice.testnet", NearToken::from_yoctonear(0), 2_000);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved")]
+    fn f12_two_buyers_cant_pay_for_the_same_sale() {
+        let mut c = btc_listed();
+        reserve(&mut c, "bob.testnet", 2_000);
+        reserve(&mut c, "carol.testnet", 2_001);
+    }
+
+    #[test]
+    fn f12_a_proven_payment_hands_the_nft_to_the_reserved_buyer() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), "ab".repeat(32), U64(50_000)));
+        assert_eq!(c.owner_of(&"1".to_string()), acc("bob.testnet"));
+        assert!(c.btc_listing_of("1".into()).is_none());
+    }
+
+    #[test]
+    fn f12_no_handover_if_the_light_client_says_no() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
+        as_contract(vec![PromiseResult::Successful(b"false".to_vec())]);
+        assert!(!c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), "ab".repeat(32), U64(50_000)));
+        assert_eq!(c.owner_of(&"1".to_string()), acc("alice.testnet"));
+    }
+
+    #[test]
+    #[should_panic(expected = "doesn't pay the seller the price")]
+    fn f12_underpaying_is_refused() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        prove(&mut c, payment(SELLER_SCRIPT, 49_999, &memo));
+    }
+
+    #[test]
+    #[should_panic(expected = "doesn't pay the seller the price")]
+    fn f12_paying_someone_else_is_refused() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        prove(&mut c, payment("00142222222222222222222222222222222222222222", 50_000, &memo));
+    }
+
+    #[test]
+    #[should_panic(expected = "OP_RETURN isn't this reservation's")]
+    fn f12_a_payment_for_another_reservation_is_refused() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        // bob's reservation runs out, carol reserves: bob's old payment can't buy it for carol or for bob
+        reserve(&mut c, "carol.testnet", 2_000 + crate::v2::RESERVE_MS + 1);
+        prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
+    }
+
+    #[test]
+    fn f12_a_late_proof_for_a_replaced_reservation_hands_nothing_over() {
+        let mut c = btc_listed();
+        let memo = reserve(&mut c, "bob.testnet", 2_000);
+        prove(&mut c, payment(SELLER_SCRIPT, 50_000, &memo));
+        reserve(&mut c, "carol.testnet", 2_000 + crate::v2::RESERVE_MS + 1);
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(!c.on_btc_purchase_proven("1".into(), acc("bob.testnet"), U64(1), "ab".repeat(32), U64(50_000)));
+        assert_eq!(c.owner_of(&"1".to_string()), acc("alice.testnet"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved")]
+    fn f12_the_seller_cant_cancel_while_a_buyer_is_paying() {
+        let mut c = btc_listed();
+        reserve(&mut c, "bob.testnet", 2_000);
+        at("alice.testnet", NearToken::from_yoctonear(0), 2_001);
+        c.cancel_btc_listing("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "pay_to_script")]
+    fn f12_only_standard_payout_scripts() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.list_for_btc("1".into(), U64(50_000), "6a0401020304".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved: a Bitcoin buyer is paying")]
+    fn f12_an_heir_cant_take_it_while_a_bitcoin_buyer_is_paying() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.set_heir("1".into(), Some(acc("heir.testnet")), U64(HEIR_MIN_MS));
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.list_for_btc("1".into(), U64(50_000), SELLER_SCRIPT.into());
+        reserve(&mut c, "bob.testnet", 1_000 + HEIR_MIN_MS);
+        at("heir.testnet", NearToken::from_yoctonear(0), 1_001 + HEIR_MIN_MS);
+        c.claim_inheritance("1".into());
+    }
+
+    // ---------- F13 ----------
+    #[test]
+    fn f13_reserves_sum_every_pusakas_verified_sats() {
+        let c = setup();
+        let r = c.reserves(None, None);
+        assert_eq!(r["tokens"].as_array().unwrap().len(), 1);
+        assert_eq!(r["total_sats"], json!(0));
     }
 }

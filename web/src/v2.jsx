@@ -1,7 +1,8 @@
 // #/v2: Pusaka v2 (pusaka-v2.testnet). The NFT's own account (NEP-616 `0s…`), its name (t<id>.pusaka-v2.testnet)
 // and the post-quantum lock (ML-DSA-65, verified on-chain). Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
-import { MINT_DEPOSIT, NEAR_EXPLORER, mintedTokenId, signInSignature } from "@pusaka/shared";
+import { MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
+import { witnessFromMpc } from "@pusaka/shared/bip322";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
 import { base64, hex } from "@scure/base";
 import { callRaw, connector, near, provider, yocto } from "./near.js";
@@ -73,9 +74,10 @@ function V2Token({ id, accountId }) {
     (async () => {
       const info = await view("token_info", { token_id: id });
       if (!info) return { error: `There is no Pusaka v2 #${id}.` };
-      const [acct, alias, pq, ag] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }), view("agent_of", { token_id: id })]);
+      const [acct, alias, pq, ag, user, btcSale] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }),
+        view("agent_of", { token_id: id }), view("user_of", { token_id: id }), view("btc_listing_of", { token_id: id })]);
       const [a, b, intents] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null)]);
-      return { info, acct, alias, pq, ag, a, b, intents };
+      return { info, acct, alias, pq, ag, user, btcSale, a, b, intents };
     })().catch((e) => ({ error: e.message })).then((x) => live && setS(x));
     return () => { live = false; };
   }, [id, tick]);
@@ -114,6 +116,13 @@ function V2Token({ id, accountId }) {
         : <p className="muted">None. The holder can give an AI agent a daily budget from the NFT's account.</p>}
       <p className="muted">The contract enforces the budget, not the agent's software: a hacked agent loses at most a day's budget,
         only to the listed accounts, never while the Pusaka is for sale or pledged, and the budget ends when it changes hands.</p>
+      <h2>For sale for Bitcoin</h2>
+      {s.btcSale ? <BtcSale id={id} sale={s.btcSale} accountId={accountId} reload={reload} />
+        : <p className="muted">Not listed for Bitcoin. The holder can sell it for native BTC: a buyer reserves it on NEAR, pays on Bitcoin with
+          the reservation's OP_RETURN, and NEAR's Bitcoin light client proves the payment before the NFT moves. No bridge, no wrapped BTC.</p>}
+      <h2>Rented to</h2>
+      {s.user ? <p><strong>{s.user.user}</strong> may use it (sign in as it, not move it or what it holds) until {new Date(Number(s.user.expires_ms)).toLocaleString()}.</p>
+        : <p className="muted">Nobody. The holder can rent its use (ERC-4907 style) without handing over the NFT or its Bitcoin.</p>}
       {isOwner && <Owner id={id} s={s} owner={owner} reload={reload} />}
       {!isOwner && s.ag && accountId === s.ag.agent && <AgentSend id={id} s={s} reload={reload} />}
       <h2>History</h2>
@@ -134,6 +143,10 @@ function Owner({ id, s, owner, reload }) {
   const [daily, setDaily] = useState("0.05");
   const [agentTo, setAgentTo] = useState("");
   const [signedIn, setSignedIn] = useState(null);
+  const [proof, setProof] = useState(null);
+  const [renter, setRenter] = useState("");
+  const [hours, setHours] = useState("24");
+  const [btc, setBtc] = useState({ sats: "5000", to: "" });
 
   async function run(label, fn) {
     setBusy(label); setMsg(null);
@@ -203,6 +216,36 @@ function Owner({ id, s, owner, reload }) {
         })}>{busy === "signin" ? "Signing…" : `Sign in to ${location.host} as Pusaka v2 #${id}`}</button>
         {signedIn && <pre className="siwe">{`${signedIn.message}\n\n${signedIn.signature}`}</pre>}
       </div>
+      <div className="stack">
+        <h3>Prove its Bitcoin address (BIP-322)</h3>
+        <p className="muted">Its Bitcoin key signs a BIP-322 message proving it controls {btcAddress(s.info.btc_pubkey)}, naming you as the holder
+          and the NEAR block. Any BIP-322 verifier accepts it: exchange whitelists, reserve audits. Checked here before it's shown.</p>
+        <button className="ghost" disabled={!!busy} onClick={() => run("bip322", async () => {
+          const o = await tx("sign_btc_message", { token_id: id, message: "proof of reserves" }, 1n);
+          const signed = JSON.parse(new TextDecoder().decode(base64.decode(o.status.SuccessValue)));
+          setProof({ ...signed, witness: `smp${witnessFromMpc(signed)}` });
+          return <>Signed and verified. {link(o.transaction.hash)}</>;
+        })}>{busy === "bip322" ? "Signing…" : "Sign a BIP-322 proof"}</button>
+        {proof && <pre className="siwe">{`Address: ${btcAddress(proof.pubkey)}\nMessage: ${proof.message}\nSignature: ${proof.witness}`}</pre>}
+      </div>
+      <form className="stack" onSubmit={(e) => { e.preventDefault(); run("rent", async () => {
+        const o = await tx("set_user", { token_id: id, user: renter.trim().toLowerCase() || null, expires_ms: String(Date.now() + Number(hours) * 3_600_000) }, yocto(0.01), 30);
+        return <>{renter ? `${renter} may use it for ${hours} h.` : "Rental ended."} {link(o.transaction.hash)}</>;
+      }); }}>
+        <h3>Rent its use</h3>
+        <label>Renter <input value={renter} onChange={(e) => setRenter(e.target.value)} placeholder="empty ends a rental" spellCheck="false" autoCapitalize="none" /></label>
+        <label>For <span className="row"><input type="number" min="1" value={hours} onChange={(e) => setHours(e.target.value)} required /> hours</span></label>
+        <button disabled={!!busy}>{busy === "rent" ? "Saving…" : "Save (0.01 NEAR storage)"}</button>
+      </form>
+      {!s.btcSale && <form className="stack" onSubmit={(e) => { e.preventDefault(); run("btclist", async () => {
+        const o = await tx("list_for_btc", { token_id: id, price_sats: btc.sats, pay_to_script: scriptHex(btc.to.trim()) }, yocto(0.01), 30);
+        return <>Listed for {btc.sats} sats. {link(o.transaction.hash)}</>;
+      }); }}>
+        <h3>Sell it for Bitcoin</h3>
+        <label>Price <span className="row"><input type="number" min="1000" value={btc.sats} onChange={(e) => setBtc({ ...btc, sats: e.target.value })} required /> sats</span></label>
+        <label>Paid to (your Bitcoin address) <input value={btc.to} onChange={(e) => setBtc({ ...btc, to: e.target.value })} placeholder="tb1q…" required spellCheck="false" autoCapitalize="none" /></label>
+        <button disabled={!!busy}>{busy === "btclist" ? "Listing…" : "List for Bitcoin"}</button>
+      </form>}
       {!s.pq ? (
         <div className="stack">
           <h3>Turn on the post-quantum lock</h3>
@@ -235,6 +278,31 @@ function Owner({ id, s, owner, reload }) {
           })}>{busy === "pqoff" ? "Turning off…" : "Turn the lock off (needs the unlock above)"}</button>}
         </form>
       )}
+      {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
+    </div>
+  );
+}
+
+/** A Bitcoin sale: the price, where to pay, the reservation; a reserve button for buyers and a cancel button for the seller. */
+function BtcSale({ id, sale, accountId, reload }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [now] = useState(() => Date.now()); // read once per render of this sale
+  const reserved = sale.buyer && Number(sale.reserved_until_ms) > now;
+  const act = async (fn) => { setBusy(true); setMsg(null); try { setMsg({ ok: true, text: await fn() }); await reload(); } catch (e) { setMsg({ ok: false, text: e.message }); } finally { setBusy(false); } };
+  return (
+    <div className="stack">
+      <p><strong>{Number(sale.price_sats).toLocaleString()} sats</strong>, paid on Bitcoin to script <code>{sale.pay_to_script}</code>.
+        {reserved ? <> Reserved by <strong>{sale.buyer}</strong> until {new Date(Number(sale.reserved_until_ms)).toLocaleString()}.</> : " Open: reserve it to buy."}</p>
+      {reserved && accountId === sale.buyer && <p>Pay {Number(sale.price_sats).toLocaleString()} sats to that script in one Bitcoin transaction that also has an
+        OP_RETURN output carrying <code>{sale.op_return}</code>. Once it confirms and NEAR's light client has the block, anyone submits
+        <code> prove_btc_purchase</code> with its proof and the Pusaka is yours (find the txid on <a href={EXPLORER} target="_blank" rel="noreferrer">a Bitcoin explorer</a>).</p>}
+      {!reserved && accountId && accountId !== sale.seller && <button disabled={busy} onClick={() => act(async () => {
+        const o = await callRaw("reserve_btc_purchase", { token_id: id }, { deposit: yocto(0.1), tgas: 30, receiver: V2 });
+        return <>Reserved for 6 hours (0.1 NEAR bond, back when you buy). {link(o.transaction.hash)}</>;
+      })}>Reserve to buy with Bitcoin (0.1 NEAR bond)</button>}
+      {accountId === sale.seller && !reserved && <button className="ghost" disabled={busy} onClick={() => act(async () =>
+        <>Bitcoin listing ended. {link((await callRaw("cancel_btc_listing", { token_id: id }, { tgas: 30, receiver: V2 })).transaction.hash)}</>)}>End the Bitcoin listing</button>}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </div>
   );

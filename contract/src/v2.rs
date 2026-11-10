@@ -89,10 +89,78 @@ pub fn clear_agent(token_id: &str) {
     env::storage_remove(agent_key(token_id).as_bytes());
 }
 
+#[near(serializers = [borsh])]
+struct Rental {
+    owner: AccountId,
+    user: AccountId,
+    expires_ms: u64,
+}
+
+fn user_key(token_id: &str) -> String {
+    format!("usr:{token_id}")
+}
+
+/// The renter of `token_id` right now, if any (granted by the current holder, not expired).
+pub fn current_user(token_id: &str, owner: &AccountId) -> Option<AccountId> {
+    raw_get::<Rental>(&user_key(token_id)).filter(|r| &r.owner == owner && r.expires_ms > env::block_timestamp_ms()).map(|r| r.user)
+}
+
+#[near(serializers = [borsh])]
+struct BtcListing {
+    seller: AccountId,
+    price_sats: u64,
+    pay_to: Vec<u8>,
+    buyer: Option<AccountId>,
+    until_ms: u64,
+    nonce: u64,
+    bond: u128,
+}
+
+fn btc_listing_key(token_id: &str) -> String {
+    format!("bl:{token_id}")
+}
+
+/// An heir's claim ends a BTC listing, but never while a reserved buyer may already have paid on Bitcoin.
+pub fn end_btc_listing_for_heir(token_id: &str) {
+    if let Some(l) = raw_get::<BtcListing>(&btc_listing_key(token_id)) {
+        require!(l.buyer.is_none() || env::block_timestamp_ms() > l.until_ms, "Reserved: a Bitcoin buyer is paying; claim after the reservation");
+        env::storage_remove(btc_listing_key(token_id).as_bytes());
+        if l.buyer.is_some() && l.bond > 0 {
+            refund(l.seller, NearToken::from_yoctonear(l.bond));
+        }
+    }
+}
+
+pub fn btc_listed(token_id: &str) -> bool {
+    env::storage_has_key(btc_listing_key(token_id).as_bytes())
+}
+
+pub const BTC_BOND: NearToken = NearToken::from_millinear(100);
+/// How long a buyer has to pay on Bitcoin and get it proven (light client lag included).
+#[cfg(not(feature = "mainnet"))]
+pub const RESERVE_MS: u64 = 6 * 3_600_000;
+#[cfg(feature = "mainnet")]
+pub const RESERVE_MS: u64 = 24 * 3_600_000;
+
+/// The OP_RETURN data a BTC purchase must carry: binds the payment to this contract, token, buyer and reservation.
+pub fn btc_purchase_memo(token_id: &str, buyer: &AccountId, nonce: u64) -> Vec<u8> {
+    env::sha256_array(format!("pusaka-buy:{}:{token_id}:{buyer}:{nonce}", env::current_account_id()).as_bytes())[..20].to_vec()
+}
+
+/// P2WPKH, P2WSH, P2TR, P2PKH or P2SH.
+fn standard_script(s: &[u8]) -> bool {
+    matches!(s, [0x00, 0x14, rest @ ..] if rest.len() == 20)
+        || matches!(s, [0x00, 0x20, rest @ ..] if rest.len() == 32)
+        || matches!(s, [0x51, 0x20, rest @ ..] if rest.len() == 32)
+        || matches!(s, [0x76, 0xa9, 0x14, mid @ .., 0x88, 0xac] if mid.len() == 20)
+        || matches!(s, [0xa9, 0x14, mid @ .., 0x87] if mid.len() == 20)
+}
+
 /// Every change of owner: the new holder starts without the old holder's PQ key or agent allowance.
 pub fn clear_pq(token_id: &str) {
     env::storage_remove(pq_key(token_id).as_bytes());
     env::storage_remove(agent_key(token_id).as_bytes());
+    env::storage_remove(user_key(token_id).as_bytes());
     // not the sign-in record: it expires by itself, so passing the NFT to an alt account can't clear it (V2-10)
 }
 
@@ -173,15 +241,16 @@ pub fn iso8601(ms: u64) -> String {
 /// The EIP-4361 message the NFT signs. Every field is checked, so the text can only ever be a sign-in: it
 /// can't be read as a transaction or as a NEAR Intents payload (those are JSON).
 #[allow(clippy::too_many_arguments)]
-pub fn siwe_message(domain: &str, address: &str, token_id: &str, holder: &AccountId, uri: &str, chain_id: u64,
-                    nonce: &str, now_ms: u64) -> String {
+pub fn siwe_message(domain: &str, address: &str, token_id: &str, holder: &AccountId, user: Option<&AccountId>, uri: &str,
+                    chain_id: u64, nonce: &str, now_ms: u64) -> String {
     require!(!domain.is_empty() && domain.len() <= 100
         && domain.bytes().all(|b| b.is_ascii_alphanumeric() || b"-.:".contains(&b)), "domain: a host name (and port)");
     require!(uri.len() <= 200 && uri.contains("://") && uri.bytes().all(|b| b.is_ascii_graphic()), "uri: an absolute URI");
     require!((8..=64).contains(&nonce.len()) && nonce.bytes().all(|b| b.is_ascii_alphanumeric()), "nonce: 8 to 64 letters or digits");
     require!(chain_id > 0, "chain_id: an EVM chain id");
+    let renter = user.map(|u| format!(", used by {u} (rented)")).unwrap_or_default();
     format!("{domain} wants you to sign in with your Ethereum account:\n{address}\n\n\
-             Sign in as Pusaka #{token_id} ({}), held by {holder}.\n\n\
+             Sign in as Pusaka #{token_id} ({}), held by {holder}{renter}.\n\n\
              URI: {uri}\nVersion: 1\nChain ID: {chain_id}\nNonce: {nonce}\nIssued At: {}\nExpiration Time: {}",
         env::current_account_id(), iso8601(now_ms), iso8601(now_ms + SIGN_IN_TTL_MS))
 }
@@ -349,11 +418,20 @@ impl Pusaka {
     #[payable]
     pub fn sign_in(&mut self, token_id: TokenId, domain: String, uri: String, chain_id: U64, nonce: String) -> Promise {
         near_sdk::assert_one_yocto();
-        self.assert_owner(&token_id);
+        // the holder, or (F11) the renter they named, while the rental lasts
+        let holder = self.owner_of(&token_id);
+        let caller = env::predecessor_account_id();
+        let user = if caller == holder {
+            self.assert_owner(&token_id);
+            None
+        } else {
+            require!(current_user(&token_id, &holder).as_ref() == Some(&caller), "NotOwner");
+            Some(caller)
+        };
         self.assert_free(&token_id); // not while listed, pledged or approved to a market
         let address = self.evm_address(token_id.clone()).unwrap_or_else(|| env::panic_str("NoEvmAddress: call evm_key first"));
         let now = env::block_timestamp_ms();
-        let message = siwe_message(&domain, &address, &token_id, &env::predecessor_account_id(), &uri, chain_id.0, &nonce, now);
+        let message = siwe_message(&domain, &address, &token_id, &holder, user.as_ref(), &uri, chain_id.0, &nonce, now);
         let hash = env::keccak256_array(format!("\x19Ethereum Signed Message:\n{}{message}", message.len()).as_bytes());
         raw_put(&sign_in_key(&token_id), &(now + SIGN_IN_TTL_MS));
         log_only(&token_id, &Event::SignIn { domain, expires_ms: U64(now + SIGN_IN_TTL_MS) });
@@ -378,6 +456,191 @@ impl Pusaka {
     pub fn on_sign_in(&self, message: String, address: String) -> Value {
         let signature: Option<Value> = env::promise_result_checked(0, 1024).ok().and_then(|b| serde_json::from_slice(&b).ok());
         json!({ "message": message, "address": address, "signature": signature })
+    }
+
+    // ---------- F10: prove the NFT's Bitcoin address with a BIP-322 signature ----------
+
+    /// Owner: the NFT's Bitcoin key (NEAR MPC) signs a BIP-322 "simple" proof that it controls the Pusaka's
+    /// address, over `message` prefixed by the contract with the token, holder and NEAR block, so a stale proof
+    /// says when and for whom it was made. Any BIP-322 verifier checks it (exchange whitelists, reserve audits).
+    /// Returns `{address_pkh, message, sighash, pubkey, signature}`; the client builds the witness. Attach 1 yocto.
+    #[payable]
+    pub fn sign_btc_message(&mut self, token_id: TokenId, message: String) -> Promise {
+        near_sdk::assert_one_yocto();
+        self.assert_owner(&token_id);
+        require!(message.len() <= 512 && !message.contains('\n'), "message: one line, at most 512 bytes");
+        let pk = self.btc_keys.get(&token_id).expect("KeyNotReady").clone();
+        let pkh = btc::hash160(&pk);
+        let full = format!("Pusaka #{token_id} ({}), held by {} at NEAR block {}: {message}",
+            env::current_account_id(), env::predecessor_account_id(), env::block_height());
+        let sighash = btc::bip322_sighash(&pkh, full.as_bytes());
+        log_only(&token_id, &Event::BtcMessageSigned { sighash: hex::encode(sighash) });
+        Promise::new(self.mpc.clone())
+            .function_call_weight(
+                "sign",
+                json!({"request": {"path": btc_path(&token_id), "payload_v2": {"Ecdsa": hex::encode(sighash)}, "domain_id": 0}}).to_string().into_bytes(),
+                NearToken::from_yoctonear(1),
+                Gas::from_tgas(SIGN_TGAS),
+                GasWeight(1),
+            )
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(5)).with_unused_gas_weight(0)
+                .on_btc_message_signed(full, hex::encode(sighash), hex::encode(&pk), hex::encode(pkh)))
+    }
+
+    /// Callback of `sign_btc_message`.
+    #[private]
+    pub fn on_btc_message_signed(&self, message: String, sighash: String, pubkey: String, address_pkh: String) -> Value {
+        let signature: Option<Value> = env::promise_result_checked(0, 1024).ok().and_then(|b| serde_json::from_slice(&b).ok());
+        json!({ "message": message, "sighash": sighash, "pubkey": pubkey, "address_pkh": address_pkh, "signature": signature })
+    }
+
+    // ---------- F11: a renter (ERC-4907 "user") ----------
+
+    /// Owner: lets `user` use this Pusaka until `expires_ms` (sign in as it), without being able to move it or what
+    /// it holds. `None` ends it. Cleared when the NFT changes hands. Attach ~0.01 NEAR for storage.
+    #[payable]
+    pub fn set_user(&mut self, token_id: TokenId, user: Option<AccountId>, expires_ms: U64) {
+        self.assert_owner(&token_id);
+        let owner = env::predecessor_account_id();
+        match user {
+            None => {
+                env::storage_remove(user_key(&token_id).as_bytes());
+            }
+            Some(u) => {
+                require!(u != owner, "user: someone other than the holder");
+                require!(expires_ms.0 > env::block_timestamp_ms(), "expires_ms: in the future");
+                if !env::storage_has_key(user_key(&token_id).as_bytes()) {
+                    charge_storage(200, 0);
+                }
+                raw_put(&user_key(&token_id), &Rental { owner, user: u.clone(), expires_ms: expires_ms.0 });
+                self.log(&token_id, Event::UserSet { user: u, expires_ms });
+            }
+        }
+    }
+
+    /// The current renter, while the rental lasts and the holder who granted it still holds the NFT.
+    pub fn user_of(&self, token_id: TokenId) -> Option<Value> {
+        let owner = self.tokens.owner_by_id.get(&token_id)?;
+        raw_get::<Rental>(&user_key(&token_id)).filter(|r| r.owner == owner && r.expires_ms > env::block_timestamp_ms())
+            .map(|r| json!({ "user": r.user, "expires_ms": U64(r.expires_ms) }))
+    }
+
+    // ---------- F12: buy a Pusaka with native Bitcoin, settled by NEAR's Bitcoin light client ----------
+
+    /// Owner: sells the Pusaka for `price_sats` paid on Bitcoin to `pay_to_script` (hex scriptPubKey). Locks it
+    /// like a listing. A buyer reserves it on NEAR first, so two buyers can never pay for the same sale.
+    #[payable]
+    pub fn list_for_btc(&mut self, token_id: TokenId, price_sats: U64, pay_to_script: String) {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        assert_no_live_sign_in(&token_id);
+        let script = hex::decode(&pay_to_script).unwrap_or_else(|_| env::panic_str("pay_to_script: hex"));
+        require!(standard_script(&script), "pay_to_script: a P2WPKH, P2WSH, P2TR, P2PKH or P2SH output script");
+        require!(price_sats.0 >= 1_000, "price_sats: at least 1,000");
+        charge_storage(300, 0);
+        let seller = env::predecessor_account_id();
+        raw_put(&btc_listing_key(&token_id), &BtcListing { seller, price_sats: price_sats.0, pay_to: script, buyer: None, until_ms: 0, nonce: 0, bond: 0 });
+        self.bump_epoch(&token_id, 1);
+        self.log(&token_id, Event::ListedForBtc { price_sats });
+    }
+
+    /// Seller: ends the BTC listing, unless a buyer's reservation is still running.
+    pub fn cancel_btc_listing(&mut self, token_id: TokenId) {
+        let l: BtcListing = raw_get(&btc_listing_key(&token_id)).unwrap_or_else(|| env::panic_str("NotListed"));
+        require!(l.seller == env::predecessor_account_id(), "NotOwner");
+        require!(l.buyer.is_none() || env::block_timestamp_ms() > l.until_ms, "Reserved: a buyer is paying; wait for the reservation to run out");
+        env::storage_remove(btc_listing_key(&token_id).as_bytes());
+        // an expired reservation's bond goes to the seller, for the time the Pusaka was held for nobody
+        if l.buyer.is_some() && l.bond > 0 {
+            refund(l.seller.clone(), NearToken::from_yoctonear(l.bond));
+        }
+        self.log(&token_id, Event::BtcListingCancelled);
+    }
+
+    /// Buyer: reserves the BTC sale for `RESERVE_MS` with a bond (at least 0.1 NEAR, back on purchase). Returns
+    /// the OP_RETURN data (hex) the Bitcoin payment must carry, binding it to this buyer and this reservation.
+    #[payable]
+    pub fn reserve_btc_purchase(&mut self, token_id: TokenId) -> String {
+        let mut l: BtcListing = raw_get(&btc_listing_key(&token_id)).unwrap_or_else(|| env::panic_str("NotListed"));
+        let buyer = env::predecessor_account_id();
+        require!(buyer != l.seller, "SelfBuy");
+        require!(env::attached_deposit() >= BTC_BOND, "attach 0.1 NEAR: a bond, back when you buy");
+        let now = env::block_timestamp_ms();
+        require!(l.buyer.is_none() || now > l.until_ms, "Reserved: another buyer is paying");
+        if l.buyer.is_some() && l.bond > 0 {
+            refund(l.seller.clone(), NearToken::from_yoctonear(l.bond));
+        }
+        l.nonce += 1;
+        l.buyer = Some(buyer.clone());
+        l.until_ms = now + RESERVE_MS;
+        l.bond = env::attached_deposit().as_yoctonear();
+        let memo = btc_purchase_memo(&token_id, &buyer, l.nonce);
+        raw_put(&btc_listing_key(&token_id), &l);
+        self.log(&token_id, Event::BtcPurchaseReserved { buyer, until_ms: U64(l.until_ms), op_return: hex::encode(&memo) });
+        hex::encode(memo)
+    }
+
+    /// The BTC listing: price, where to pay, the reservation and the OP_RETURN it needs.
+    pub fn btc_listing_of(&self, token_id: TokenId) -> Option<Value> {
+        raw_get::<BtcListing>(&btc_listing_key(&token_id)).map(|l| json!({
+            "seller": l.seller, "price_sats": U64(l.price_sats), "pay_to_script": hex::encode(&l.pay_to),
+            "buyer": l.buyer.clone(), "reserved_until_ms": U64(l.until_ms),
+            "op_return": l.buyer.as_ref().map(|b| hex::encode(btc_purchase_memo(&token_id, b, l.nonce))),
+        }))
+    }
+
+    /// Anyone: proves the reserved buyer's Bitcoin payment (output `pay_vout` pays the seller at least the price,
+    /// output `memo_vout` is the reservation's OP_RETURN) with NEAR's Bitcoin light client; then the NFT goes to
+    /// the buyer and the bond back to them.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prove_btc_purchase(&mut self, token_id: TokenId, tx_hex: String, pay_vout: u32, memo_vout: u32, block_hash: String,
+                              tx_index: U64, merkle_proof: Vec<String>, coinbase_txid: String, coinbase_merkle_proof: Vec<String>) -> Promise {
+        let l: BtcListing = raw_get(&btc_listing_key(&token_id)).unwrap_or_else(|| env::panic_str("NotListed"));
+        let buyer = l.buyer.clone().unwrap_or_else(|| env::panic_str("NotReserved"));
+        let tx = hex::decode(&tx_hex).unwrap_or_else(|_| env::panic_str("tx_hex: hex"));
+        require!(tx.len() != 64, "64-byte transactions are not accepted");
+        let (paid, script) = btc::output(&tx, pay_vout);
+        require!(script == l.pay_to && paid >= l.price_sats, "the payment output doesn't pay the seller the price");
+        let (_, memo) = btc::output(&tx, memo_vout);
+        let want = btc_purchase_memo(&token_id, &buyer, l.nonce);
+        require!(memo.len() == 2 + want.len() && memo[0] == 0x6a && memo[1] as usize == want.len() && memo[2..] == want[..],
+            "the OP_RETURN isn't this reservation's");
+        let txid_internal = btc::sha256d(&tx);
+        let args = btc::proof_args_borsh(&txid_internal, &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof, BTC_MIN_CONFIRMATIONS);
+        let mut txid = txid_internal;
+        txid.reverse();
+        Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
+            .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(30))
+                .on_btc_purchase_proven(token_id, buyer, U64(l.nonce), hex::encode(txid), U64(paid)))
+    }
+
+    /// Callback of `prove_btc_purchase`: hands the NFT over if the light client confirmed the payment and the
+    /// same reservation still stands.
+    #[private]
+    pub fn on_btc_purchase_proven(&mut self, token_id: TokenId, buyer: AccountId, nonce: U64, txid: String, sats: U64) -> bool {
+        let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
+        let Some(l) = raw_get::<BtcListing>(&btc_listing_key(&token_id)) else { return false };
+        if !ok || l.buyer.as_ref() != Some(&buyer) || l.nonce != nonce.0 {
+            return false;
+        }
+        env::storage_remove(btc_listing_key(&token_id).as_bytes());
+        self.tokens.internal_transfer(&l.seller, &buyer, &token_id, None, None);
+        clear_heir(&token_id);
+        clear_pq(&token_id);
+        self.log(&token_id, Event::BtcSale { from: l.seller, to: buyer.clone(), sats, txid });
+        refund(buyer, NearToken::from_yoctonear(l.bond));
+        true
+    }
+
+    /// F13: proof of reserves as one composable view: every Pusaka's verified sats (light-client proven, net of
+    /// everything signed away) and the total, for other contracts and dashboards.
+    pub fn reserves(&self, from_index: Option<U64>, limit: Option<U64>) -> Value {
+        let rows: Vec<Value> = self.tokens.owner_by_id.iter().map(|(id, _)| id.clone())
+            .skip(from_index.map_or(0, |v| v.0) as usize).take(limit.map_or(100, |v| v.0) as usize)
+            .map(|id| json!({ "verified_sats": self.verified_sats(&id), "token_id": id })).collect();
+        let total: u64 = rows.iter().map(|r| r["verified_sats"].as_u64().unwrap_or(0)).sum();
+        json!({ "light_client": BTC_LIGHT_CLIENT, "tokens": rows, "total_sats": total })
     }
 
     // ---------- F6: post-quantum (ML-DSA-65) ----------

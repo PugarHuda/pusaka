@@ -217,3 +217,73 @@ pub fn txid(tx: &BitcoinTransaction) -> String {
 pub fn unsigned_hex(tx: &BitcoinTransaction) -> String {
     hex::encode(tx.serialize())
 }
+
+// ---------- BIP-322 "simple" (P2WPKH): prove control of the address by signing a message ----------
+// The key signs the BIP143 sighash of a virtual `to_sign` tx spending a virtual `to_spend` tx whose
+// input is the null outpoint: neither can ever be mined, so the signature can't move real coins.
+
+fn le32(v: u32) -> [u8; 4] {
+    v.to_le_bytes()
+}
+
+/// BIP-322 tagged hash of the message.
+pub fn bip322_message_hash(msg: &[u8]) -> [u8; 32] {
+    let tag = env::sha256_array(b"BIP0322-signed-message");
+    env::sha256_array(&[&tag[..], &tag[..], msg].concat())
+}
+
+/// `to_spend`, serialized (no witness): null input carrying OP_0 PUSH32 <message hash>, one 0-value output to the address.
+pub fn bip322_to_spend(pkh: &[u8; 20], msg: &[u8]) -> Vec<u8> {
+    let mut t = le32(0).to_vec();
+    t.push(1);
+    t.extend_from_slice(&[0u8; 32]);
+    t.extend_from_slice(&le32(0xffff_ffff));
+    t.extend_from_slice(&[34, 0x00, 0x20]);
+    t.extend_from_slice(&bip322_message_hash(msg));
+    t.extend_from_slice(&le32(0));
+    t.push(1);
+    t.extend_from_slice(&0u64.to_le_bytes());
+    let spk = p2wpkh_script(pkh);
+    t.push(spk.len() as u8);
+    t.extend_from_slice(&spk);
+    t.extend_from_slice(&le32(0));
+    t
+}
+
+#[cfg(test)]
+/// `to_sign`, serialized (no witness): spends output 0 of `to_spend` into one 0-value OP_RETURN (for the test vectors).
+pub fn bip322_to_sign(to_spend_txid: &[u8; 32]) -> Vec<u8> {
+    let mut t = le32(0).to_vec();
+    t.push(1);
+    t.extend_from_slice(to_spend_txid);
+    t.extend_from_slice(&le32(0));
+    t.push(0);
+    t.extend_from_slice(&le32(0));
+    t.extend_from_slice(&[1]);
+    t.extend_from_slice(&0u64.to_le_bytes());
+    t.extend_from_slice(&[1, 0x6a]);
+    t.extend_from_slice(&le32(0));
+    t
+}
+
+/// The BIP143 SIGHASH_ALL digest of `to_sign`'s only input, which the address's key signs.
+pub fn bip322_sighash(pkh: &[u8; 20], msg: &[u8]) -> [u8; 32] {
+    let spend_txid = sha256d(&bip322_to_spend(pkh, msg));
+    let mut outpoint = spend_txid.to_vec();
+    outpoint.extend_from_slice(&le32(0));
+    let mut outputs = 0u64.to_le_bytes().to_vec();
+    outputs.extend_from_slice(&[1, 0x6a]);
+    let code = p2wpkh_script_code(pkh);
+    let mut p = le32(0).to_vec();
+    p.extend_from_slice(&sha256d(&outpoint));
+    p.extend_from_slice(&sha256d(&le32(0)));
+    p.extend_from_slice(&outpoint);
+    p.push(code.len() as u8);
+    p.extend_from_slice(&code);
+    p.extend_from_slice(&0u64.to_le_bytes());
+    p.extend_from_slice(&le32(0));
+    p.extend_from_slice(&sha256d(&outputs));
+    p.extend_from_slice(&le32(0));
+    p.extend_from_slice(&le32(1)); // SIGHASH_ALL
+    sha256d(&p)
+}

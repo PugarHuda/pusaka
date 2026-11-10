@@ -42,6 +42,10 @@ Scanner dijalankan ulang di semua komponen.
 | V2-11b | Jalan pintas V2-11: akun NFT v2 memegang Pusaka v1 (atau NFT kontrak lain) dan memasang perintah di sana; Pusaka yang sedang sign-in dititipkan ke akun NFT lain lalu ikut terjual | Tinggi / Sedang | Sama seperti V2-11 | review keamanan otomatis atas proposal 14; tes `v2_11_no_standing_order_on_a_pusaka_held_from_another_contract`, `v2_11_a_signed_in_pusaka_cant_be_tucked_into_another_pusakas_account` | **Fixed**, proposal 15: `account_call` memakai **allowlist** method (transfer NEAR/FT/NFT/MT, penarikan Intents, storage, wNEAR, staking) untuk semua receiver; ini juga menutup batas "dicocokkan lewat nama" di V2-9. `nft_transfer` ke akun `0s…`/`t<id>.` menunggu sign-in habis |
 | V2-12 | Callback MPC lama (`on_signed`, `on_eth_signed`, `on_near_*`, `on_sol_*`) melepas kunci `pending` tanpa cek siapa yang memasangnya | Rendah | Hanya bila callback MPC terlambat >600 blok lalu ada operasi baru | review adversarial | **Known**: hanya `on_account_call` yang memakai `since`; v1 final jadi tidak bisa diubah |
 | V2-13 | `name_account` kedua kali kehilangan 0,02 NEAR (refund ke kontrak) | Rendah | Kesalahan pengguna sendiri | review adversarial | **Known** |
+| V2-14 | F12 beli dengan BTC: dua pembeli membayar untuk penjualan yang sama; pembayaran lama dipakai untuk reservasi baru; ahli waris mengambil NFT saat pembeli sedang membayar; penjual membatalkan saat pembeli membayar | Tinggi | Pembeli kehilangan BTC | tes `f12_*` (11), tolakan live `CVmWWhPF…`, `2EJXR7nx…` | **Fixed by design**: reservasi + bond 0,1 NEAR (satu pembeli per kali), OP_RETURN mengikat kontrak/token/pembeli/nonce, callback hanya menyerahkan NFT bila nonce dan pembeli masih sama, `cancel_btc_listing` dan klaim ahli waris menunggu reservasi habis. Sisa: pembeli yang membayar setelah reservasinya habis dan diganti pembeli lain kehilangan pembayaran (harus membayar dan membuktikan dalam 6 jam) |
+| V2-15 | F10 BIP-322: tanda tangan yang bisa dipakai sebagai transaksi nyata | Tinggi bila salah | Kontrak membangun sendiri `to_spend`/`to_sign` (input outpoint nol, tidak bisa ditambang); caller hanya memberi teks pesan satu baris, diawali token/pemegang/blok NEAR | tes vektor resmi BIP-322 (Rust dan JS) | **By design** |
+| M-1 | Market (`pusaka-market.testnet`): isi bid ganda, payout palsu dari kontrak NFT, peminjam/pihak ketiga menaruh Pusaka orang lain, seize sebelum lelang selesai, refinance saat repay berjalan | Tinggi | Dana escrow bidder/lender | 40 tes di `market/src/tests.rs`, tolakan live `SatsOutOfRange` `Bv3LX3M5…` | **Fixed by design**: bid ditandai `filling` sebelum panggilan async; harga dihitung ulang dari `verified_sats` on-chain; payout tidak pernah melebihi harga; `sender_id == previous_owner_id`; flag `busy` per loan. Kunci akun market dihapus 13 Nov bersama v2 |
+| M-2 | Market: callback kehabisan gas meninggalkan bid dalam status `filling` | Rendah | Bid tidak bisa dibatalkan | review kode | **Known**: gas statis disetel untuk seluruh rantai (≈105 TGas); tidak ada pintu darurat |
 
 ## Scanner: sebelum vs sesudah
 | Alat | Putaran 1 (8 Nov) | Putaran 2 (9 Nov) |
@@ -70,7 +74,7 @@ Scanner dijalankan ulang di semua komponen.
 | Upgradeability | hanya bytes yang sha256-nya disetujui DAO, setelah timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Sentralisasi | upgrade **di-renounce** 8 Nov (DAO proposal 7, tx `GdASfxh5…`); kontrak 0 key → tidak ada pihak yang bisa mengubah kode | `verify.mjs`: "upgrades renounced: final" |
 
-PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (302 tes, termasuk fuzz dan invariant).
+PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (324 tes, termasuk fuzz dan invariant).
 
 ## Frontend / backend
 | Pemeriksaan | Hasil |
@@ -85,7 +89,7 @@ PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan me
 
 ## Catatan verifikasi
 Run GitHub Actions untuk commit putaran ini tidak dimulai karena kuota menit Actions repo private habis atau batas belanja tercapai, jadi bukan karena kegagalan kode. Verifikasinya dijalankan lokal:
-- `cargo test` (302) dan unit Node;
+- `cargo test` (324) dan unit Node;
 - `node api/_nearai.test.mjs` dan `node api/_holder.test.mjs`;
 - 11 tes `live.spec` yang relevan, terhadap produksi.
 

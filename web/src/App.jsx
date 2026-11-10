@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 const V2Page = lazy(() => import("./v2.jsx")); // #/v2: Pusaka v2, loaded on demand
+const ExchangePage = lazy(() => import("./exchange.jsx")); // #/bids and #/reserves, loaded on demand
 import {
   CONTRACT, IS_SIBLING, ORIGINAL, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity, refusals,
@@ -147,6 +148,8 @@ function useRoute() {
   if (/^#\/agents\/?$/.test(hash)) return "agents";
   if (/^#\/refused\/?$/.test(hash)) return "refused";
   if (/^#\/market\/?$/.test(hash)) return "market";
+  if (/^#\/bids\/?$/.test(hash)) return "bids";
+  if (/^#\/reserves\/?$/.test(hash)) return "reserves";
   const v2 = hash.match(/^#\/v2(?:\/(\d{1,30}))?\/?$/);
   if (v2) return v2[1] ? `v2:${BigInt(v2[1])}` : "v2:";
   const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
@@ -161,7 +164,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId?.startsWith("v2:") ? "Pusaka v2 — the NFT owns an account" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId === "bids" ? "Bids and loans — Pusaka" : tokenId === "reserves" ? "Proof of reserves — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId?.startsWith("v2:") ? "Pusaka v2 — the NFT owns an account" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -211,6 +214,7 @@ export default function App() {
         : tokenId === "agents" ? <Agents />
         : tokenId === "refused" ? <Refused />
         : tokenId === "market" ? <Market accountId={accountId} />
+        : tokenId === "bids" || tokenId === "reserves" ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><ExchangePage page={tokenId} accountId={accountId} /></Suspense>
         : tokenId?.startsWith("v2:") ? <Suspense fallback={<section><p className="muted">Loading Pusaka v2…</p></section>}><V2Page id={tokenId.slice(3)} accountId={accountId} /></Suspense>
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
@@ -479,6 +483,7 @@ function Market({ accountId }) {
       <header className="market-head">
         <h1>Market</h1>
         <p className="muted">Every Pusaka, the Bitcoin proven inside it, and what you can do with it now: buy one for sale, lend against one asking for a loan, or take a standing offer.</p>
+        {NETWORK === "testnet" && <p className="muted"><a href="#/bids">Bids per verified sat and loans with no due date</a> (a second market contract) · <a href="#/reserves">Proof of reserves</a></p>}
         {tokens?.length > 0 && (
           <dl className="market-stats">
             <div><dt>Pusaka</dt><dd>{tokens.length}</dd></div>
@@ -1621,6 +1626,12 @@ const REFUSED = [
   { v2: true, hash: "65pQSqHLy1HTJ5KNRHS9sh2w88Wvocka51mCJMc5VVq8", attack: "The seller sells the NFT into NEAR Intents while a sign-in as it is still valid", test: "v2_10_no_nft_transfer_call_while_a_sign_in_is_valid" },
   { v2: true, hash: "FC3P4S5yFgkJgDy8Kt4qZaSAzfJmVpRqsEspzgLxssb5", attack: "The seller has the NFT's account put a gift link on another Pusaka it holds, to take that one back after the sale", test: "v2_11_no_gift_link_on_a_held_pusaka" },
   { v2: true, hash: "86Mib8DoggMZUchWQGdRsraT79qhSyjxixt15G7CizfN", attack: "The same, on a Pusaka from the other contract (v1) the NFT's account holds", test: "v2_11_no_standing_order_on_a_pusaka_held_from_another_contract" },
+  // Pusaka v2: proving its Bitcoin address, renting it, selling it for Bitcoin
+  { v2: true, hash: "GarJPgkmv8yRJDRXkfeayPAFBYucije11aCzdaQA5SPE", attack: "A stranger has the NFT's Bitcoin key sign a proof of its address for them", test: "f10_only_the_holder_signs_a_bitcoin_message" },
+  { v2: true, hash: "AFL1aSPJCJRNPHAS92TfHx1PLw2B9wXgixUUMScEsX3f", attack: "A stranger signs in as a rented Pusaka", test: "f11_an_expired_rental_signs_nothing" },
+  { v2: true, hash: "DpkwLCoPfPq3eTZmLcCf1siZ8sRqgtnPwpzTrXGvoxmK", attack: "The renter tries to sell the Pusaka they only rent", test: "f11_the_renter_cant_move_the_nft" },
+  { v2: true, hash: "2EJXR7nxbyTmCYwMzUeyHnHtdMeaGKeQNPzpwViiSdmo", attack: "The seller lists it again while it's for sale for Bitcoin", test: "f12_a_btc_listing_locks_the_pusaka" },
+  { v2: true, hash: "CVmWWhPFKMtsjuaj8aPMYxRZdx7D2pjZ8UiRSrM2QSXq", attack: "A Bitcoin payment made for another reservation is used to claim the Pusaka", test: "f12_a_payment_for_another_reservation_is_refused" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";
 const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.v2);
@@ -1674,7 +1685,7 @@ function Agents() {
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
-      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo adds 39 more tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 54 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
       {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>

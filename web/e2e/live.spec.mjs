@@ -452,3 +452,20 @@ test("?contract=pusaka-v2.testnet opens the whole app on Pusaka v2, and only tha
   await expect(page.getByRole("note")).toHaveCount(0); // not allowlisted: the original contract
   expect(errors).toEqual([]);
 });
+
+test("Bids and loans: the market contract's standing bids per verified sat and loan offers, read from chain", async ({ page }) => {
+  const errors = errorsOf(page);
+  await page.goto("/#/bids");
+  await expect(page.getByRole("heading", { name: "Bids and loans" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("table.ladder tbody tr").first()).toBeVisible({ timeout: 30_000 }); // the standing bid kept open for judges
+  await expect(page.getByText(/NEAR at [\d.]+% a year, no due date/).first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("Proof of reserves: every Pusaka's verified sats, the same total as /api/reserves", async ({ page, request }) => {
+  const errors = errorsOf(page);
+  const api = await (await request.get("/api/reserves")).json();
+  await page.goto("/#/reserves");
+  await expect(page.getByText(`${(api.total_verified_sats / 1e8).toFixed(8)} BTC`)).toBeVisible({ timeout: 30_000 });
+  expect(errors).toEqual([]);
+});

@@ -22,7 +22,7 @@ Brief track, dikutip:
 |---|---|---|
 | Reproduksibilitas (penyaring AI) | 9 | Repo publik. Sisanya sudah ada: `npm run demo`, `verify.mjs`, JUDGES.md, CI hijau lagi sejak `44bda6a` |
 | Klaim = kenyataan on-chain | 10 | Pertahankan: `verify.mjs` harian di CI |
-| Technical implementation | 9 | — (302 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
+| Technical implementation | 9 | — (324 tes kontrak termasuk fuzz + invariant, coverage baris 96 %, light client, MPC 3 domain + CKD + foreign-tx) |
 | Kesesuaian `nfts` ("NFT sebagai akun yang memiliki uang") | 9 | Brief track praktis mendeskripsikan Pusaka |
 | Kesesuaian `defi` ("settle… through NEAR Intents", "nobody to switch it off") | 6 | Intents di Pusaka hanya **quote dry-run**: likuiditas 1Click hanya ada di mainnet. Pemimpin `defi` (Warrant, setllend) **di mainnet**, dan Warrant menyelesaikan transaksinya di dalam `intents.near`. Untuk naik: deploy mainnet + satu jalur keluar Intents yang benar-benar dieksekusi |
 | Kesesuaian `open` | 8 | Kombinasi BTC × agen AI (MCP) × pewarisan sudah unik |
@@ -117,7 +117,7 @@ Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", bar
 **Aksi, urut kenaikan skor per jam:**
 1. Repo publik (user), paling lambat 12 Nov. Repro 1 → 9, dan CI jadi gratis lagi sehingga badge hijau.
 2. Video 2–2,5 menit + post X (user). Kalimat pembuka: "BTC native, dibuktikan light client". Tunjukkan layar nyata + explorer, bukan animasi.
-3. ~~Samakan angka tes~~: selesai (302 di semua dokumen).
+3. ~~Samakan angka tes~~: selesai (324 di semua dokumen).
 4. ~~Kotak "What's real / not"~~: selesai, di atas README.
 5. ~~`verify.mjs` mengecek v2~~: selesai. Hapus key v2 pada 13 Nov.
 6. Mainnet (user, butuh dana) adalah satu-satunya cara mengejar Contri, Hallmark dan Warrant di "impact".
@@ -164,6 +164,15 @@ Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", bar
 | F9 | **Sign in sebagai NFT** (EIP-4361, kunci EVM MPC milik NFT) | Login/akses milik alamat NFT ikut pindah ke pemegang baru | Sedang (nfts "carry credentials") | — | 3 j | Rendah | — | **SELESAI 10 Nov** (proposal 11): `sign_in`, 6 tes `f9_*`, live `BBN85r1K…` + tolakan `NotOwner`, tool MCP `pusaka_sign_in`, tombol di `#/v2/<id>` |
 | I1 | **NFT dijual utuh lewat NEAR Intents** (`nft_transfer_call` ke verifier defuse, `token_diff` NEP-413) | Pusaka #15 (10.000 sats) terjual 5 USDC dalam satu tx; harga tidak cocok ditolak dan NFT kembali | Tinggi (defi: Intents dipakai sebagai settlement aset nyata) | — | 2 j | Rendah | — | **SELESAI 10 Nov** tanpa ubah kontrak: `scripts/intents-nft-sale.mjs`, tx `ALQN3eLY…` |
 | I2 | **NFT punya saldo NEAR Intents sendiri**, ikut pindah saat NFT dipindah | Saldo dikendalikan pemegang saat ini saja; celah V2-9 ditutup | Sedang (defi + nfts) | — | 2 j | Rendah | — | **SELESAI 10 Nov**: `scripts/v2-intents-balance.mjs`, tampil di `#/v2/<id>` |
+| A1 | **Bid per sat terverifikasi** (pola Blur collection bids) di kontrak market terpisah | Exit instan untuk setiap Pusaka, harga mengikuti isi yang terbukti | Tinggi (defi) | Blur | 4 j | Sedang | — | **SELESAI 10 Nov**: `pusaka-market.testnet`, live `5rApe8UQ…` + tolakan `SatsOutOfRange` |
+| A2 | **Pinjaman tanpa jatuh tempo** (Blend: call → lelang bunga → refinance/seize) | Likuiditas pinjaman tanpa oracle | Tinggi (defi) | Paradigm/Blur Blend | 4 j | Sedang | — | **SELESAI 10 Nov**: live offer → call → refinance 173,53 % → repay |
+| A3 | **Bukti alamat BTC BIP-322** dari kunci MPC NFT | Bukti kepemilikan alamat yang diterima dompet/bursa Bitcoin | Sedang (nfts, open) | BIP-322 | 2 j | Rendah | — | **SELESAI** (proposal 16), cocok dengan vektor resmi |
+| A4 | **Penyewa (ERC-4907 user)** | Sewa akses tanpa menyerahkan NFT/BTC | Rendah | ERC-4907 | 1 j | Rendah | — | **SELESAI** (proposal 16) |
+| A5 | **Beli Pusaka dengan BTC asli**, dibuktikan light client | Pembeli Bitcoin tanpa token NEAR | Tinggi (nfts, defi) | Atomiq (pola) | 5 j | Sedang | — | **KONTRAK SELESAI** (proposal 16, 11 tes, listing+reservasi live); pembayaran BTC live tertunda: ISP memblokir explorer Bitcoin dari mesin ini |
+| A6 | **Halaman proof-of-reserves** + view `reserves()` | Primitive PoR yang bisa diverifikasi ulang | Sedang (defi) | Chainlink PoR, Lombard | 2 j | Rendah | — | **SELESAI**: `#/reserves` |
+| A7 | Harga Pyth / batas LTV on-chain | — | — | Pyth | — | — | — | **DITOLAK**: feed testnet basi sejak Juni 2026 dan Hermes kini butuh API key berbayar (401) |
+| A8 | Penundaan penarikan + veto guardian (Zodiac Delay) | — | — | Safe/Zodiac | — | — | — | **DITOLAK**: pencuri kunci cukup memindahkan NFT-nya; penundaan yang efektif harus menunda semua aksi pemilik (refaktor besar). Kunci PQ (F6) sudah membuat kunci NEAR curian tidak berguna |
+| A9 | Pool pinjaman instan (Liquidium/Rhea) | — | — | Liquidium | — | — | — | **TIDAK DIBANGUN**: butuh oracle harga on-chain (lihat A7) dan akuntansi share; terlalu berisiko untuk 3 hari |
 
 ## 8. Spesifikasi fitur terpilih
 ### F2 — Refusal room

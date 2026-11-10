@@ -143,10 +143,10 @@ export async function inspect(token_id) {
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
-  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account"]);
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account", "pusaka_market_book"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
-const OUTFLOW_TOOLS = new Set(["pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send"]);
+const OUTFLOW_TOOLS = new Set(["pusaka_sell_into_bid", "pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send"]);
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -666,6 +666,52 @@ reg("pusaka_sign_in", {
     args: { token_id, domain, uri, chain_id: String(chain_id), nonce } });
   const signed = getTransactionLastResult(o);
   return { message: signed.message, address: signed.address, signature: await signInSignature(signed), explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
+}));
+
+// ---------- the market contract (market/, pusaka-market.testnet): bids per verified sat, perpetual loans ----------
+const MARKET = process.env.PUSAKA_MARKET ?? (NETWORK === "testnet" ? "pusaka-market.testnet" : null);
+const mview = (method, args = {}) => { if (!MARKET) throw new Error(`No Pusaka market on ${NETWORK}.`); return provider.callFunction({ contractId: MARKET, method, args, blockQuery: { finality: "optimistic" } }); };
+
+reg("pusaka_market_book", {
+  description: "The market contract's book: standing bids priced per verified sat (best first, with what each would pay for a given Pusaka), loan offers with no due date, and open perpetual loans with their live debt and refinancing-auction rate.",
+  inputSchema: { token_id: z.string().optional() },
+}, tool(async ({ token_id }) => {
+  const [bids, offers, loans] = await Promise.all([mview("bids", { limit: 100 }), mview("offers", { limit: 100 }), mview("loans", { limit: 100 })]);
+  const sats = token_id ? BigInt((await view("token_info", { token_id })).verified_sats) : null;
+  return { market: MARKET,
+    bids: bids.map((b) => ({ bid_id: b.id, bidder: b.bidder, near_per_10k_sats: toNear(BigInt(b.price_per_sat) * 10_000n), sats_range: [Number(b.min_sats), Number(b.max_sats)],
+      ...(sats != null && { pays_for_this_pusaka_near: sats >= BigInt(b.min_sats) && sats <= BigInt(b.max_sats) ? toNear(sats * BigInt(b.price_per_sat)) : null }) })),
+    offers: offers.map((o) => ({ offer_id: o.id, lender: o.lender, principal_near: toNear(o.principal), rate_pct_year: o.rate_bps / 100, min_sats: Number(o.min_sats) })),
+    loans: loans.map((l) => ({ loan_id: l.loan.id, token_id: l.loan.token_id, borrower: l.loan.borrower, lender: l.loan.lender, debt_near: toNear(l.debt),
+      rate_pct_year: l.loan.rate_bps / 100, auction_rate_pct_year: l.auction_rate_bps == null ? null : l.auction_rate_bps / 100 })) };
+}));
+
+reg("pusaka_sell_into_bid", {
+  description: "Holder: sell a Pusaka into a standing bid on the market contract (nft_approve with the bid id). The market reads the Pusaka's verified sats on-chain and pays verified_sats x the bid's price per sat; if the token doesn't fit the bid, nothing moves.",
+  inputSchema: { token_id: z.string(), bid_id: z.string() },
+}, tool(async ({ token_id, bid_id }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const bid = await mview("bid", { bid_id });
+  if (!bid) throw new Error(`No bid ${bid_id}.`);
+  const sats = BigInt((await view("token_info", { token_id })).verified_sats);
+  await outflow(bid.bidder, `sell Pusaka #${token_id} (${sats} sats) into bid ${bid_id} for ${toNear(sats * BigInt(bid.price_per_sat))} NEAR`);
+  const o = await account.callFunctionRaw({ contractId: CONTRACT, methodName: "nft_approve", gas: teraToGas(300), deposit: 10n ** 21n,
+    args: { token_id, account_id: MARKET, msg: JSON.stringify({ bid_id: Number(bid_id) }) } });
+  const ev = o.receipts_outcome.flatMap((r) => r.outcome.logs).filter((l) => l.includes("pusaka-market")).map((l) => JSON.parse(l.slice(11)));
+  const filled = ev.find((e) => e.event === "bid_filled");
+  if (!filled) throw new Error(`The market didn't take it: ${ev.find((e) => e.event === "bid_fill_failed")?.data[0].reason ?? "no answer"}. Run nft_revoke_all to unlock its BTC again.`);
+  return { sold: true, price_near: toNear(filled.data[0].price), buyer: bid.bidder, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
+}));
+
+reg("pusaka_prove_btc_address", {
+  description: "Pusaka v2, holder: the NFT's Bitcoin key (NEAR MPC) signs a BIP-322 proof that it controls the Pusaka's Bitcoin address, over a message the contract prefixes with the token, holder and NEAR block. Returns the address, message and the base64 BIP-322 signature, already verified.",
+  inputSchema: { token_id: z.string(), message: z.string().max(200).default("proof of reserves") },
+}, tool(async ({ token_id, message }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const o = await account.callFunctionRaw({ contractId: V2C, methodName: "sign_btc_message", gas: teraToGas(300), deposit: 1n, args: { token_id, message } });
+  const signed = getTransactionLastResult(o);
+  const { witnessFromMpc } = await import("@pusaka/shared/bip322");
+  return { address: btcAddress(signed.pubkey), message: signed.message, bip322_signature: `smp${witnessFromMpc(signed)}`, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
 reg("pusaka_pq_unlock", {
