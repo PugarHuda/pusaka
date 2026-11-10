@@ -16,7 +16,7 @@ Everything network-specific lives in `shared/btc.mjs` (`CONFIG`) and one Rust fe
 ## Steps
 
 1. **Account.** Create the contract account in a NEAR wallet (e.g. `pusaka.near` or a sub-account of the team's account). Fund it with ~7 NEAR: the 628 KB contract (measured 8 Nov) needs ~6.3 NEAR of storage, the rest covers gas.
-2. **Build** with `--features mainnet`, run `cargo test` (371 tests) and `cargo test --features mainnet --no-run`.
+2. **Build** with `--features mainnet`, run `cargo test` (375 tests) and `cargo test --features mainnet --no-run`.
 3. **Deploy and init:** deploy the wasm, then call `new({"mpc": "v1.signer"})`.
 4. **Smoke test with tiny amounts:** mint (0.1 NEAR deposit, mostly refunded), send ~10,000 sats to the Pusaka's `bc1…` address, list / buy between two accounts, withdraw ~2,000 sats. Mainnet MPC requests may carry a fee; check `v1.signer` before the first `withdraw`.
 5. **Web:** set `VITE_NETWORK=mainnet` and `VITE_CONTRACT` in Vercel (a separate project or preview, so the testnet demo stays up for judges).

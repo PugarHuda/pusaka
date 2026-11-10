@@ -318,9 +318,31 @@ fn btc_exercise_nonce_key(token_id: &str) -> String {
 /// A reserved Bitcoin exercise holds the Pusaka (and the call) until its time to pay plus the proof grace, and while a
 /// proof is with the light client (so a proof sent in the last seconds of the grace can't lose to a cancel).
 fn btc_exercise_holds(token_id: &str) -> bool {
-    raw_get::<u32>(&btc_exercise_proving_key(token_id)).unwrap_or(0) > 0
-        || raw_get::<BtcStrike>(&btc_strike_key(token_id))
-            .is_some_and(|b| b.until_ms > 0 && env::block_timestamp_ms() <= b.until_ms.saturating_add(PROOF_GRACE_MS))
+    proofs_in_flight(token_id) > 0 || btc_exercise_window_open(token_id)
+}
+
+/// The reserved time to pay plus the proof grace. Only this admits a new proof: proofs in flight keep the Pusaka held
+/// but never open the door to more, so re-sending a public payment can't keep the writer locked forever.
+fn btc_exercise_window_open(token_id: &str) -> bool {
+    raw_get::<BtcStrike>(&btc_strike_key(token_id))
+        .is_some_and(|b| b.until_ms > 0 && env::block_timestamp_ms() <= b.until_ms.saturating_add(PROOF_GRACE_MS))
+}
+
+/// A proof's callback comes back within blocks; if one never does (out of gas), the count expires instead of holding forever.
+const PROOF_FLIGHT_MS: u64 = 3_600_000;
+
+/// How many proofs are with the light client, and when the last one left: (count, started_ms). Proposal 20 stored the
+/// marker as an empty value and proposal 21 as a bare count: both read as one proof that started now.
+fn proof_flight(token_id: &str) -> (u32, u64) {
+    let now = env::block_timestamp_ms();
+    env::storage_read(btc_exercise_proving_key(token_id).as_bytes())
+        .map(|b| near_sdk::borsh::from_slice::<(u32, u64)>(&b).unwrap_or((1, now)))
+        .unwrap_or((0, now))
+}
+
+fn proofs_in_flight(token_id: &str) -> u32 {
+    let (n, started) = proof_flight(token_id);
+    if env::block_timestamp_ms() > started.saturating_add(PROOF_FLIGHT_MS) { 0 } else { n }
 }
 
 fn btc_exercise_proving_key(token_id: &str) -> String {
@@ -945,6 +967,7 @@ impl Pusaka {
         require!(c.holder.as_ref() == Some(&env::predecessor_account_id()), "only the call's holder");
         require!(env::block_timestamp_ms() <= c.expires_ms, "Expired");
         require!(!btc_exercise_holds(&token_id), "Reserved: a Bitcoin exercise is under way");
+        require!(to != c.writer, "the writer can't hold its own call");
         c.holder = Some(to.clone());
         raw_put(&call_key(&token_id), &c);
         self.log(&token_id, Event::CallTransferred { to });
@@ -1033,12 +1056,13 @@ impl Pusaka {
         let c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
         let b: BtcStrike = raw_get(&btc_strike_key(&token_id)).unwrap_or_else(|| env::panic_str("this call's strike is paid in NEAR"));
         let holder = c.holder.clone().unwrap_or_else(|| env::panic_str("nobody holds this call"));
-        require!(btc_exercise_holds(&token_id), "NotReserved: the holder reserves a Bitcoin exercise first");
+        require!(holder != c.writer, "the writer can't exercise its own call");
+        require!(btc_exercise_window_open(&token_id), "NotReserved: the holder reserves a Bitcoin exercise first, and proves it in time");
         let memo = btc_exercise_memo(&token_id, &holder, b.nonce);
         let (args, txid, paid) = check_btc_payment(&tx_hex, pay_vout, memo_vout, &b.pay_to, b.sats, &memo,
             &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof);
         // a count, not a lock: a bogus proof sent alongside can't keep the genuine one out
-        raw_put(&btc_exercise_proving_key(&token_id), &(raw_get::<u32>(&btc_exercise_proving_key(&token_id)).unwrap_or(0) + 1));
+        raw_put(&btc_exercise_proving_key(&token_id), &(proofs_in_flight(&token_id) + 1, env::block_timestamp_ms()));
         Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
             .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(30))
@@ -1049,13 +1073,14 @@ impl Pusaka {
     /// the same reservation still stands.
     #[private]
     pub fn on_btc_exercise_proven(&mut self, token_id: TokenId, holder: AccountId, nonce: U64, txid: String, sats: U64) -> bool {
-        match raw_get::<u32>(&btc_exercise_proving_key(&token_id)).unwrap_or(0) {
-            0 | 1 => { env::storage_remove(btc_exercise_proving_key(&token_id).as_bytes()); }
-            n => raw_put(&btc_exercise_proving_key(&token_id), &(n - 1)),
+        match proof_flight(&token_id) {
+            (0 | 1, _) => { env::storage_remove(btc_exercise_proving_key(&token_id).as_bytes()); }
+            (n, started) => raw_put(&btc_exercise_proving_key(&token_id), &(n - 1, started)),
         }
         let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
         let (Some(c), Some(b)) = (raw_get::<CoveredCall>(&call_key(&token_id)), raw_get::<BtcStrike>(&btc_strike_key(&token_id))) else { return false };
-        if !ok || c.holder.as_ref() != Some(&holder) || b.nonce != nonce.0 || env::storage_has_key(btc_paid_key(&txid).as_bytes()) {
+        // after the count went down: whatever returns here leaves no proof counted (a transfer to oneself would panic)
+        if !ok || c.holder.as_ref() != Some(&holder) || holder == c.writer || b.nonce != nonce.0 || env::storage_has_key(btc_paid_key(&txid).as_bytes()) {
             return false;
         }
         // the call holds the Pusaka (lock_reason); checked again so internal_transfer can't panic halfway

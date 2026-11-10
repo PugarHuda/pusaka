@@ -4626,6 +4626,50 @@ mod f16 {
     }
 
     #[test]
+    #[should_panic(expected = "NotReserved")]
+    fn f16_proofs_in_flight_cant_be_chained_past_the_grace() {
+        // the payment is public on Bitcoin: re-sending it with bogus merkle proofs must not hold the writer forever
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        let tx = payment(SCRIPT, 50_000, &memo);
+        let last = 3_000 + crate::v2::RESERVE_MS + crate::v2::PROOF_GRACE_MS;
+        prove(&mut c, tx.clone(), last);
+        prove(&mut c, tx, last + 1);
+    }
+
+    #[test]
+    fn f16_a_proposal_20_marker_counts_as_one_proof() {
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        let tx = payment(SCRIPT, 50_000, &memo);
+        env::storage_write(b"cp:1", b""); // the format proposal 20 wrote (proposal 21: a bare u32)
+        prove(&mut c, tx.clone(), 4_000);
+        as_contract(vec![PromiseResult::Successful(b"false".to_vec())]);
+        c.on_btc_exercise_proven("1".into(), acc("bob.testnet"), U64(1), txid_of(&tx), U64(50_000));
+        as_contract(vec![PromiseResult::Successful(b"false".to_vec())]);
+        c.on_btc_exercise_proven("1".into(), acc("bob.testnet"), U64(1), txid_of(&tx), U64(50_000));
+        assert!(!env::storage_has_key(b"cp:1"));
+    }
+
+    #[test]
+    #[should_panic(expected = "the writer can't hold its own call")]
+    fn f16_the_option_cant_come_back_to_its_writer() {
+        let mut c = bought();
+        at("bob.testnet", NearToken::from_yoctonear(0), 3_000);
+        c.transfer_call("1".into(), acc("alice.testnet"));
+    }
+
+    #[test]
+    fn f16_a_lost_callback_cant_hold_the_pusaka_forever() {
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        prove(&mut c, payment(SCRIPT, 50_000, &memo), 4_000); // its callback never comes back
+        let after = 3_000 + crate::v2::RESERVE_MS + crate::v2::PROOF_GRACE_MS + EXP + 3_600_000;
+        at("alice.testnet", NearToken::from_yoctonear(1), after);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
     fn f16_no_payment_instructions_once_the_time_to_pay_is_over() {
         let mut c = bought();
         reserve(&mut c, 3_000);

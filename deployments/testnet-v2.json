@@ -3,7 +3,7 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "8cfe4fbdded358346631b72bf6963e3561475d152848a9ed32642d8ed8d1a13c",
+    "wasm_sha256": "6eb67445d7d666ba96cfc45bd4d15f9d296c031730d9ff61d3f19d442b2dc3e8",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
@@ -84,6 +84,11 @@
         "sha256": "8cfe4fbdded358346631b72bf6963e3561475d152848a9ed32642d8ed8d1a13c",
         "tx": "FcXok8rJW4t2eSGBTL2QVCNr7tHMTKM9GWMfu7Gk9qZg",
         "how": "DAO proposal 21 + timelock: F16 in-flight proofs counted (a bogus proof can't block the genuine one); no OP_RETURN shown after the time to pay"
+      },
+      {
+        "sha256": "6eb67445d7d666ba96cfc45bd4d15f9d296c031730d9ff61d3f19d442b2dc3e8",
+        "tx": "3AH3PFGUgd9sUDLQpcZ9ZkJQp6zCmM2DFhXKDPPFBiRP",
+        "how": "DAO proposal 22 + timelock: F16 proofs need the reservation window; the call can't return to its writer; a lost callback stops counting after an hour"
       }
     ]
   },
