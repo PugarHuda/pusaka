@@ -19,6 +19,9 @@ import {
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
+import { createNearPaymentFetch } from "@fastnear/x402";
+import { createLocalNearSigner } from "@fastnear/x402/node";
+import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const ACCOUNT_ID = process.env.PUSAKA_ACCOUNT_ID;
@@ -818,6 +821,33 @@ reg("pusaka_audit", {
   check(deposits.every((d) => d.on_bitcoin), `every proven deposit is on Bitcoin, confirmed by block ${lc} (NEAR's light client height), paying ${addr}`);
   check(!deposits.some((d) => d.anomaly), "no counted deposit was spent without the contract signing it");
   return { token_id, verdict: checks.every((c) => c.pass) ? "reserves verified" : "FAILED: do not rely on this Pusaka", btc_address: addr, verified_sats: Number(info.verified_sats), checks, deposits };
+}));
+
+reg("pusaka_paid_audit", {
+  description: "The same independent proof-of-reserves audit, bought per call from Pusaka's paid API over x402 (HTTP 402) on NEAR: pays a tiny wNEAR fee (0.001 on testnet) as a gasless NEP-366 ft_transfer that the server settles only after the audit ran. The fee counts against the session spend cap and asks for confirmation; wraps a little NEAR first if the agent holds too little wNEAR. Returns the audit and the NEAR tx of the payment. Needs a full-access key.",
+  inputSchema: { token_id: z.string(), url: z.string().url().optional().describe("audit endpoint; default PUSAKA_AUDIT_URL or the Pusaka site") },
+}, tool(async ({ token_id, url }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const target = `${url ?? process.env.PUSAKA_AUDIT_URL ?? "https://pusaka-two.vercel.app/api/audit"}?token_id=${encodeURIComponent(token_id)}`;
+  const first = await fetch(target);
+  if (first.status !== 402) return { token_id, unpaid_status: first.status, body: await first.json().catch(() => null) };
+  const [req] = decodePaymentRequiredHeader(first.headers.get("payment-required")).accepts;
+  // wNEAR is 1:1 NEAR, so the fee fits under the NEAR spend cap; any other token would need its own cap
+  if (req.network !== `near:${NETWORK}` || !/^wrap./.test(req.asset)) throw new Error(`refusing to pay ${req.amount} of ${req.asset} on ${req.network}: only wNEAR on near:${NETWORK}`);
+  const amount = BigInt(req.amount);
+  const ft = (method, args) => provider.callFunction({ contractId: req.asset, method, args, blockQuery: { finality: "final" } });
+  const short = amount - BigInt(await ft("ft_balance_of", { account_id: ACCOUNT_ID }));
+  const storage = short > 0n && !(await ft("storage_balance_of", { account_id: ACCOUNT_ID })) ? 1_250_000_000_000_000_000_000n : 0n;
+  await spend(amount + (short > 0n ? short + storage : 0n), `pay ${req.payTo} for a proof-of-reserves audit of Pusaka #${token_id} over x402`);
+  const wrap = (methodName, deposit) => account.callFunction({ contractId: req.asset, methodName, args: {}, deposit, gas: teraToGas(30) });
+  if (storage) await wrap("storage_deposit", storage);
+  if (short > 0n) await wrap("near_deposit", short);
+  const signer = createLocalNearSigner({ accountId: ACCOUNT_ID, secretKey: process.env.PUSAKA_PRIVATE_KEY });
+  const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}` })(target);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`paid call failed ${res.status}: ${JSON.stringify(body).slice(0, 300)}`);
+  const { transaction } = decodePaymentResponseHeader(res.headers.get("payment-response"));
+  return { ...body, paid: { amount: req.amount, asset: req.asset, to: req.payTo, tx: transaction, explorer: `${NEAR_EXPLORER}/tx/${transaction}` } };
 }));
 
 reg("pusaka_contract_trust", {

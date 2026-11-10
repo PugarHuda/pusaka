@@ -2,6 +2,7 @@ import { NearConnector } from "@hot-labs/near-connect";
 import { FailoverRpcProvider, JsonRpcProvider, getTransactionLastResult } from "near-api-js";
 import { CONTRACT, IS_SIBLING, NETWORK, NEAR_RPCS, nearProvider } from "@pusaka/shared";
 import { explain } from "./errors.js";
+import { passkeyGasless, passkeyId } from "./passkey.js";
 
 // near-api-js would retry one endpoint 12 times (~2 min of "Loading…" when FastNear rate-limits).
 export const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
@@ -63,6 +64,12 @@ const GASLESS = new Set(["list", "cancel_listing", "request_loan", "cancel_loan_
  * the gas. Otherwise this is a normal call(). Returns { gasless } so the UI can say which happened.
  */
 export async function callGasless(method, args = {}) {
+  // no wallet, but a passkey account: it can only sign delegate actions, so the relayer's allowlist decides
+  if (passkeyId() && !(await connector.getConnectedWallet().catch(() => null))) {
+    if (IS_SIBLING) throw new Error("Passkey accounts act through the relayer, which serves the original contract only.");
+    forgetViews();
+    try { return await passkeyGasless(provider, method, args); } finally { forgetViews(); }
+  }
   const wallet = await connector.wallet();
   const fallback = async () => { await call(method, args); return { gasless: false }; };
   // the relayer serves the original contract only; a sibling (v2) is always paid by the wallet

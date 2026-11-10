@@ -18,6 +18,7 @@ import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
 import { icsHref, googleHref } from "./ics.js";
 import { call, callGasless, callRaw, connector, forgetViews, near, provider, view, yocto } from "./near.js";
+import { forgetPasskey, onPasskey, passkeyId, signInWithPasskey } from "./passkey.js";
 import { loadInfos, loadMine } from "./mine.js";
 import { explain } from "./errors.js";
 
@@ -119,11 +120,12 @@ function useAccount() {
   const [accountId, setAccountId] = useState("");
   useEffect(() => {
     const on = ({ accounts }) => setAccountId(accounts[0]?.accountId ?? "");
-    const off = () => setAccountId("");
+    const off = () => setAccountId(passkeyId()); // a wallet, else the passkey account (if any)
     connector.on("wallet:signIn", on);
     connector.on("wallet:signOut", off);
-    connector.getConnectedWallet().then((w) => setAccountId(w?.accounts[0]?.accountId ?? "")).catch(off);
-    return () => { connector.off("wallet:signIn", on); connector.off("wallet:signOut", off); };
+    connector.getConnectedWallet().then((w) => w ? on(w) : off()).catch(off);
+    const offPasskey = onPasskey(() => connector.getConnectedWallet().then((w) => w || off()).catch(off));
+    return () => { connector.off("wallet:signIn", on); connector.off("wallet:signOut", off); offPasskey(); };
   }, []);
   return accountId;
 }
@@ -199,10 +201,22 @@ export default function App() {
           <div className="who">
             <Bell accountId={accountId} />
             <button className="ghost" onClick={mint} disabled={!!minting && minting.endsWith("…")}>Mint a Pusaka</button>
-            <button className="ghost" onClick={() => connector.disconnect()} title="Disconnect wallet">{accountId}</button>
+            {accountId === passkeyId()
+              ? <button className="ghost" onClick={forgetPasskey} title="Sign out of the passkey account">{accountId.slice(0, 6)}…{accountId.slice(-4)} (passkey)</button>
+              : <button className="ghost" onClick={() => connector.disconnect()} title="Disconnect wallet">{accountId}</button>}
           </div>
         ) : (
-          <button onClick={() => connector.connect()}>Connect NEAR wallet</button>
+          <span className="row">
+            <button onClick={() => connector.connect()}>Connect NEAR wallet</button>
+            <button className="ghost" onClick={async () => {
+              setMinting("Waiting for your passkey…");
+              try {
+                const id = await signInWithPasskey();
+                const open = await provider.viewAccount({ accountId: id, finalityQuery: { finality: "final" } }).then(() => true, () => false);
+                setMinting(open ? "" : `Your passkey's NEAR account is ${id}. Send it any amount of NEAR (or claim a gift link into it) to open it; after that its listing, loan and inheritance actions are gas-free.`);
+              } catch (e) { setMinting(e.message); }
+            }}>Use a passkey</button>
+          </span>
         )}
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
@@ -1685,7 +1699,7 @@ function Agents() {
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
-      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 54 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 55 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
       {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>

@@ -1,0 +1,20 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "Pusaka",
+  "description": "Read-only MCP server for Pusaka: NFTs on NEAR (testnet) that each control native Bitcoin, plus ETH/USDC, SOL and a NEAR account, through NEAR Chain Signatures. Tools: overview, inspect, loan offers, proof-of-reserves audit, contract trust, history, borrower credit record, loan watch, deals, portfolio, market book. Free, no auth, no keys held; trading tools run only in the local stdio server (npx pusaka-mcp) with the agent's own NEAR key.",
+  "image": "https://pusaka-two.vercel.app/icon-512.png",
+  "services": [
+    { "name": "MCP", "endpoint": "https://pusaka-two.vercel.app/api/mcp", "version": "2025-11-25" },
+    { "name": "web", "endpoint": "https://pusaka-two.vercel.app/" },
+    { "name": "web", "endpoint": "https://pusaka-two.vercel.app/llms.txt" }
+  ],
+  "x402Support": false,
+  "active": true,
+  "registrations": [],
+  "supportedTrust": [],
+  "pusakaTrustSources": [
+    { "tool": "pusaka_contract_trust", "reads": "NEAR testnet pusaka-btc.testnet: code sha256, NEP-330 source, every access key, upgrade DAO and timelock" },
+    { "tool": "pusaka_audit", "reads": "NEAR MPC key derivation, the contract's proven deposits and Bitcoin itself (proof of reserves per token)" },
+    { "tool": "pusaka_credit_record", "reads": "the contract's on-chain loan history per borrower: taken, repaid, defaulted, open" }
+  ]
+}

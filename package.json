@@ -17,6 +17,8 @@
     "lint": "oxlint -c .oxlintrc.json api shared mcp scripts shade/agent.mjs shade/deploy-tee.mjs && npm run lint -w web"
   },
   "dependencies": {
+    "@fastnear/x402": "^2.5.0",
+    "@x402/core": "~2.18.0",
     "@phala/dcap-qvl": "^0.7.1",
     "@resvg/resvg-js": "^2.6.2"
   }
