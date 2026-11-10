@@ -129,15 +129,21 @@ input:focus, textarea:focus, select:focus { border-color: var(--ink); background
 
 .bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1.4rem;
   padding: 1.4rem clamp(1.2rem, 3vw, 2.6rem);
 }
+@media (max-width: 1300px) { .bar .nav { order: 3; width: 100%; justify-content: center; } }
+.bar > .row { flex-wrap: nowrap; }
 .wordmark { font-weight: 800; font-size: 1.55rem; letter-spacing: -0.045em; text-decoration: none; }
-.net { color: var(--ink-soft); font-size: 0.8rem; margin-right: auto; background: var(--panel); border-radius: 999px; padding: 0.2em 0.7em; }
+.net { white-space: nowrap; color: var(--ink-soft); font-size: 0.8rem; margin-right: auto; background: var(--panel); border-radius: 999px; padding: 0.2em 0.7em; }
 .nav-link { font-size: 0.95rem; text-decoration: none; padding: 0.35em 0.2em; }
 .nav-link:hover { text-decoration: underline; }
 .who { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.bar button { white-space: nowrap; }
+.docs nav ul { list-style: none; padding: 0; gap: 0.35rem 1rem; }
+.docs article { scroll-margin-top: 1rem; }
 
 main { padding: 0 clamp(1.2rem, 3vw, 2.6rem) 4rem; min-height: 100vh; } /* footer starts below the fold, so loading content never pushes it */
 footer { border-top: 1px solid var(--line); padding: 1.5rem clamp(1.2rem, 3vw, 2.6rem); color: var(--ink-soft); font-size: 0.85rem; }
@@ -486,7 +492,7 @@ footer p { max-width: var(--measure); margin: 0; }
 
 .nav { display: flex; gap: 0.2rem; align-items: center; background: var(--panel); border-radius: 999px; padding: 0.25rem; }
 .nav .nav-link { padding: 0.45em 1em; border-radius: 999px; white-space: nowrap; }
-@media (max-width: 480px) { .nav { overflow-x: auto; } .nav .nav-link { padding: 0.45em 0.65em; font-size: 0.9rem; } }
+@media (max-width: 480px) { .nav { flex-wrap: wrap; justify-content: center; border-radius: 22px; } .nav .nav-link { padding: 0.45em 0.65em; font-size: 0.9rem; } }
 @media (max-width: 380px) { .nav { gap: 0; } .nav .nav-link { padding: 0.45em 0.5em; font-size: 0.84rem; } }
 .nav .nav-link:hover { text-decoration: none; background: var(--chip-hover); color: var(--ink); }
 .nav .nav-link.is-here { background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }

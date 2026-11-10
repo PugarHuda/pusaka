@@ -218,7 +218,7 @@ export default function App() {
                 const open = await provider.viewAccount({ accountId: id, finalityQuery: { finality: "final" } }).then(() => true, () => false);
                 setMinting(open ? "" : `Your passkey's NEAR account is ${id}. Send it any amount of NEAR (or claim a gift link into it) to open it; after that its listing, loan and inheritance actions are gas-free.`);
               } catch (e) { setMinting(e.message); }
-            }}>Use a passkey</button>
+            }} title="No wallet? Use a passkey" aria-label="Use a passkey">Passkey</button>
           </span>
         )}
       </header>
