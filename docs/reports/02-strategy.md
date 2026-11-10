@@ -173,6 +173,13 @@ Tabel pembeda di README sudah dipertajam untuk ini (kolom "BTC/EVM address", bar
 | A7 | Harga Pyth / batas LTV on-chain | — | — | Pyth | — | — | — | **DITOLAK**: feed testnet basi sejak Juni 2026 dan Hermes kini butuh API key berbayar (401) |
 | A8 | Penundaan penarikan + veto guardian (Zodiac Delay) | — | — | Safe/Zodiac | — | — | — | **DITOLAK**: pencuri kunci cukup memindahkan NFT-nya; penundaan yang efektif harus menunda semua aksi pemilik (refaktor besar). Kunci PQ (F6) sudah membuat kunci NEAR curian tidak berguna |
 | A9 | Pool pinjaman instan (Liquidium/Rhea) | — | — | Liquidium | — | — | — | **TIDAK DIBANGUN**: butuh oracle harga on-chain (lihat A7) dan akuntansi share; terlalu berisiko untuk 3 hari |
+| A10 | **x402 di NEAR**: audit proof-of-reserves berbayar per panggilan | Agen membayar layanan tanpa akun/API key | Tinggi (agent economy) | FastNear `@fastnear/x402` | 3 j | Rendah | — | **SELESAI 10 Nov**: `api/audit.mjs`, tool MCP `pusaka_paid_audit`, live `seQLPR6C…`, `A2qiMjNA…`, `9Qmkeyad…`; facilitator publik butuh API key manual, jadi settle di proses sendiri lewat relayer |
+| A11 | **Vault + clawback** (meniru vault covenant Bitcoin: CTV/OP_CAT, Liana/Casa) | Kunci curian tidak bisa langsung menguras | Tinggi (keamanan) | purrfect_vault, bitcoinops vaults | 3 j | Sedang | — | **SELESAI 10 Nov** (proposal 19): F14, 14 tes `f14_*`, live di `#/v2/5` |
+| A12 | **Covered call** (Hook) | Pemegang dapat premi tanpa menjual | Sedang (DeFi) | Hook protocol | 2 j | Sedang | — | **SELESAI 10 Nov** (proposal 19): F15, 11 tes `f15_*`, live |
+| A13 | **Pool beli kurva linear** (sudoswap) per sat terverifikasi | Likuiditas instan untuk banyak Pusaka | Sedang | sudoswap | 1 j | Rendah | — | **SELESAI 10 Nov**: `place_pool`, 5 tes `pool_*`, market redeploy `HfF9Axjj…` |
+| A14 | **Login passkey** (WebAuthn PRF → akun implisit NEAR) + relayer | Pengguna tanpa wallet | Sedang (onboarding) | web3-authn, Tatchi | 3 j | Sedang | — | **SELESAI 10 Nov**: `web/src/passkey.js`, live `J3d5cvfp…`, `GCkmawSb…` |
+| A15 | **Telegram Mini App** | Distribusi (Portals/MRKT punya traksi di Telegram) | Sedang | MRKT, Portals | 1 j | Rendah | Bot dibuat user via BotFather | **SIAP**: `web/src/telegram.js`, `docs/TELEGRAM.md` |
+| A16 | **Kartu agen ERC-8004** | Agen bisa ditemukan | Rendah | ERC-8004 | 0,5 j | Rendah | Registrasi on-chain butuh ETH Base Sepolia | **SELESAI (discovery saja)**: `/.well-known/agent-registration.json` |
 
 ## 8. Spesifikasi fitur terpilih
 ### F2 — Refusal room

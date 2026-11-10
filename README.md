@@ -222,12 +222,13 @@ deleted on 13 Nov and `verify.mjs` reports it until then. What v2 adds, each liv
 
 - **Its own NEAR account** (`0s…`, NEP-616 + NEP-591): keyless, obeys only the current holder, frozen while the NFT is for sale. Plus a readable name, `t<id>.pusaka-v2.testnet`.
 - **Post-quantum lock** (NEP-645, ML-DSA-65): once set, every owner action (transfer, list, withdraw, account calls) needs a fresh ML-DSA signature, verified on-chain.
-- **An AI agent with an on-chain daily budget** (F8), **sign-in as the NFT** (F9, SIWE), **a NEAR Intents balance** that passes to the next holder, **BIP-322 proof of its Bitcoin address** (F10), **rental** (F11, ERC-4907), **buy with native Bitcoin** (F12) and **proof of reserves as a view** (F13).
-- **11 upgrades through the DAO** (proposals 8 to 18), most of them fixes from security reviews (V2-1 … V2-15 in `docs/reports/05-security.md`), each with the attack as a test.
+- **An AI agent with an on-chain daily budget** (F8), **sign-in as the NFT** (F9, SIWE), **a NEAR Intents balance** that passes to the next holder, **BIP-322 proof of its Bitcoin address** (F10), **rental** (F11, ERC-4907), **buy with native Bitcoin** (F12, bought live with real testnet BTC) and **proof of reserves as a view** (F13).
+- **A vault** (F14): the delay-and-clawback of a Bitcoin covenant vault, enforced by the contract since Bitcoin can't yet: every owner action waits out an unlock delay, during which a recovery account can take the Pusaka back. **Covered calls** (F15, Hook's design): sell the right to buy your Pusaka at a strike; its Bitcoin is held while the option is open.
+- **12 upgrades through the DAO** (proposals 8 to 19), most of them fixes from security reviews (V2-1 … V2-15 in `docs/reports/05-security.md`), each with the attack as a test.
 
 ## Bids per verified sat, and loans with no due date (a second market contract)
 
-[`pusaka-market.testnet`](https://testnet.near.rocks/account/pusaka-market.testnet) (`market/`, 40 tests) works with
+[`pusaka-market.testnet`](https://testnet.near.rocks/account/pusaka-market.testnet) (`market/`, 45 tests) works with
 any Pusaka through the NFT standards, so the original contract, whose code is final, needed no change. Open
 [`#/bids`](https://pusaka-two.vercel.app/#/bids).
 - **Standing bids priced per verified sat** (the pattern of Blur's collection bids). A bidder escrows NEAR for "any
@@ -235,6 +236,8 @@ any Pusaka through the NFT standards, so the original contract, whose code is fi
   The market then reads the token's `verified_sats` on-chain and pays exactly sats × price through NEP-199 payouts
   (royalties included). An approved Pusaka can't withdraw, so its sats can't drop between that read and the sale.
   Every Pusaka gets an instant exit priced by what is provably inside.
+- **Buy pools** (sudoswap's linear curve, per verified sat): `place_pool` is a bid that stays open for several
+  Pusakas, its price per sat dropping a step after each fill; what's left of the escrow comes back when it ends.
 - **Perpetual callable loans** (the design of Paradigm and Blur's Blend). There is no due date. A lender who wants out
   calls the loan, and a rate auction rises from 0% for 30 minutes; another lender takes it over at the rate they accept,
   paying the first in full. If nobody does, the first lender takes the Pusaka. The market holds the NFT meanwhile and
@@ -347,11 +350,23 @@ The web app shows this verified amount first, offers *Prove deposit* for confirm
 ```
 
 **55 tools** (14 read-only, 17 marked destructive): buy, lend, borrow, list, give, withdraw BTC/ETH/USDC/SOL/NEAR, inherit, seal and read the holder's letter, due diligence (`pusaka_contract_trust`, `pusaka_audit`, `pusaka_credit_record`), deal scanning against a live NEAR Intents quote, and Pusaka v2 (the NFT's account, an agent budget, post-quantum unlock, sign-in). Every spend and outflow is put to the person first (MCP elicitation) when the host supports it. The full list, with live runs and tx hashes: **[docs/AGENTS.md](docs/AGENTS.md)**.
+**Paid per call over x402 on NEAR:** `GET /api/audit?token_id=N` answers HTTP 402 until it is paid 0.001 wNEAR as a gasless
+NEP-366 `ft_transfer` (FastNear's `@fastnear/x402`, settled by our relayer only after the audit ran); the MCP tool
+`pusaka_paid_audit` and `scripts/x402-pay.mjs` pay it under the spend cap, pinned to the price and payee they checked.
+Live: [seQLPR6C…](https://testnet.near.rocks/tx/seQLPR6C3vaKiPHb7DYKUHpm8Bg7Pj9RSv3GYn88q8d), [A2qiMjNA…](https://testnet.near.rocks/tx/A2qiMjNAiDhqe7weTJh4eKR6uxLXK22qTzAbJvCTCDTR) (from the MCP tool).
+The agent's ERC-8004 registration file is at [`/.well-known/agent-registration.json`](https://pusaka-two.vercel.app/.well-known/agent-registration.json) (discovery only; no on-chain registration is claimed).
 Guard rails the agent can't talk its way around: tools that move a Pusaka or its assets out (`pusaka_give`, `pusaka_withdraw_*`) are off unless the operator sets `PUSAKA_ALLOW_OUTFLOWS=1`, optionally limited to `PUSAKA_ALLOWED_RECIPIENTS`; a per-session NEAR spend cap, `max_price_near` on buys, `max_ltv` on loans (it refuses collateral with no verified BTC), and the same sign-epoch / loan-terms binding as the web app.
 **Remote, no install:** point any MCP client at `https://pusaka-two.vercel.app/api/mcp` (Streamable HTTP) for the read-only tools (`pusaka_overview`, `pusaka_inspect`, `pusaka_loan_offers`, `pusaka_deals`, `pusaka_portfolio` and the due-diligence tools above), the resources and the prompts; check it with `node mcp/remote-smoke.mjs`. Trading tools stay local so the agent's key never leaves its machine.
 **Try:** `npm run smoke -w mcp` (read tools and guards) and `node mcp/trade.mjs <seller> <buyer> <id> <price>`. On testnet one agent listed Pusaka #1 for 0.3 NEAR and another bought it under a 0.35 NEAR cap.
 
 ## Gas-free actions: NEP-366 relayer
+
+**No wallet at all: a passkey.** *Use a passkey* derives an ed25519 key from the passkey's WebAuthn PRF output (re-derived
+for each signature, never stored); its NEAR implicit account then signs NEP-366 delegates for this relayer. Live through
+the UI with a virtual authenticator (`web/e2e/passkey-qa.mjs`): `list` [J3d5cvfp…](https://testnet.near.rocks/tx/J3d5cvfpCxUNBSShGR8oNwCPjPq7b9TGPT1c94VN8y9W)
+and `cancel_listing` [GCkmawSb…](https://testnet.near.rocks/tx/GCkmawSbVL2kiu9yf1PYWFEjQqvZ9iYLDkVDoJBqtVYd), signer `pusaka-relayer.testnet`.
+The account must be funded once (NEAR sent to it); after that the relayer's actions are free. The app also runs as a
+Telegram Mini App (`docs/TELEGRAM.md`).
 
 `api/relay.mjs` (Vercel function) accepts a borsh `SignedDelegate` and submits it from a relayer account that pays the gas. It only relays calls to the Pusaka contract, only `list`, `cancel_listing`, `request_loan`, `cancel_loan_request`, `claim_collateral`, `still_here`, `claim_inheritance` and `accept_loan_offer`, never with a deposit. `api/prove.mjs` proves a token's confirmed deposits through the light client with the relayer paying, which is what the web app's *Prove for free* button calls, so a visitor with no wallet can still make a deposit count.
 **Can't be farmed:** the relayer only pays for calls that will succeed and can't be looped: `claim_collateral` only once the loan is overdue; `accept_loan_offer` only when the contract would take it (owner, offer fits the token and its sign epoch, nothing listed, approved or in flight, a refinance only when the offer alone pays it off), for offers of at least 0.01 NEAR, once a minute per Pusaka (`api/_relayer.test.mjs`); `list`/`cancel_listing`/`request_loan`/`cancel_loan_request` at most once a minute per Pusaka (read from its on-chain history; sooner, the app asks the wallet to pay); the same signed delegate posted twice in parallel is relayed once (409 for the copy); `still_here` once an hour; relayer-paid USDC proofs stop at 4 per Pusaka (each leaves 0.002 NEAR of storage), after which the holder proves and pays. Verified live 6 Nov: early `claim_collateral` 403, parallel duplicate 409, relist 3 s after a cancel 429.
