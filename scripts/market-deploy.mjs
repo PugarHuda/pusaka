@@ -32,6 +32,6 @@ console.log(`deployed: ${link(await m.deployContract(wasm))}`);
 try {
   console.log(`initialised: ${link(await callRaw(m, "new", {}, { receiver: MARKET }))}`);
 } catch (e) {
-  if (!/already initialized|state already exists/i.test(String(e.message))) throw e;
+  if (!/already (been )?initialized|state already exists/i.test(String(e.message))) throw e;
 }
 console.log("reserves:", JSON.stringify(await view("reserves", {}, MARKET)));

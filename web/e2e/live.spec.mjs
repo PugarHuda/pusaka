@@ -426,9 +426,9 @@ test("Refused lists real attacks the deployed contract turned down, each confirm
 test("Pusaka v2 shows a token's own keyless account, its name and its post-quantum lock", async ({ page }) => {
   const errors = errorsOf(page);
   await page.goto("/#/v2");
-  await expect(page.getByRole("link", { name: "Pusaka v2 #5" })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("link", { name: "Pusaka v2 #5" }).click();
-  await expect(page.getByRole("heading", { name: "Pusaka v2 #5" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: "Smart Pusaka #5" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "Smart Pusaka #5" }).click();
+  await expect(page.getByRole("heading", { name: "Smart Pusaka #5" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".v2-accounts dd").first()).toContainText(/^0s[0-9a-f]{40}: [\d.]+ NEAR/); // NEP-616: derived, exists
   await expect(page.locator(".v2-accounts dd").nth(1)).toContainText("t5.pusaka-v2.testnet");
   // #5 changed hands with USDC in its own NEAR Intents balance (scripts/v2-intents-balance.mjs); the transfer cleared its PQ lock
@@ -437,14 +437,14 @@ test("Pusaka v2 shows a token's own keyless account, its name and its post-quant
   await page.evaluate(() => { location.hash = "#/v2/6"; });
   await expect(page.getByText(/^On: every action by the holder needs a fresh unlock/)).toBeVisible({ timeout: 30_000 }); // ML-DSA-65, registered in the browser
   await page.evaluate(() => { location.hash = "#/v2/99999"; });
-  await expect(page.getByText("There is no Pusaka v2 #99999.")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("There is no Smart Pusaka #99999.")).toBeVisible({ timeout: 30_000 });
   expect(errors).toEqual([]);
 });
 
 test("?contract=pusaka-v2.testnet opens the whole app on Pusaka v2, and only that allowlisted sibling", async ({ page }) => {
   const errors = errorsOf(page);
   await page.goto("/?contract=pusaka-v2.testnet#/pusaka/5");
-  await expect(page.getByRole("note")).toContainText("Pusaka v2");
+  await expect(page.getByRole("note")).toContainText("Smart Pusakas");
   await expect(page.getByRole("heading", { name: "Pusaka #5" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("footer")).toContainText("pusaka-v2.testnet");
   await expect(page.getByText(/^tb1[a-z0-9]{20,}/).first()).toBeVisible({ timeout: 30_000 }); // its own MPC-derived Bitcoin address

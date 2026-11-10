@@ -575,3 +575,79 @@ fn borrower_can_repay_during_auction() {
     let _ = m.repay(id);
     assert_eq!(calls()[0].2["receiver_id"], "alice.testnet");
 }
+
+// ---------- pools (sudoswap's linear curve, per verified sat) ----------
+
+/// bob's pool: 1 PPS per sat, dropping PPS/10 per fill, 3 fills, 10k..100k sats; escrow 3 * 100k * PPS.
+fn with_pool() -> (Market, U64) {
+    let mut m = market();
+    ctx("bob.testnet", 3 * 100_000 * PPS + SD);
+    let id = m.place_pool(U128(PPS), U128(PPS / 10), 3, U64(10_000), U64(100_000), acc(NFT));
+    (m, id)
+}
+
+fn fill(m: &mut Market, id: U64, sats: u64) -> u128 {
+    approve(m, id);
+    let price = sats as u128 * m.bid(id).unwrap().price_per_sat.0;
+    ctx_at(MARKET, 0, T0, vec![ok(json!({ "payout": { "alice.testnet": price.to_string() } }))]);
+    m.on_bid_payout(id, "1".into(), acc("alice.testnet"), U128(price));
+    price
+}
+
+#[test]
+fn pool_refuses_underfunded_escrow() {
+    let mut m = market();
+    ctx("bob.testnet", 2 * 100_000 * PPS + SD);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        m.place_pool(U128(PPS), U128(PPS / 10), 3, U64(10_000), U64(100_000), acc(NFT));
+    }));
+    assert!(r.is_err());
+}
+
+#[test]
+fn pool_stays_open_one_step_down_its_curve() {
+    let (mut m, id) = with_pool();
+    let p1 = fill(&mut m, id, 40_000);
+    assert_eq!(transfers(), vec![("alice.testnet".into(), p1)]); // the bidder's escrow stays in the pool
+    let b = m.bid(id).unwrap();
+    assert_eq!(b.price_per_sat.0, PPS - PPS / 10);
+    assert!(!b.filling);
+    assert_eq!(b.escrow.0, 3 * 100_000 * PPS - p1);
+    assert_eq!(m.curve_of(id).unwrap()["fills_left"], 2);
+    assert_eq!(m.reserves().owed.0, b.escrow.0 + SD);
+}
+
+#[test]
+fn pool_closes_after_its_last_fill_and_refunds_the_rest() {
+    let (mut m, id) = with_pool();
+    let p1 = fill(&mut m, id, 40_000);
+    let p2 = fill(&mut m, id, 40_000);
+    let p3 = fill(&mut m, id, 40_000);
+    assert_eq!((p1, p2, p3), (40_000 * PPS, 40_000 * (PPS - PPS / 10), 40_000 * (PPS - 2 * (PPS / 10))));
+    let mut t = transfers();
+    t.sort();
+    assert_eq!(t, vec![("alice.testnet".into(), p3), ("bob.testnet".into(), 3 * 100_000 * PPS - p1 - p2 - p3 + SD)]);
+    assert!(m.bid(id).is_none() && m.curve_of(id).is_none());
+    assert_eq!(m.reserves().owed.0, 0);
+}
+
+#[test]
+fn pool_cancel_returns_what_is_left() {
+    let (mut m, id) = with_pool();
+    let p1 = fill(&mut m, id, 40_000);
+    ctx("bob.testnet", 0);
+    m.cancel_bid(id);
+    assert_eq!(transfers(), vec![("bob.testnet".into(), 3 * 100_000 * PPS - p1 + SD)]);
+    assert!(m.curve_of(id).is_none());
+    assert_eq!(m.reserves().owed.0, 0);
+}
+
+#[test]
+fn pool_delta_must_stay_below_the_price() {
+    let mut m = market();
+    ctx("bob.testnet", 3 * 100_000 * PPS + SD);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        m.place_pool(U128(PPS), U128(PPS), 3, U64(10_000), U64(100_000), acc(NFT));
+    }));
+    assert!(r.is_err());
+}

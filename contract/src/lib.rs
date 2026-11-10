@@ -274,6 +274,20 @@ pub enum Event {
     BtcPurchaseReserved { buyer: AccountId, until_ms: U64, op_return: String },
     /// v2: sold for Bitcoin, the payment proven by NEAR's Bitcoin light client.
     BtcSale { from: AccountId, to: AccountId, sats: U64, txid: String },
+    /// v2: the holder put the Pusaka in a vault (`recovery` None = vault removed): owner actions need an unlock
+    /// requested `delay_ms` earlier, and `recovery` can claw it back meanwhile.
+    VaultSet { recovery: Option<AccountId>, delay_ms: U64 },
+    /// v2: someone with the holder's key asked to unlock the vault; owner actions open at `ready_ms`.
+    VaultUnlockRequested { recovery: AccountId, ready_ms: U64 },
+    /// v2: the recovery account cancelled a pending unlock and, if the Pusaka was free, took it back.
+    VaultClawback { from: AccountId, to: AccountId, moved: bool },
+    /// v2: the holder wrote a covered call: whoever buys it for `premium` may buy the Pusaka for `strike` until `expires_ms`.
+    CallWritten { strike: U128, premium: U128, expires_ms: U64 },
+    CallCancelled,
+    /// v2: `holder` bought the call option for `premium` (paid to the writer).
+    CallBought { holder: AccountId, premium: U128 },
+    /// v2: the call option changed hands.
+    CallTransferred { to: AccountId },
 }
 
 /// The kinds of transaction the contract signs from a Pusaka's own NEAR account.
@@ -916,6 +930,10 @@ impl Pusaka {
                 v2::assert_not_its_own_account(&token_id, &h);
                 require!(h != owner, "you can't be your own heir");
                 require!(after_ms.0 >= HEIR_MIN_MS, format!("after_ms must be at least {HEIR_MIN_MS}"));
+                // a vaulted holder needs time to unlock and show up before the heir may claim
+                if let Some(span) = v2::vault_span(&token_id, &owner) {
+                    require!(after_ms.0 >= 2 * span, "after_ms: at least twice the vault's delay plus 10 minutes");
+                }
                 if !env::storage_has_key(key.as_bytes()) { charge_storage(HEIR_BYTES, 0); }
                 raw_put(&key, &Heir { owner, heir: h, after_ms: after_ms.0, last_seen_ms: env::block_timestamp_ms() });
             }
@@ -1029,6 +1047,7 @@ impl Pusaka {
             self.log(&token_id, Event::Unlisted);
         }
         v2::end_btc_listing_for_heir(&token_id); // refused while a Bitcoin buyer is paying
+        v2::end_call_for_heir(&token_id); // refused while a bought call option can still be exercised
         self.end_gift(&token_id); // an open gift link dies with the holder's will
         // internal_transfer also clears NEP-178 approvals, so no market can sell it afterwards
         self.tokens.internal_transfer(&owner, &h.heir, &token_id, None, None);
@@ -1731,12 +1750,21 @@ impl Pusaka {
     }
 
     fn assert_unlocked(&self, token_id: &TokenId) {
-        require!(self.btc_keys.contains_key(token_id), "KeyNotReady");
-        require!(!self.pending.contains_key(token_id), "SignPending");
-        require!(!in_transfer_call(token_id), "TransferCallPending");
-        require!(!self.listings.contains_key(token_id) && !v2::btc_listed(token_id), "Listed");
-        require!(!self.loans.contains_key(token_id), "Collateralised");
-        require!(!gift::is_gifted(token_id), "Gifted: cancel the gift first");
+        if let Some(why) = self.lock_reason(token_id) {
+            env::panic_str(why);
+        }
+    }
+
+    /// Why the token can't move or sign right now, if anything holds it.
+    fn lock_reason(&self, token_id: &TokenId) -> Option<&'static str> {
+        if !self.btc_keys.contains_key(token_id) { return Some("KeyNotReady"); }
+        if self.pending.contains_key(token_id) { return Some("SignPending"); }
+        if in_transfer_call(token_id) { return Some("TransferCallPending"); }
+        if self.listings.contains_key(token_id) || v2::btc_listed(token_id) { return Some("Listed"); }
+        if self.loans.contains_key(token_id) { return Some("Collateralised"); }
+        if gift::is_gifted(token_id) { return Some("Gifted: cancel the gift first"); }
+        if v2::call_locks(token_id) { return Some("CallWritten: a call option is open on it"); }
+        None
     }
 
     fn has_approvals(&self, token_id: &TokenId) -> bool {
@@ -1758,6 +1786,9 @@ impl Pusaka {
             Event::LoanOfferAccepted { lender, .. } => Some((lender.clone(), "offer_taken")),
             Event::LoanRepaid { lender, .. } => Some((lender.clone(), "loan_repaid")),
             Event::HeirSet { heir: Some(h), .. } => Some((h.clone(), "named_heir")),
+            // the whole point of a vault: the recovery account hears about an unlock while it can still act
+            Event::VaultUnlockRequested { recovery, .. } => Some((recovery.clone(), "vault_unlock")),
+            Event::CallBought { .. } => self.tokens.owner_by_id.get(&token_id.to_string()).map(|o| (o, "call_bought")),
             _ => None,
         };
         // Not from callbacks (their predecessor is the contract): they run on a fixed gas budget, and
@@ -2062,7 +2093,7 @@ impl NonFungibleTokenCore for Pusaka {
         v2::assert_no_sign_in_into_a_token_account(&token_id, &receiver_id);
         self.tokens.nft_transfer(receiver_id.clone(), token_id.clone(), approval_id, memo);
         clear_heir(&token_id);
-        v2::clear_pq(&token_id);
+        v2::clear_pq_unless_back(&token_id, &receiver_id);
         self.log(&token_id, Event::Transfer { from, to: receiver_id });
     }
 

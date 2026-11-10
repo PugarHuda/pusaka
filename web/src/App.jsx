@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-const V2Page = lazy(() => import("./v2.jsx")); // #/v2: Pusaka v2, loaded on demand
+const V2Page = lazy(() => import("./v2.jsx")); // #/v2: Smart Pusakas, loaded on demand
+const DocsPage = lazy(() => import("./docs.jsx")); // #/docs: how everything works, loaded on demand
 const ExchangePage = lazy(() => import("./exchange.jsx")); // #/bids and #/reserves, loaded on demand
 import {
   CONTRACT, IS_SIBLING, ORIGINAL, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
@@ -152,6 +153,7 @@ function useRoute() {
   if (/^#\/market\/?$/.test(hash)) return "market";
   if (/^#\/bids\/?$/.test(hash)) return "bids";
   if (/^#\/reserves\/?$/.test(hash)) return "reserves";
+  if (/^#\/docs\/?$/.test(hash)) return "docs";
   const v2 = hash.match(/^#\/v2(?:\/(\d{1,30}))?\/?$/);
   if (v2) return v2[1] ? `v2:${BigInt(v2[1])}` : "v2:";
   const gift = hash.match(/^#\/gift\/(ed25519:[1-9A-HJ-NP-Za-km-z]{40,100})$/);
@@ -166,7 +168,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId === "bids" ? "Bids and loans — Pusaka" : tokenId === "reserves" ? "Proof of reserves — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId?.startsWith("v2:") ? "Pusaka v2 — the NFT owns an account" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId === "bids" ? "Bids and loans — Pusaka" : tokenId === "reserves" ? "Proof of reserves — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId === "docs" ? "How it works — Pusaka" : tokenId?.startsWith("v2:") ? "Smart Pusakas — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -194,7 +196,8 @@ export default function App() {
           {accountId && <a href="#/mine" className={`nav-link${tokenId === "mine" ? " is-here" : ""}`}>Your Pusakas</a>}
           <a href="#/agents" className={`nav-link${tokenId === "agents" ? " is-here" : ""}`}>For AI agents</a>
           <a href="#/refused" className={`nav-link${tokenId === "refused" ? " is-here" : ""}`}>Refused</a>
-          {NETWORK === "testnet" && <a href="#/v2" className={`nav-link${tokenId?.startsWith("v2:") ? " is-here" : ""}`}>v2</a>}
+          {NETWORK === "testnet" && <a href="#/v2" className={`nav-link${tokenId?.startsWith("v2:") ? " is-here" : ""}`}>Smart Pusaka</a>}
+          <a href="#/docs" className={`nav-link${tokenId === "docs" ? " is-here" : ""}`}>Docs</a>
         </nav>
         <ThemeToggle />
         {accountId ? (
@@ -221,7 +224,7 @@ export default function App() {
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
       <CommandPalette accountId={accountId} />
-      {IS_SIBLING && <p className="sibling-banner" role="note">You're using <strong>Pusaka v2</strong> (<code>{CONTRACT}</code>): same Bitcoin, sales and loans, plus <a href="#/v2">its own account and post-quantum lock</a>. Free (relayed) gas and the holder room serve the original contract. <a href={`${location.pathname}#/`}>Back to the original</a></p>}
+      {IS_SIBLING && <p className="sibling-banner" role="note">You're viewing <strong>Smart Pusakas</strong>: same Bitcoin, sales and loans, plus <a href="#/v2">its own account, vault and more</a>. <a href="#/docs">How it works</a> · <a href={`${location.pathname}#/`}>Back to all Pusakas</a></p>}
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />
@@ -229,7 +232,8 @@ export default function App() {
         : tokenId === "refused" ? <Refused />
         : tokenId === "market" ? <Market accountId={accountId} />
         : tokenId === "bids" || tokenId === "reserves" ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><ExchangePage page={tokenId} accountId={accountId} /></Suspense>
-        : tokenId?.startsWith("v2:") ? <Suspense fallback={<section><p className="muted">Loading Pusaka v2…</p></section>}><V2Page id={tokenId.slice(3)} accountId={accountId} /></Suspense>
+        : tokenId?.startsWith("v2:") ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><V2Page id={tokenId.slice(3)} accountId={accountId} /></Suspense>
+        : tokenId === "docs" ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><DocsPage /></Suspense>
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
         : tokenId ? <Detail key={tokenId} id={tokenId} accountId={accountId} /> : <Home />}</main>
       <footer>
@@ -1660,14 +1664,14 @@ function Refused() {
     <section className="mine">
       <h1>What the contract refused</h1>
       <p className="lede">Real attempts against <code>{CONTRACT}</code>, each turned down by the contract itself. Who sent it, what it called and the contract's reason are read from NEAR just now, not stored on this page.</p>
-      <p className="muted">The contract holds no key and its code is final (upgrades renounced 8 Nov), so these rules can't be switched off. Entries marked <em>v2</em> are on Pusaka v2, which changes through a DAO vote and a timelock (and, until its deploy key is deleted on 13 Nov, by the team). Each one also has a test named after the attack in <code>contract/src/tests.rs</code>.</p>
+      <p className="muted">These rules can't be switched off. <a href="#/docs">Why</a></p>
       {!seen ? <p className="muted">Reading NEAR…</p>
         : seen.error ? <p className="error" role="alert">Couldn't read NEAR's archive: {seen.error}. <button className="ghost" onClick={() => { setSeen(null); setAttempt((n) => n + 1); }}>Try again</button></p>
         : <ol className="refused">{REFUSED_HERE.map((r) => {
           const x = seen.get(r.hash);
           return (
             <li key={r.hash}>
-              <h2>{r.attack}{r.v2 && <> <a className="pill pill-soft" href="#/v2">v2</a></>}</h2>
+              <h2>{r.attack}{r.v2 && <> <a className="pill pill-soft" href="#/v2">Smart Pusaka</a></>}</h2>
               {x ? <p><strong>Refused:</strong> {explain(x.panic)}</p> : <p className="error">Couldn't confirm a refusal in this transaction.</p>}
               <p className="muted">
                 {x && <><code>{x.method}</code>{r.v2 && <> on <code>{V2_CONTRACT}</code></>} from {x.signer}, {new Date(x.at).toLocaleString()} · </>}

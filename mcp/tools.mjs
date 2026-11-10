@@ -829,17 +829,18 @@ reg("pusaka_paid_audit", {
 }, tool(async ({ token_id, url }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   const base = process.env.PUSAKA_AUDIT_URL ?? "https://pusaka-two.vercel.app/api/audit";
-  // only the configured audit server (or this machine): a URL from a prompt can't send the fee elsewhere
+  // only the configured audit server: a URL from a prompt can't send the fee elsewhere (a local server: set PUSAKA_AUDIT_URL)
   const endpoint = new URL(url ?? base);
-  if (endpoint.origin !== new URL(base).origin && !["localhost", "127.0.0.1"].includes(endpoint.hostname)) throw new Error(`refusing to pay ${endpoint.origin}: only ${new URL(base).origin} (PUSAKA_AUDIT_URL)`);
+  if (endpoint.origin !== new URL(base).origin) throw new Error(`refusing to pay ${endpoint.origin}: only ${new URL(base).origin} (PUSAKA_AUDIT_URL)`);
+  const PAY_TO = process.env.PUSAKA_AUDIT_PAY_TO ?? (NETWORK === "mainnet" ? undefined : "pusaka-relayer.testnet");
   const target = `${endpoint.origin}${endpoint.pathname}?token_id=${encodeURIComponent(token_id)}`;
-  const first = await fetch(target);
+  const first = await fetch(target, { redirect: "error" });
   if (first.status !== 402) return { token_id, unpaid_status: first.status, body: await first.json().catch(() => null) };
   const offers = decodePaymentRequiredHeader(first.headers.get("payment-required")).accepts;
   const [req] = offers;
   // wNEAR is 1:1 NEAR, so the fee fits under the NEAR spend cap; any other token would need its own cap
   const WNEAR = NETWORK === "mainnet" ? "wrap.near" : "wrap.testnet";
-  if (offers.length !== 1 || req.network !== `near:${NETWORK}` || req.asset !== WNEAR) throw new Error(`refusing to pay ${req?.amount} of ${req?.asset} on ${req?.network}: only one offer, in ${WNEAR} on near:${NETWORK}`);
+  if (offers.length !== 1 || req.network !== `near:${NETWORK}` || req.asset !== WNEAR || (PAY_TO && req.payTo !== PAY_TO)) throw new Error(`refusing to pay ${req?.amount} of ${req?.asset} on ${req?.network}: only one offer, in ${WNEAR} on near:${NETWORK}`);
   const amount = BigInt(req.amount);
   const ft = (method, args) => provider.callFunction({ contractId: req.asset, method, args, blockQuery: { finality: "final" } });
   const short = amount - BigInt(await ft("ft_balance_of", { account_id: ACCOUNT_ID }));
@@ -851,7 +852,7 @@ reg("pusaka_paid_audit", {
   const signer = createLocalNearSigner({ accountId: ACCOUNT_ID, secretKey: process.env.PUSAKA_PRIVATE_KEY });
   // the client pays whatever the server's next 402 asks: pin it to the requirement checked and confirmed above
   const pinned = async (input, init) => {
-    const r = await fetch(input, init);
+    const r = await fetch(input, { ...init, redirect: "error" });
     if (r.status === 402) {
       const again = decodePaymentRequiredHeader(r.headers.get("payment-required")).accepts;
       const same = again.length === 1 && ["network", "asset", "amount", "payTo"].every((k) => again[0][k] === req[k]);

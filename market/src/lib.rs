@@ -216,11 +216,36 @@ impl Market {
         U64(id)
     }
 
+    /// A buy pool (sudoswap's linear curve, priced per verified sat): a bid that stays open for `fills` Pusakas,
+    /// its price per sat dropping by `delta_yocto` after each one. Escrows `fills * max_sats * price_per_sat` (the most
+    /// it could pay); what's left comes back when it ends. Returns the bid id; it fills like any bid (`{"bid_id": N}`).
+    #[payable]
+    pub fn place_pool(&mut self, price_per_sat_yocto: U128, delta_yocto: U128, fills: u32, min_sats: U64, max_sats: U64, nft: AccountId) -> U64 {
+        require!((2..=100).contains(&fills), "BadFills: 2 to 100");
+        require!(delta_yocto.0 < price_per_sat_yocto.0, "BadDelta: below the price per sat");
+        let need = (max_sats.0 as u128)
+            .checked_mul(price_per_sat_yocto.0)
+            .and_then(|v| v.checked_mul(fills as u128))
+            .and_then(|v| v.checked_add(STORAGE_DEPOSIT))
+            .unwrap_or_else(|| env::panic_str("Overflow"));
+        require!(env::attached_deposit().as_yoctonear() >= need, format!("Attach at least {need} yoctoNEAR"));
+        let id = self.place_bid(price_per_sat_yocto, min_sats, max_sats, nft);
+        env::storage_write(&curve_key(id.0), &near_sdk::borsh::to_vec(&Curve { delta: delta_yocto.0, fills_left: fills }).unwrap());
+        emit("pool_placed", json!({ "bid_id": id, "delta": delta_yocto, "fills": fills }));
+        id
+    }
+
+    /// A pool's curve: how much the price per sat drops per fill, and how many fills are left.
+    pub fn curve_of(&self, bid_id: U64) -> Option<Value> {
+        curve(bid_id.0).map(|c| json!({ "delta": U128(c.delta), "fills_left": c.fills_left }))
+    }
+
     /// The bidder takes the bid down and gets escrow + deposit back.
     pub fn cancel_bid(&mut self, bid_id: U64) {
         let bid = self.bids.get(&bid_id.0).cloned().unwrap_or_else(|| env::panic_str("NoBid"));
         require!(bid.bidder == env::predecessor_account_id(), "NotBidder");
         require!(!bid.filling, "Filling");
+        env::storage_remove(&curve_key(bid.id.0));
         self.remove_bid(&bid);
         pay(&bid.bidder, bid.escrow.0 + STORAGE_DEPOSIT);
         emit("bid_cancelled", json!({ "bid_id": bid_id }));
@@ -282,11 +307,26 @@ impl Market {
     /// The token moved to the bidder: pay the payout (or, if it doesn't add up to `price`, the seller in full) and refund the rest.
     #[private]
     pub fn on_bid_payout(&mut self, bid_id: U64, token_id: String, owner_id: AccountId, price: U128) {
-        let Some(bid) = self.bids.get(&bid_id.0).cloned() else { return };
+        let Some(mut bid) = self.bids.get(&bid_id.0).cloned() else { return };
         let Ok(bytes) = env::promise_result_checked(0, 4096) else {
             return self.restore_bid(bid, "TransferFailed");
         };
-        self.remove_bid(&bid);
+        let next = curve(bid.id.0).filter(|c| c.fills_left > 1 && bid.price_per_sat.0 > c.delta);
+        match &next {
+            // a pool with fills left stays open, one step down its curve
+            Some(c) => {
+                bid.escrow = U128(bid.escrow.0 - price.0);
+                self.bids_escrow = self.bids_escrow.saturating_sub(price.0);
+                bid.price_per_sat = U128(bid.price_per_sat.0 - c.delta);
+                bid.filling = false;
+                env::storage_write(&curve_key(bid.id.0), &near_sdk::borsh::to_vec(&Curve { delta: c.delta, fills_left: c.fills_left - 1 }).unwrap());
+                self.bids.insert(bid.id.0, bid.clone());
+            }
+            None => {
+                env::storage_remove(&curve_key(bid.id.0));
+                self.remove_bid(&bid);
+            }
+        }
         let payout = serde_json::from_slice::<Payout>(&bytes).ok().map(|p| p.payout).filter(|p| {
             p.len() <= MAX_PAYOUT as usize
                 && p.values().try_fold(0u128, |s, v| s.checked_add(v.0)) == Some(price.0)
@@ -296,8 +336,11 @@ impl Market {
             // Untrusted NFT contract: never pay more than `price`, and the seller is the one who gave up the token.
             None => pay(&owner_id, price.0),
         }
-        pay(&bid.bidder, bid.escrow.0 - price.0 + STORAGE_DEPOSIT);
-        emit("bid_filled", json!({ "bid_id": bid_id, "token_id": token_id, "seller": owner_id, "buyer": bid.bidder, "price": price }));
+        if next.is_none() {
+            pay(&bid.bidder, bid.escrow.0 - price.0 + STORAGE_DEPOSIT);
+        }
+        emit("bid_filled", json!({ "bid_id": bid_id, "token_id": token_id, "seller": owner_id, "buyer": bid.bidder, "price": price,
+            "next_price_per_sat": next.map(|_| bid.price_per_sat) }));
     }
 
     // ---------- loans ----------
@@ -597,6 +640,21 @@ fn pay(to: &AccountId, yocto: u128) {
     if yocto > 0 {
         Promise::new(to.clone()).transfer(NearToken::from_yoctonear(yocto)).detach();
     }
+}
+
+/// A pool's linear curve, kept beside its bid in raw storage so the bid layout (and live bids) stay as they are.
+#[near(serializers = [borsh])]
+struct Curve {
+    delta: u128,
+    fills_left: u32,
+}
+
+fn curve_key(bid_id: u64) -> Vec<u8> {
+    format!("curve:{bid_id}").into_bytes()
+}
+
+fn curve(bid_id: u64) -> Option<Curve> {
+    env::storage_read(&curve_key(bid_id)).and_then(|b| near_sdk::borsh::from_slice(&b).ok())
 }
 
 /// NEP-297 event log.

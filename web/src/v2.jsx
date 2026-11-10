@@ -1,5 +1,6 @@
-// #/v2: Pusaka v2 (pusaka-v2.testnet). The NFT's own account (NEP-616 `0s…`), its name (t<id>.pusaka-v2.testnet)
-// and the post-quantum lock (ML-DSA-65, verified on-chain). Loaded on demand: nothing here is in the main bundle.
+// #/v2: Smart Pusakas (contract pusaka-v2.testnet): the NFT's own account (NEP-616 `0s…`), its name, the post-quantum
+// lock, an agent budget, sign-in, BIP-322, rental, Bitcoin sale, vault and call options. How each works: #/docs.
+// Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
 import { MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
 import { witnessFromMpc } from "@pusaka/shared/bip322";
@@ -27,16 +28,7 @@ export default function V2Page({ id, accountId }) {
 }
 
 function Intro() {
-  return (
-    <p className="muted">
-      Pusaka v2 runs beside the original contract, which is final and can't change. Same Bitcoin, loans and inheritance,
-      plus: <strong>the NFT owns a NEAR account</strong> (an address fixed before it exists, with no keys,
-      answering only to the current holder), <strong>a readable name</strong> for it, an optional{" "}
-      <strong>post-quantum lock</strong> (ML-DSA-65, checked on-chain), an AI agent's daily budget, signing in as the NFT,
-      and its own NEAR Intents balance. Contract {acctLink(V2)}, upgraded through a DAO vote and a 10-minute timelock;
-      until its deploy key is deleted on 13 Nov, the team can also change it directly.
-    </p>
-  );
+  return <p className="muted">Everything a Pusaka does, plus its own NEAR account, a vault, call options and more. <a href="#/docs">How it works</a></p>;
 }
 
 function V2List({ accountId }) {
@@ -52,13 +44,13 @@ function V2List({ accountId }) {
   }
   return (
     <section>
-      <h1>Pusaka v2</h1>
+      <h1>Smart Pusakas</h1>
       <Intro />
-      {accountId ? <button onClick={mint}>Mint a v2 Pusaka</button> : <button onClick={() => connector.connect()}>Connect NEAR wallet to mint</button>}
+      {accountId ? <button onClick={mint}>Mint a Smart Pusaka</button> : <button onClick={() => connector.connect()}>Connect NEAR wallet to mint</button>}
       {msg && <p className="muted" role="status">{msg}</p>}
       {!toks ? <p className="muted">Reading {V2}…</p> : toks.error ? <p className="error">Couldn't read {V2}: {toks.error}</p> : (
         <ul className="v2-list">
-          {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => <li key={t.token_id}><a href={`#/v2/${t.token_id}`}>Pusaka v2 #{t.token_id}</a> <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></li>)}
+          {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => <li key={t.token_id}><a href={`#/v2/${t.token_id}`}>Smart Pusaka #{t.token_id}</a> <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></li>)}
         </ul>
       )}
     </section>
@@ -73,22 +65,23 @@ function V2Token({ id, accountId }) {
     let live = true;
     (async () => {
       const info = await view("token_info", { token_id: id });
-      if (!info) return { error: `There is no Pusaka v2 #${id}.` };
-      const [acct, alias, pq, ag, user, btcSale] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }),
-        view("agent_of", { token_id: id }), view("user_of", { token_id: id }), view("btc_listing_of", { token_id: id })]);
+      if (!info) return { error: `There is no Smart Pusaka #${id}.` };
+      const [acct, alias, pq, ag, user, btcSale, vault, call] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }),
+        view("agent_of", { token_id: id }), view("user_of", { token_id: id }), view("btc_listing_of", { token_id: id }),
+        view("vault_of", { token_id: id }).catch(() => null), view("call_of", { token_id: id }).catch(() => null)]);
       const [a, b, intents] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null)]);
-      return { info, acct, alias, pq, ag, user, btcSale, a, b, intents };
+      return { info, acct, alias, pq, ag, user, btcSale, vault, call, a, b, intents };
     })().catch((e) => ({ error: e.message })).then((x) => live && setS(x));
     return () => { live = false; };
   }, [id, tick]);
-  if (!s) return <section><p className="muted">Reading Pusaka v2 #{id}…</p></section>;
-  if (s.error) return <section><h1>Pusaka v2 #{id}</h1><p className="error">{s.error}</p><a href="#/v2">All v2 Pusakas</a></section>;
+  if (!s) return <section><p className="muted">Reading Smart Pusaka #{id}…</p></section>;
+  if (s.error) return <section><h1>Smart Pusaka #{id}</h1><p className="error">{s.error}</p><a href="#/v2">All Smart Pusakas</a></section>;
   const owner = s.info.token.owner_id, isOwner = accountId === owner;
   const bal = (x) => x ? `${near(x.amount)} NEAR` : "not created yet";
   return (
     <section className="v2">
-      <p><a href="#/v2">← All v2 Pusakas</a></p>
-      <h1>Pusaka v2 #{id}</h1>
+      <p><a href="#/v2">← All Smart Pusakas</a></p>
+      <h1>Smart Pusaka #{id}</h1>
       <p>Held by <strong>{owner}</strong>{isOwner && " (you)"}.</p>
       <p><a className="pill pill-soft" href={`${location.pathname}?contract=${V2}#/pusaka/${id}`}>Open #{id} in the full app: Bitcoin, sale, loans, heir</a></p>
       <h2>Its own account</h2>
@@ -96,33 +89,27 @@ function V2Token({ id, accountId }) {
         <dt>Account (NEP-616)</dt><dd>{acctLink(s.acct)}: {bal(s.a)}{s.a && <span className="muted"> · no access keys · code: the token-account global contract</span>}</dd>
         <dt>Name</dt><dd>{acctLink(s.alias)}: {bal(s.b)}</dd>
       </dl>
-      <p className="muted">The address is fixed by its content before it exists, so anyone can send NEAR or tokens to it. Only the
-        current holder can move them, through the contract, and only while the Pusaka isn't for sale, pledged or signing.
-        When it changes hands, the account goes with it.</p>
       <h2>Its NEAR Intents balance</h2>
       {s.intents?.length ? <p>{s.intents.map(([t, a]) => amountOf(t, a)).join(", ")}, held by its account inside NEAR Intents.</p>
-        : <p className="muted">{s.intents ? "Nothing yet." : "Couldn't read the verifier."} Anyone can deposit into NEAR Intents for its account
-          (<code>ft_transfer_call</code> to <code>{VERIFIER}</code> with <code>msg</code> = the account above).</p>}
-      <p className="muted">The balance changes hands with the NFT. The account has no keys and the contract refuses to give it a signing
-        key on the verifier, so only the current holder can move it.</p>
+        : <p className="muted">{s.intents ? "Nothing yet." : "Couldn't read the verifier."}</p>}
       <h2>Post-quantum lock</h2>
       {s.pq ? <p>On: every action by the holder needs a fresh unlock signed with their ML-DSA-65 key and checked on-chain
         {s.pq.open ? <> (<strong>open now</strong>, until block {s.pq.unlocked_until_block})</> : <> (<strong>locked</strong>)</>}. Unlocks used: {s.pq.nonce}.</p>
-        : <p className="muted">Off. The holder can register an ML-DSA-65 key; from then on a stolen NEAR key alone can't move or drain this Pusaka.</p>}
-      <p className="muted">It guards the NEAR side. The Bitcoin, EVM and Solana keys are NEAR MPC keys, which have no post-quantum scheme yet.</p>
+        : <p className="muted">Off.</p>}
       <h2>Agent budget</h2>
       {s.ag ? <p><strong>{s.ag.agent}</strong> may send up to {near(s.ag.daily)} NEAR a day from its account
         {s.ag.to.length ? <> to {s.ag.to.join(", ")} only</> : <> to anyone</>}; <strong>{near(s.ag.left_today)} NEAR left today</strong>.</p>
-        : <p className="muted">None. The holder can give an AI agent a daily budget from the NFT's account.</p>}
-      <p className="muted">The contract enforces the budget, not the agent's software: a hacked agent loses at most a day's budget,
-        only to the listed accounts, never while the Pusaka is for sale or pledged, and the budget ends when it changes hands.</p>
+        : <p className="muted">None.</p>}
       <h2>For sale for Bitcoin</h2>
       {s.btcSale ? <BtcSale id={id} sale={s.btcSale} accountId={accountId} reload={reload} />
-        : <p className="muted">Not listed for Bitcoin. The holder can sell it for native BTC: a buyer reserves it on NEAR, pays on Bitcoin with
-          the reservation's OP_RETURN, and NEAR's Bitcoin light client proves the payment before the NFT moves. No bridge, no wrapped BTC.</p>}
+        : <p className="muted">Not for sale for Bitcoin.</p>}
       <h2>Rented to</h2>
       {s.user ? <p><strong>{s.user.user}</strong> may use it (sign in as it, not move it or what it holds) until {new Date(Number(s.user.expires_ms)).toLocaleString()}.</p>
-        : <p className="muted">Nobody. The holder can rent its use (ERC-4907 style) without handing over the NFT or its Bitcoin.</p>}
+        : <p className="muted">Nobody.</p>}
+      <h2>Vault</h2>
+      <Vault id={id} s={s} accountId={accountId} reload={reload} />
+      <h2>Call option</h2>
+      <Call id={id} s={s} accountId={accountId} isOwner={isOwner} reload={reload} />
       {isOwner && <Owner id={id} s={s} owner={owner} reload={reload} />}
       {!isOwner && s.ag && accountId === s.ag.agent && <AgentSend id={id} s={s} reload={reload} />}
       <h2>History</h2>
@@ -204,22 +191,18 @@ function Owner({ id, s, owner, reload }) {
       })}>{busy === "intents" ? "Withdrawing…" : "Withdraw its Intents USDC to me"}</button>}
       <div className="stack">
         <h3>Sign in as this Pusaka</h3>
-        <p className="muted">Its own EVM key (the NEAR MPC key that holds its Bitcoin) signs a standard Sign-In with Ethereum message
-          naming you as the holder, valid for an hour. Any site that accepts it sees the Pusaka's address as the user. While it's
-          valid you can't list this Pusaka or approve a market, so it can't outlive a sale.</p>
         <button disabled={!!busy} onClick={() => run("signin", async () => {
           const nonce = hex.encode(crypto.getRandomValues(new Uint8Array(8)));
           const o = await tx("sign_in", { token_id: id, domain: location.host, uri: location.href.split("#")[0], chain_id: "1", nonce }, 1n);
           const signed = JSON.parse(new TextDecoder().decode(base64.decode(o.status.SuccessValue)));
           setSignedIn({ ...signed, signature: await signInSignature(signed) });
           return <>Signed in as {signed.address}; the signature recovers to it. {link(o.transaction.hash)}</>;
-        })}>{busy === "signin" ? "Signing…" : `Sign in to ${location.host} as Pusaka v2 #${id}`}</button>
+        })}>{busy === "signin" ? "Signing…" : `Sign in to ${location.host} as Smart Pusaka #${id}`}</button>
         {signedIn && <pre className="siwe">{`${signedIn.message}\n\n${signedIn.signature}`}</pre>}
       </div>
       <div className="stack">
         <h3>Prove its Bitcoin address (BIP-322)</h3>
-        <p className="muted">Its Bitcoin key signs a BIP-322 message proving it controls {btcAddress(s.info.btc_pubkey)}, naming you as the holder
-          and the NEAR block. Any BIP-322 verifier accepts it: exchange whitelists, reserve audits. Checked here before it's shown.</p>
+        <p className="muted">Proves this Pusaka controls {btcAddress(s.info.btc_pubkey)}.</p>
         <button className="ghost" disabled={!!busy} onClick={() => run("bip322", async () => {
           const o = await tx("sign_btc_message", { token_id: id, message: "proof of reserves" }, 1n);
           const signed = JSON.parse(new TextDecoder().decode(base64.decode(o.status.SuccessValue)));
@@ -327,5 +310,87 @@ function AgentSend({ id, s, reload }) {
       <button disabled={busy}>{busy ? "Sending…" : `Send (${near(s.ag.left_today)} NEAR left today)`}</button>
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </form>
+  );
+}
+
+/** One button that runs a transaction and shows its outcome. */
+function useRun(reload) {
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+  const run = async (label, fn) => {
+    setBusy(label); setMsg(null);
+    try { setMsg({ ok: true, text: await fn() }); await reload(); } catch (e) { setMsg({ ok: false, text: e.message }); } finally { setBusy(""); }
+  };
+  return { busy, run, out: msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p> };
+}
+const tx2 = (method, args, deposit = 0n, tgas = 100) => callRaw(method, args, { deposit, tgas, receiver: V2 });
+const when = (ms) => new Date(Number(ms)).toLocaleString();
+
+/** The vault: owner actions wait out a delay, during which the recovery account can take the Pusaka back. */
+function Vault({ id, s, accountId, reload }) {
+  const { busy, run, out } = useRun(reload);
+  const [f, setF] = useState({ recovery: "", minutes: "60" });
+  const owner = s.info.token.owner_id, v = s.vault;
+  if (!v) return accountId !== owner ? <p className="muted">Not in a vault.</p> : (
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); run("vault", async () => {
+      const o = await tx2("set_vault", { token_id: id, recovery: f.recovery.trim().toLowerCase(), delay_ms: String(Number(f.minutes) * 60_000) }, yocto(0.01), 30);
+      return <>In the vault. {link(o.transaction.hash)}</>;
+    }); }}>
+      <p className="muted">Not in a vault. With one, every action on this Pusaka waits out a delay first, and your recovery account can take it back in the meantime.</p>
+      <label>Recovery account (your cold wallet) <input value={f.recovery} onChange={(e) => setF({ ...f, recovery: e.target.value })} required spellCheck="false" autoCapitalize="none" /></label>
+      <label>Delay <span className="row"><input type="number" min="1" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} required /> minutes</span></label>
+      <button disabled={!!busy}>{busy ? "Saving…" : "Put it in a vault"}</button>
+      {out}
+    </form>
+  );
+  const pending = Number(v.ready_ms) > 0;
+  return (
+    <div className="stack">
+      <p>In a vault: recovery <strong>{v.recovery}</strong>, delay {Number(v.delay_ms) / 60_000} min.{" "}
+        {v.open ? <strong>Open now.</strong> : pending ? <>Unlock requested: opens {when(v.ready_ms)}.</> : "Locked."}</p>
+      {accountId === owner && <button className="ghost" disabled={!!busy} onClick={() => run("unlock", async () =>
+        <>Unlock requested. {link((await tx2("request_unlock", { token_id: id })).transaction.hash)}</>)}>Request an unlock</button>}
+      {accountId === owner && v.open && <button className="ghost" disabled={!!busy} onClick={() => run("off", async () =>
+        <>Out of the vault. {link((await tx2("set_vault", { token_id: id, recovery: null, delay_ms: "0" }, 1n, 30)).transaction.hash)}</>)}>Take it out of the vault</button>}
+      {accountId === v.recovery && <button disabled={!!busy} onClick={() => run("claw", async () =>
+        <>Clawed back. {link((await tx2("vault_clawback", { token_id: id })).transaction.hash)}</>)}>Claw it back to me</button>}
+      {out}
+    </div>
+  );
+}
+
+/** A covered call: the holder sells the right to buy this Pusaka at a fixed price until a date. */
+function Call({ id, s, accountId, isOwner, reload }) {
+  const { busy, run, out } = useRun(reload);
+  const [f, setF] = useState({ strike: "5", premium: "0.1", days: "7" });
+  const c = s.call;
+  if (!c) return !isOwner ? <p className="muted">None.</p> : (
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); run("write", async () => {
+      const o = await tx2("write_call", { token_id: id, strike: yocto(f.strike).toString(), premium: yocto(f.premium).toString(),
+        expires_ms: String(Date.now() + Number(f.days) * 86_400_000) }, yocto(0.01), 30);
+      return <>Call option offered. {link(o.transaction.hash)}</>;
+    }); }}>
+      <p className="muted">None. Sell someone the right to buy this Pusaka at a fixed price until a date; you keep the premium either way.</p>
+      <label>Price they may buy at <span className="row"><input type="number" min="0.01" step="any" value={f.strike} onChange={(e) => setF({ ...f, strike: e.target.value })} required /> NEAR</span></label>
+      <label>Premium for the option <span className="row"><input type="number" min="0.001" step="any" value={f.premium} onChange={(e) => setF({ ...f, premium: e.target.value })} required /> NEAR</span></label>
+      <label>For <span className="row"><input type="number" min="1" value={f.days} onChange={(e) => setF({ ...f, days: e.target.value })} required /> days</span></label>
+      <button disabled={!!busy}>{busy ? "Offering…" : "Offer a call option"}</button>
+      {out}
+    </form>
+  );
+  return (
+    <div className="stack">
+      <p>The right to buy it for <strong>{near(c.strike)} NEAR</strong> until {when(c.expires_ms)}, premium {near(c.premium)} NEAR.{" "}
+        {c.holder ? <>Held by <strong>{c.holder === accountId ? "you" : c.holder}</strong>.</> : "For sale."}</p>
+      {!c.holder && accountId && !isOwner && <button disabled={!!busy} onClick={() => run("buy", async () =>
+        <>The option is yours. {link((await tx2("buy_call", { token_id: id, expected_sign_epoch: s.info.sign_epoch }, BigInt(c.premium))).transaction.hash)}</>)}>
+        Buy the option ({near(c.premium)} NEAR)</button>}
+      {c.holder === accountId && <button disabled={!!busy} onClick={() => run("ex", async () =>
+        <>Exercised: the Pusaka is yours. {link((await tx2("exercise_call", { token_id: id }, BigInt(c.strike), 100)).transaction.hash)}</>)}>
+        Exercise: buy it for {near(c.strike)} NEAR</button>}
+      {isOwner && !c.holder && <button className="ghost" disabled={!!busy} onClick={() => run("cancel", async () =>
+        <>Withdrawn. {link((await tx2("cancel_call", { token_id: id })).transaction.hash)}</>)}>Withdraw the offer</button>}
+      {out}
+    </div>
   );
 }

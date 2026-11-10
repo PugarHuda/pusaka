@@ -5,7 +5,7 @@ Acuan: `01`–`06`. Aturan resmi: https://nearhackathon.com/HACKATHON.md.
 ## Build & CI (setiap push/PR + harian)
 | Langkah | Status |
 |---|---|
-| `cargo test` testnet + mainnet (330 + 330, termasuk fuzz + invariant) | ✓ |
+| `cargo test` testnet + mainnet (355 + 355, termasuk fuzz + invariant) | ✓ |
 | `cargo audit` | ✓ (1 advisory dev-only di-ignore dengan alasan) |
 | build wasm reproducible + sha256 | ✓ |
 | unit Node (9 file) | ✓ |
@@ -44,7 +44,7 @@ Belum ada (butuh user): link video demo dan post X.
 4. Pembeda: saldo dibuktikan on-chain (light client), satu NFT banyak chain, pasar kredit.
 5. Arsitektur: kontrak ↔ MPC signer ↔ light client ↔ relayer NEP-366 ↔ MCP agen.
 6. Integrasi NEAR: Chain Signatures (3 domain + CKD + foreign-tx), light client, Intents, Omni nBTC, staking, Sputnik DAO, NEP-330/366/413/452/611.
-7. Validasi: 330 tes kontrak (fuzz + invariant, coverage baris 96 %), 135 tes Playwright, `verify.mjs` (cek "upgrades renounced: final"), tx live di README.
+7. Validasi: 355 tes kontrak (fuzz + invariant, coverage baris 96 %), 135 tes Playwright, `verify.mjs` (cek "upgrades renounced: final"), tx live di README.
 8. Next: mainnet (dana), NFT memiliki nama TLA. (Renounce upgrade sudah: proposal 7, 8 Nov.)
 
 ## Teks form submission

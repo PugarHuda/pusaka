@@ -4126,3 +4126,300 @@ mod f10_f13 {
         assert_eq!(r["total_sats"], json!(0));
     }
 }
+
+mod f14_f15 {
+    use super::*;
+
+    fn at(caller: &str, deposit: NearToken, ms: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_timestamp(ms * 1_000_000).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+    fn yocto() -> NearToken {
+        NearToken::from_yoctonear(1)
+    }
+    fn owner(c: &Pusaka) -> String {
+        c.nft_token("1".into()).unwrap().owner_id.to_string()
+    }
+    fn to_script() -> String {
+        "0014".to_string() + &"11".repeat(20)
+    }
+
+    // ---------- F14: vault ----------
+    const D: u64 = crate::v2::VAULT_MIN_DELAY_MS;
+    /// alice's Pusaka in a vault, carol its recovery account, 60 s delay, set at t = 1 s.
+    fn vaulted() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.set_vault("1".into(), Some(acc("carol.testnet")), U64(D));
+        c
+    }
+
+    #[test]
+    #[should_panic(expected = "VaultLocked")]
+    fn f14_a_stolen_key_cant_move_a_vaulted_pusaka_at_once() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        c.nft_transfer(acc("mallory.testnet"), "1".into(), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "VaultLocked")]
+    fn f14_nor_withdraw_its_bitcoin() {
+        let mut c = vaulted();
+        at("alice.testnet", NearToken::from_millinear(20), 2_000);
+        let _ = c.withdraw("1".into(), vec![utxo(0)], to_script(), U64(50_000), U64(500));
+    }
+
+    #[test]
+    #[should_panic(expected = "VaultLocked")]
+    fn f14_nor_switch_the_vault_off() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        c.set_vault("1".into(), None, U64(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "VaultLocked")]
+    fn f14_an_unlock_waits_out_the_delay() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        assert_eq!(c.request_unlock("1".into()), U64(2_000 + D));
+        at("alice.testnet", yocto(), 1_999 + D);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    }
+
+    #[test]
+    fn f14_after_the_delay_the_holder_acts_and_the_next_holder_starts_free() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        c.request_unlock("1".into());
+        at("alice.testnet", yocto(), 2_000 + D);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+        assert_eq!(owner(&c), "bob.testnet");
+        assert!(c.vault_of("1".into()).is_none());
+        at("bob.testnet", yocto(), 3_000 + D);
+        c.nft_transfer(acc("dave.testnet"), "1".into(), None, None);
+        assert_eq!(owner(&c), "dave.testnet");
+    }
+
+    #[test]
+    #[should_panic(expected = "VaultLocked")]
+    fn f14_the_window_closes_after_ten_minutes() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        c.request_unlock("1".into());
+        at("alice.testnet", yocto(), 2_000 + D + 600_001);
+        c.nft_transfer(acc("bob.testnet"), "1".into(), None, None);
+    }
+
+    #[test]
+    fn f14_recovery_claws_it_back_during_the_delay() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        c.request_unlock("1".into());
+        at("carol.testnet", yocto(), 30_000);
+        assert!(c.vault_clawback("1".into()));
+        assert_eq!(owner(&c), "carol.testnet");
+        assert!(c.vault_of("1".into()).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "only the vault's recovery account")]
+    fn f14_only_the_recovery_account_claws_back() {
+        let mut c = vaulted();
+        at("mallory.testnet", yocto(), 2_000);
+        c.vault_clawback("1".into());
+    }
+
+    #[test]
+    fn f14_a_clawback_of_a_listed_pusaka_cancels_the_unlock() {
+        let mut c = vaulted();
+        at("alice.testnet", yocto(), 2_000);
+        c.request_unlock("1".into());
+        at("alice.testnet", yocto(), 2_000 + D);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+        at("carol.testnet", yocto(), 3_000 + D);
+        assert!(!c.vault_clawback("1".into()));
+        assert_eq!(owner(&c), "alice.testnet");
+        assert_eq!(c.vault_of("1".into()).unwrap()["ready_ms"], json!("0"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Listed")]
+    fn f14_a_vault_starts_only_on_a_free_pusaka() {
+        let mut c = setup();
+        at("alice.testnet", yocto(), 1_000);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+        at("alice.testnet", NearToken::from_millinear(10), 1_500);
+        c.set_vault("1".into(), Some(acc("carol.testnet")), U64(D));
+    }
+
+    #[test]
+    #[should_panic(expected = "delay_ms")]
+    fn f14_the_delay_has_a_floor() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.set_vault("1".into(), Some(acc("carol.testnet")), U64(1_000));
+    }
+
+    #[test]
+    #[should_panic(expected = "too long for your heir")]
+    fn f14_a_vault_cant_outlast_the_heirs_clock() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.set_heir("1".into(), Some(acc("heir.testnet")), U64(crate::HEIR_MIN_MS));
+        at("alice.testnet", NearToken::from_millinear(10), 2_000);
+        c.set_vault("1".into(), Some(acc("carol.testnet")), U64(crate::HEIR_MIN_MS));
+    }
+
+    #[test]
+    #[should_panic(expected = "twice the vault")]
+    fn f14_nor_an_heir_be_named_with_a_shorter_clock() {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.set_vault("1".into(), Some(acc("carol.testnet")), U64(crate::HEIR_MIN_MS));
+        at("alice.testnet", yocto(), 2_000);
+        c.request_unlock("1".into());
+        at("alice.testnet", NearToken::from_millinear(10), 2_000 + crate::HEIR_MIN_MS);
+        c.set_heir("1".into(), Some(acc("heir.testnet")), U64(crate::HEIR_MIN_MS));
+    }
+
+    #[test]
+    fn f14_the_vault_survives_a_market_returning_the_pusaka() {
+        let mut c = vaulted();
+        // as nft_transfer_call leaves it once the market kept the token (no clearing on that path)
+        c.tokens.internal_transfer(&acc("alice.testnet"), &acc("market.testnet"), &"1".to_string(), None, None);
+        // the vault belongs to alice: inert while the market holds it, back in force when it returns
+        at("market.testnet", yocto(), 3_000 + D);
+        c.nft_transfer(acc("alice.testnet"), "1".into(), None, None);
+        assert_eq!(c.vault_of("1".into()).unwrap()["recovery"], json!("carol.testnet"));
+        at("alice.testnet", yocto(), 4_000 + D + 600_001);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.nft_transfer(acc("bob.testnet"), "1".into(), None, None)));
+        assert!(r.is_err());
+    }
+
+    // ---------- F15: covered calls ----------
+    const EXP: u64 = 2 * crate::v2::CALL_MIN_MS;
+    const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+    /// alice writes a call on #1: strike 5 NEAR, premium 1 NEAR, expires at EXP.
+    fn written() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.write_call("1".into(), U128(5 * NEAR), U128(NEAR), U64(EXP));
+        c
+    }
+    fn epoch(c: &Pusaka) -> u32 {
+        c.token_info("1".into()).unwrap().sign_epoch
+    }
+    fn bought() -> Pusaka {
+        let mut c = written();
+        let e = epoch(&c);
+        at("bob.testnet", NearToken::from_near(1), 2_000);
+        c.buy_call("1".into(), e);
+        c
+    }
+
+    #[test]
+    #[should_panic(expected = "CallWritten")]
+    fn f15_the_writer_cant_take_the_bitcoin_out_under_a_call() {
+        let mut c = written();
+        at("alice.testnet", NearToken::from_millinear(20), 2_000);
+        let _ = c.withdraw("1".into(), vec![utxo(0)], to_script(), U64(50_000), U64(500));
+    }
+
+    #[test]
+    #[should_panic(expected = "CallWritten")]
+    fn f15_nor_sell_it_elsewhere() {
+        let mut c = written();
+        at("alice.testnet", yocto(), 2_000);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    fn f15_the_buyer_exercises_and_gets_the_pusaka() {
+        let mut c = bought();
+        assert_eq!(c.call_of("1".into()).unwrap()["holder"], json!("bob.testnet"));
+        at("bob.testnet", NearToken::from_near(5), 3_000);
+        c.exercise_call("1".into());
+        assert_eq!(owner(&c), "bob.testnet");
+        assert!(c.call_of("1".into()).is_none());
+        at("bob.testnet", yocto(), 4_000);
+        c.list("1".into(), NearToken::from_near(9), None, None); // the new holder is free
+    }
+
+    #[test]
+    #[should_panic(expected = "Expired")]
+    fn f15_no_exercise_after_expiry() {
+        let mut c = bought();
+        at("bob.testnet", NearToken::from_near(5), EXP + 1);
+        c.exercise_call("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "attach the strike")]
+    fn f15_the_strike_is_paid_in_full() {
+        let mut c = bought();
+        at("bob.testnet", NearToken::from_near(4), 3_000);
+        c.exercise_call("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "only the call's holder")]
+    fn f15_only_the_calls_holder_exercises() {
+        let mut c = bought();
+        at("mallory.testnet", NearToken::from_near(5), 3_000);
+        c.exercise_call("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Bought")]
+    fn f15_the_writer_cant_cancel_a_bought_call() {
+        let mut c = bought();
+        at("alice.testnet", yocto(), 3_000);
+        c.cancel_call("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "StateChanged")]
+    fn f15_a_call_is_bought_against_the_bitcoin_the_buyer_saw() {
+        // the buyer looked at epoch e; the writer then cancels, has a withdrawal signed and writes the call again
+        let mut c = written();
+        let e = epoch(&c);
+        at("alice.testnet", yocto(), 1_500);
+        c.cancel_call("1".into());
+        at("alice.testnet", NearToken::from_millinear(20), 1_600);
+        let _ = c.withdraw("1".into(), vec![utxo(0)], to_script(), U64(50_000), U64(500));
+        c.pending.remove(&"1".to_string()); // as if the MPC callback had come back
+        at("alice.testnet", NearToken::from_millinear(10), 1_700);
+        c.write_call("1".into(), U128(5 * NEAR), U128(NEAR), U64(EXP));
+        at("bob.testnet", NearToken::from_near(1), 2_000);
+        c.buy_call("1".into(), e);
+    }
+
+    #[test]
+    fn f15_an_expired_call_frees_the_pusaka() {
+        let mut c = bought();
+        at("alice.testnet", yocto(), EXP + 1);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    fn f15_the_option_can_be_passed_on() {
+        let mut c = bought();
+        at("bob.testnet", yocto(), 3_000);
+        c.transfer_call("1".into(), acc("dave.testnet"));
+        at("dave.testnet", NearToken::from_near(5), 4_000);
+        c.exercise_call("1".into());
+        assert_eq!(owner(&c), "dave.testnet");
+    }
+
+    #[test]
+    #[should_panic(expected = "SelfBuy")]
+    fn f15_the_writer_cant_buy_their_own_call() {
+        let mut c = written();
+        let e = epoch(&c);
+        at("alice.testnet", NearToken::from_near(1), 2_000);
+        c.buy_call("1".into(), e);
+    }
+}

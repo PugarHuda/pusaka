@@ -76,6 +76,7 @@ pub fn assert_pq(token_id: &str, owner: &AccountId) {
             require!(env::block_height() <= k.until_block, "PqLocked: sign an unlock with your post-quantum key (pq_unlock) first");
         }
     }
+    assert_vault(token_id, owner);
 }
 
 /// A Pusaka held by its own account (or alias) could never move again: only its owner drives that account.
@@ -180,7 +181,91 @@ pub fn clear_pq(token_id: &str) {
     env::storage_remove(pq_key(token_id).as_bytes());
     env::storage_remove(agent_key(token_id).as_bytes());
     env::storage_remove(user_key(token_id).as_bytes());
+    env::storage_remove(vault_key(token_id).as_bytes());
+    env::storage_remove(call_key(token_id).as_bytes()); // only an expired or exercised call is left by then
     // not the sign-in record: it expires by itself, so passing the NFT to an alt account can't clear it (V2-10)
+}
+
+// ---------- F14: a vault (the delay-and-clawback of a Bitcoin covenant vault, enforced by the contract) ----------
+
+#[near(serializers = [borsh])]
+struct Vault {
+    owner: AccountId,
+    recovery: AccountId,
+    delay_ms: u64,
+    /// When the last requested unlock opens owner actions; 0 = none requested.
+    ready_ms: u64,
+}
+
+fn vault_key(token_id: &str) -> String {
+    format!("vault:{token_id}")
+}
+
+#[cfg(not(feature = "mainnet"))]
+pub const VAULT_MIN_DELAY_MS: u64 = 60_000;
+#[cfg(feature = "mainnet")]
+pub const VAULT_MIN_DELAY_MS: u64 = 3_600_000;
+pub const VAULT_MAX_DELAY_MS: u64 = 30 * 86_400_000;
+/// Once the delay has passed, owner actions stay open this long.
+pub const VAULT_WINDOW_MS: u64 = 10 * 60_000;
+
+/// The current holder's vault delay plus its action window, if they have a vault: an heir's silence must be at least
+/// twice that, or a live holder couldn't show up before the heir may claim.
+pub fn vault_span(token_id: &str, owner: &AccountId) -> Option<u64> {
+    raw_get::<Vault>(&vault_key(token_id)).filter(|v| &v.owner == owner).map(|v| v.delay_ms + VAULT_WINDOW_MS)
+}
+
+/// A plain transfer back to the holder who set the vault or the PQ key (a market returning a loan's collateral) keeps
+/// them; any other change of owner clears everything as `clear_pq` does.
+pub fn clear_pq_unless_back(token_id: &str, to: &AccountId) {
+    let vault = raw_get::<Vault>(&vault_key(token_id)).filter(|v| &v.owner == to);
+    let pq = raw_get::<PqKey>(&pq_key(token_id)).filter(|k| &k.owner == to);
+    clear_pq(token_id);
+    if let Some(v) = vault { raw_put(&vault_key(token_id), &v); }
+    if let Some(k) = pq { raw_put(&pq_key(token_id), &k); }
+}
+
+/// Part of `assert_pq`, so every owner action (transfer, approve, list, withdraw, account calls…) waits for the vault.
+fn assert_vault(token_id: &str, owner: &AccountId) {
+    if let Some(v) = raw_get::<Vault>(&vault_key(token_id)).filter(|v| &v.owner == owner) {
+        let now = env::block_timestamp_ms();
+        require!(v.ready_ms != 0 && now >= v.ready_ms && now <= v.ready_ms + VAULT_WINDOW_MS,
+            "VaultLocked: request_unlock, wait out the vault's delay, then act within 10 minutes");
+    }
+}
+
+// ---------- F15: covered call options (Hook-style): the holder sells the right to buy the Pusaka at a strike ----------
+
+#[near(serializers = [borsh])]
+struct CoveredCall {
+    writer: AccountId,
+    strike: u128,
+    premium: u128,
+    expires_ms: u64,
+    holder: Option<AccountId>,
+}
+
+fn call_key(token_id: &str) -> String {
+    format!("cc:{token_id}")
+}
+
+#[cfg(not(feature = "mainnet"))]
+pub const CALL_MIN_MS: u64 = 60_000;
+#[cfg(feature = "mainnet")]
+pub const CALL_MIN_MS: u64 = 3_600_000;
+pub const CALL_MAX_MS: u64 = 365 * 86_400_000;
+
+/// A written call holds the Pusaka (no withdraw, sale, loan or transfer) until it expires, is cancelled or exercised.
+pub fn call_locks(token_id: &str) -> bool {
+    raw_get::<CoveredCall>(&call_key(token_id)).is_some_and(|c| env::block_timestamp_ms() <= c.expires_ms)
+}
+
+/// An heir's claim ends an unsold call, but never one a buyer can still exercise.
+pub fn end_call_for_heir(token_id: &str) {
+    if let Some(c) = raw_get::<CoveredCall>(&call_key(token_id)) {
+        require!(c.holder.is_none() || env::block_timestamp_ms() > c.expires_ms, "CallOpen: the call's buyer may still exercise; claim after it expires");
+        env::storage_remove(call_key(token_id).as_bytes());
+    }
 }
 
 /// F8, an agent with a budget: the holder lets one account (an AI agent) send NEAR out of the NFT's own
@@ -673,6 +758,172 @@ impl Pusaka {
             .map(|id| json!({ "verified_sats": self.verified_sats(&id), "token_id": id })).collect();
         let total: u64 = rows.iter().map(|r| r["verified_sats"].as_u64().unwrap_or(0)).sum();
         json!({ "light_client": BTC_LIGHT_CLIENT, "tokens": rows, "total_sats": total })
+    }
+
+    // ---------- F14: vault ----------
+
+    /// Owner: puts the Pusaka in a vault (or with `recovery` None takes it out). From then on every owner action
+    /// needs an unlock requested `delay_ms` earlier (`request_unlock`), and during that delay `recovery` (the holder's
+    /// cold account, or a guardian) can claw the Pusaka back. Changing or removing the vault is itself an owner action,
+    /// so a stolen key has to wait the delay too. Cleared when the NFT changes hands.
+    #[payable]
+    pub fn set_vault(&mut self, token_id: TokenId, recovery: Option<AccountId>, delay_ms: U64) {
+        self.assert_owner(&token_id);
+        let owner = env::predecessor_account_id();
+        match recovery {
+            None => {
+                env::storage_remove(vault_key(&token_id).as_bytes());
+                self.log(&token_id, Event::VaultSet { recovery: None, delay_ms: U64(0) });
+            }
+            Some(r) => {
+                require!(r != owner, "recovery: an account other than the holder");
+                assert_not_its_own_account(&token_id, &r); // a clawback into it would strand the NFT for good
+                if let Some(h) = raw_get::<Heir>(&heir_key(&token_id)).filter(|h| h.owner == owner) {
+                    require!(delay_ms.0 + VAULT_WINDOW_MS <= h.after_ms / 2, "delay_ms: too long for your heir's waiting time (at most half of it, less 10 minutes)");
+                }
+                require!((VAULT_MIN_DELAY_MS..=VAULT_MAX_DELAY_MS).contains(&delay_ms.0), "delay_ms: out of range");
+                // a sale, loan, gift or market approval made before the vault would not wait for it
+                self.assert_free(&token_id);
+                if !env::storage_has_key(vault_key(&token_id).as_bytes()) {
+                    charge_storage(250, 0);
+                }
+                raw_put(&vault_key(&token_id), &Vault { owner, recovery: r.clone(), delay_ms: delay_ms.0, ready_ms: 0 });
+                self.log(&token_id, Event::VaultSet { recovery: Some(r), delay_ms });
+            }
+        }
+    }
+
+    /// Holder: asks to open owner actions; they open `delay_ms` from now, for 10 minutes. The recovery account is
+    /// notified (NEAR Social) and can claw the Pusaka back before then.
+    pub fn request_unlock(&mut self, token_id: TokenId) -> U64 {
+        let owner = self.owner_of(&token_id);
+        require!(owner == env::predecessor_account_id(), "NotOwner");
+        let mut v: Vault = raw_get::<Vault>(&vault_key(&token_id)).filter(|v| v.owner == owner).unwrap_or_else(|| env::panic_str("no vault"));
+        v.ready_ms = env::block_timestamp_ms() + v.delay_ms;
+        raw_put(&vault_key(&token_id), &v);
+        let ready = v.ready_ms;
+        self.log(&token_id, Event::VaultUnlockRequested { recovery: v.recovery, ready_ms: U64(ready) });
+        U64(ready)
+    }
+
+    /// Recovery account: cancels any requested unlock and, if nothing holds the Pusaka (sale, loan, gift, approval),
+    /// moves it to itself. Returns whether it moved.
+    pub fn vault_clawback(&mut self, token_id: TokenId) -> bool {
+        let owner = self.owner_of(&token_id);
+        let mut v: Vault = raw_get::<Vault>(&vault_key(&token_id)).filter(|v| v.owner == owner).unwrap_or_else(|| env::panic_str("no vault"));
+        require!(env::predecessor_account_id() == v.recovery, "only the vault's recovery account");
+        let free = self.lock_reason(&token_id).is_none() && !self.has_approvals(&token_id);
+        let to = v.recovery.clone();
+        if free {
+            self.tokens.internal_transfer(&owner, &to, &token_id, None, None);
+            clear_heir(&token_id);
+            clear_pq(&token_id);
+        } else {
+            v.ready_ms = 0;
+            raw_put(&vault_key(&token_id), &v);
+        }
+        self.log(&token_id, Event::VaultClawback { from: owner, to, moved: free });
+        free
+    }
+
+    /// The current holder's vault: recovery account, delay, and when owner actions open (if an unlock was requested).
+    pub fn vault_of(&self, token_id: TokenId) -> Option<Value> {
+        let owner = self.tokens.owner_by_id.get(&token_id)?;
+        let now = env::block_timestamp_ms();
+        raw_get::<Vault>(&vault_key(&token_id)).filter(|v| v.owner == owner).map(|v| json!({
+            "recovery": v.recovery, "delay_ms": U64(v.delay_ms), "ready_ms": U64(v.ready_ms),
+            "open": v.ready_ms != 0 && now >= v.ready_ms && now <= v.ready_ms + VAULT_WINDOW_MS,
+        }))
+    }
+
+    // ---------- F15: covered calls ----------
+
+    /// Owner: writes a covered call. Anyone may buy it for `premium` (paid to the holder at once); its buyer may then buy
+    /// the Pusaka for `strike` until `expires_ms`. The Pusaka is held meanwhile, so its Bitcoin can't leave first.
+    #[payable]
+    pub fn write_call(&mut self, token_id: TokenId, strike: U128, premium: U128, expires_ms: U64) {
+        self.assert_owner(&token_id);
+        self.assert_free(&token_id);
+        assert_no_live_sign_in(&token_id);
+        let now = env::block_timestamp_ms();
+        require!(strike.0 > 0 && premium.0 > 0, "strike and premium: more than 0");
+        require!(expires_ms.0 >= now + CALL_MIN_MS && expires_ms.0 <= now + CALL_MAX_MS, "expires_ms: out of range");
+        charge_storage(300, 0);
+        let writer = env::predecessor_account_id();
+        raw_put(&call_key(&token_id), &CoveredCall { writer, strike: strike.0, premium: premium.0, expires_ms: expires_ms.0, holder: None });
+        self.bump_epoch(&token_id, 1);
+        self.log(&token_id, Event::CallWritten { strike, premium, expires_ms });
+    }
+
+    /// Writer: withdraws a call nobody bought (or one that expired).
+    pub fn cancel_call(&mut self, token_id: TokenId) {
+        let c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
+        require!(c.writer == env::predecessor_account_id(), "NotOwner");
+        require!(c.holder.is_none() || env::block_timestamp_ms() > c.expires_ms, "Bought: the buyer may exercise until it expires");
+        env::storage_remove(call_key(&token_id).as_bytes());
+        self.log(&token_id, Event::CallCancelled);
+    }
+
+    /// Buys the call: attach the premium. `expected_sign_epoch` binds it to the Bitcoin the buyer saw inside.
+    #[payable]
+    pub fn buy_call(&mut self, token_id: TokenId, expected_sign_epoch: u32) {
+        let mut c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
+        let buyer = env::predecessor_account_id();
+        let paid = env::attached_deposit().as_yoctonear();
+        require!(c.holder.is_none(), "Bought: someone already holds this call");
+        require!(env::block_timestamp_ms() < c.expires_ms, "Expired");
+        require!(buyer != c.writer, "SelfBuy");
+        require!(paid >= c.premium, "attach the premium");
+        self.assert_epoch(&token_id, expected_sign_epoch);
+        c.holder = Some(buyer.clone());
+        raw_put(&call_key(&token_id), &c);
+        refund(c.writer.clone(), NearToken::from_yoctonear(c.premium));
+        refund(buyer.clone(), NearToken::from_yoctonear(paid - c.premium));
+        self.log(&token_id, Event::CallBought { holder: buyer, premium: U128(c.premium) });
+    }
+
+    /// The call's buyer: passes it on.
+    pub fn transfer_call(&mut self, token_id: TokenId, to: AccountId) {
+        let mut c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
+        require!(c.holder.as_ref() == Some(&env::predecessor_account_id()), "only the call's holder");
+        require!(env::block_timestamp_ms() <= c.expires_ms, "Expired");
+        c.holder = Some(to.clone());
+        raw_put(&call_key(&token_id), &c);
+        self.log(&token_id, Event::CallTransferred { to });
+    }
+
+    /// The call's buyer: buys the Pusaka for the strike (attach it) before expiry; the writer is paid like a sale,
+    /// creator royalty included.
+    #[payable]
+    pub fn exercise_call(&mut self, token_id: TokenId) {
+        let c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
+        let buyer = env::predecessor_account_id();
+        let paid = env::attached_deposit().as_yoctonear();
+        require!(c.holder.as_ref() == Some(&buyer), "only the call's holder");
+        require!(env::block_timestamp_ms() <= c.expires_ms, "Expired");
+        require!(paid >= c.strike, "attach the strike");
+        require!(self.tokens.owner_by_id.get(&token_id).as_ref() == Some(&c.writer), "the writer no longer holds it");
+        env::storage_remove(call_key(&token_id).as_bytes());
+        self.tokens.internal_transfer(&c.writer, &buyer, &token_id, None, None);
+        clear_heir(&token_id);
+        clear_pq(&token_id);
+        let price = NearToken::from_yoctonear(c.strike);
+        self.log(&token_id, Event::Sale { from: c.writer.clone(), to: buyer.clone(), price });
+        for (to, amount) in self.split(&token_id, &c.writer, c.strike) {
+            if to != c.writer {
+                self.log(&token_id, Event::Royalty { creator: to.clone(), amount: NearToken::from_yoctonear(amount) });
+            }
+            refund(to, NearToken::from_yoctonear(amount));
+        }
+        refund(buyer, NearToken::from_yoctonear(paid - c.strike));
+    }
+
+    /// The open call on a Pusaka: writer, strike, premium, expiry and its buyer, if any.
+    pub fn call_of(&self, token_id: TokenId) -> Option<Value> {
+        raw_get::<CoveredCall>(&call_key(&token_id)).filter(|c| env::block_timestamp_ms() <= c.expires_ms).map(|c| json!({
+            "writer": c.writer, "strike": U128(c.strike), "premium": U128(c.premium),
+            "expires_ms": U64(c.expires_ms), "holder": c.holder,
+        }))
     }
 
     // ---------- F6: post-quantum (ML-DSA-65) ----------

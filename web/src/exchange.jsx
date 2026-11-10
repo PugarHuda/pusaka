@@ -151,10 +151,7 @@ function Reserves() {
     <section className="por">
       <h1>Proof of reserves</h1>
       <p><strong>{(total / 1e8).toFixed(8)} BTC</strong> verified across {s.length} Pusakas on <code>{CONTRACT}</code>.</p>
-      <p className="muted">Custodial wrappers publish a list of addresses and ask you to trust it. Here each address is derived by NEAR's MPC network
-        for this contract and token, and each counted deposit was proven by NEAR's Bitcoin light client and never signed away. Open a row to
-        re-check it from your own browser against NEAR, the MPC signer and Bitcoin. Also as JSON: <a href="/api/reserves">/api/reserves</a>;
-        on Pusaka v2 as one contract view, <code>reserves()</code>. A holder can also prove an address with a BIP-322 signature from the NFT's own key (v2).</p>
+      <p className="muted">Open a row to re-check it from your own browser. Also as JSON: <a href="/api/reserves">/api/reserves</a>. <a href="#/docs">How it works</a></p>
       <table className="ladder"><thead><tr><th>Pusaka</th><th>Verified</th><th>Bitcoin address</th><th>Holder</th><th /></tr></thead>
         <tbody>{s.map((r) => <tr key={r.id}>
           <td><a href={`#/pusaka/${r.id}`}>#{r.id}</a></td><td>{r.sats.toLocaleString()} sats ({r.deposits} deposit{r.deposits === 1 ? "" : "s"})</td>
