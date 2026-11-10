@@ -4,9 +4,11 @@
 //       account claws it back during the delay
 //   PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/v2-vault-call.mjs call <writer> <token_id> <buyer>
 //       writes a covered call, the writer's withdrawal is refused while it's open, the buyer buys it and exercises
+//   PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/v2-vault-call.mjs btccall <writer> <token_id> <buyer> <pay_to_tb1>
+//       a call whose strike is paid in native Bitcoin (F16): written, NEAR exercise refused, bought, exercise reserved
 //   node scripts/v2-vault-call.mjs pool <bidder> <seller> <token_id> <near_per_10k_sats> <fills>
 //       a buy pool on the original contract: the seller sells into it and the pool stays open one step lower
-import { account, callRaw, view, NEAR_EXPLORER } from "./lib.mjs";
+import { account, callRaw, view, scriptHex, NEAR_EXPLORER } from "./lib.mjs";
 
 const V2 = "pusaka-v2.testnet", NFT = "pusaka-btc.testnet", MARKET = "pusaka-market.testnet";
 const near = (n) => BigInt(Math.round(Number(n) * 1e6)) * 10n ** 18n;
@@ -42,6 +44,16 @@ if (step === "vault") {
   const { sign_epoch } = await view("token_info", { token_id }, V2);
   console.log(`bought by ${buyer}: ${link(await tx(buyer, "buy_call", { token_id, expected_sign_epoch: sign_epoch }, near(0.01)))}`);
   console.log(`exercised; #${token_id} now held by ${(await tx(buyer, "exercise_call", { token_id }, near(0.2)), await owner(token_id))}`);
+} else if (step === "btccall") {
+  // F16: the strike is paid in native Bitcoin; then `v2-bitcoin.mjs pay <id>` and `prove-exercise`
+  const [writer, token_id, buyer, payTo] = a;
+  const w = await tx(writer, "write_btc_call", { token_id, strike_sats: "1000", pay_to_script: scriptHex(payTo), premium: near(0.01).toString(), expires_ms: String(Date.now() + 3_600_000) }, near(0.01), 30);
+  console.log(`Bitcoin call written (strike 1,000 sats to ${payTo}, premium 0.01 NEAR, 1 h): ${link(w)}`);
+  const { sign_epoch } = await view("token_info", { token_id }, V2);
+  console.log(`bought by ${buyer}: ${link(await tx(buyer, "buy_call", { token_id, expected_sign_epoch: sign_epoch }, near(0.01)))}`);
+  await refused("exercising a Bitcoin call with NEAR", /strike is paid on Bitcoin/, () => tx(buyer, "exercise_call", { token_id }, near(1)));
+  const r = await tx(buyer, "reserve_btc_exercise", { token_id });
+  console.log(`exercise reserved, OP_RETURN ${JSON.parse(Buffer.from(r.status.SuccessValue, "base64").toString())}: ${link(r)}`);
 } else if (step === "pool") {
   const [bidder, seller, token_id, per10k, fills] = a;
   const { verified_sats } = await view("token_info", { token_id }, NFT);
@@ -54,4 +66,4 @@ if (step === "vault") {
   const bid = await view("bid", { bid_id: id }, MARKET);
   console.log(`#${token_id} (${verified_sats} sats) sold into it, now held by ${await owner(token_id, NFT)}: ${link(f)}`);
   console.log(`pool still open: ${bid.price_per_sat} yocto/sat, ${(await view("curve_of", { bid_id: id }, MARKET)).fills_left} fills left`);
-} else throw new Error("step: vault | call | pool");
+} else throw new Error("step: vault | call | btccall | pool");

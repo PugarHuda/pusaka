@@ -4,6 +4,7 @@
 //   PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/v2-bitcoin.mjs rent   <holder> <token_id> <renter> <stranger>
 //   PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/v2-bitcoin.mjs btc-list <seller> <token_id> <price_sats> <pay_to_tb1_address>
 //   PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/v2-bitcoin.mjs reserve <buyer> <token_id>
+//   PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/v2-bitcoin.mjs payer | pay <token_id> | prove <who> <token_id> <txid> | prove-exercise <who> <token_id> <txid>
 // The BIP-322 witness is rebuilt and verified by shared/bip322.mjs, an implementation independent of the contract's
 // Rust (both checked against the BIP's test vectors). The Bitcoin payment for a reserved sale is made from any wallet:
 // pay the price to the listed address with the printed OP_RETURN, then anyone calls prove_btc_purchase with
@@ -77,8 +78,10 @@ if (step === "proof") {
   console.log(`payer address ${payer().address} (key in .keys/, never printed)`);
 } else if (step === "pay") {
   const [token_id] = a;
-  const l = await view("btc_listing_of", { token_id }, V2);
-  if (!l?.op_return) throw new Error("not reserved");
+  // a reserved Bitcoin purchase (F12) or a reserved Bitcoin exercise of a call (F16)
+  const sale = await view("btc_listing_of", { token_id }, V2), call = await view("call_of", { token_id }, V2);
+  const l = sale?.op_return ? sale : call?.op_return ? { price_sats: call.strike_sats, pay_to_script: call.pay_to_script, op_return: call.op_return } : null;
+  if (!l) throw new Error("not reserved");
   const p = payer();
   const utxos = await (await btcFetch(`/address/${p.address}/utxo`)).json(); // unconfirmed is fine: both can confirm in one block
   const total = utxos.reduce((s, u) => s + u.value, 0), price = Number(l.price_sats), fee = 400;
@@ -95,7 +98,12 @@ if (step === "proof") {
   const { vout, ...proof } = await depositProof(txid, 0);
   const o = await tx(who, "prove_btc_purchase", { token_id, ...proof, pay_vout: 0, memo_vout: 1 }, 0n, 300);
   console.log(`proved; #${token_id} now held by ${(await view("nft_token", { token_id }, V2)).owner_id}: ${link(o)}`);
-} else throw new Error("step: proof | rent | btc-list | reserve | payer | pay | prove");
+} else if (step === "prove-exercise") {
+  const [who, token_id, txid] = a;
+  const { vout, ...proof } = await depositProof(txid, 0);
+  const o = await tx(who, "prove_btc_exercise", { token_id, ...proof, pay_vout: 0, memo_vout: 1 }, 0n, 300);
+  console.log(`proved; #${token_id} now held by ${(await view("nft_token", { token_id }, V2)).owner_id}: ${link(o)}`);
+} else throw new Error("step: proof | rent | btc-list | reserve | payer | pay | prove | prove-exercise");
 
 function payer() {
   const priv = hex.decode(JSON.parse(fs.readFileSync(PAYER, "utf8")).priv);

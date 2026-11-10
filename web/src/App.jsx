@@ -1652,6 +1652,7 @@ const REFUSED = [
   { v2: true, hash: "2EJXR7nxbyTmCYwMzUeyHnHtdMeaGKeQNPzpwViiSdmo", attack: "The seller lists it again while it's for sale for Bitcoin", test: "f12_a_btc_listing_locks_the_pusaka" },
   { v2: true, hash: "DWgPcrRCpacVJmbpq3M8ef6KFKgDKpsGz1aJh2Wg84CF", attack: "A vaulted Pusaka moved at once by its holder's key (what a stolen key would try)", test: "f14_a_stolen_key_cant_move_a_vaulted_pusaka_at_once" },
   { v2: true, hash: "5423C8LMKD3xERWSLaMKTERCkFvkzJLTvbtRGbHtjLxB", attack: "The writer of a call option takes the Bitcoin out before the buyer can exercise", test: "f15_the_writer_cant_take_the_bitcoin_out_under_a_call" },
+  { v2: true, hash: "8BRizcfcA95KgWqgszp17MS9Eu49LiEDaSU9RdT3gtmw", attack: "The holder of a call whose strike is paid in Bitcoin tries to exercise it with NEAR instead", test: "f16_a_bitcoin_call_cant_be_exercised_with_near" },
   { v2: true, hash: "CVmWWhPFKMtsjuaj8aPMYxRZdx7D2pjZ8UiRSrM2QSXq", attack: "A Bitcoin payment made for another reservation is used to claim the Pusaka", test: "f12_a_payment_for_another_reservation_is_refused" },
 ];
 const V2_CONTRACT = "pusaka-v2.testnet";

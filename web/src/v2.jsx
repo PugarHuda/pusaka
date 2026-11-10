@@ -362,16 +362,22 @@ function Vault({ id, s, accountId, reload }) {
 /** A covered call: the holder sells the right to buy this Pusaka at a fixed price until a date. */
 function Call({ id, s, accountId, isOwner, reload }) {
   const { busy, run, out } = useRun(reload);
-  const [f, setF] = useState({ strike: "5", premium: "0.1", days: "7" });
+  const [f, setF] = useState({ strike: "5", premium: "0.1", days: "7", inBtc: false, sats: "10000", to: "" });
   const c = s.call;
   if (!c) return !isOwner ? <p className="muted">None.</p> : (
     <form className="stack" onSubmit={(e) => { e.preventDefault(); run("write", async () => {
-      const o = await tx2("write_call", { token_id: id, strike: yocto(f.strike).toString(), premium: yocto(f.premium).toString(),
-        expires_ms: String(Date.now() + Number(f.days) * 86_400_000) }, yocto(0.01), 30);
+      const expires_ms = String(Date.now() + Number(f.days) * 86_400_000), premium = yocto(f.premium).toString();
+      const o = f.inBtc
+        ? await tx2("write_btc_call", { token_id: id, strike_sats: f.sats, pay_to_script: scriptHex(f.to.trim()), premium, expires_ms }, yocto(0.01), 30)
+        : await tx2("write_call", { token_id: id, strike: yocto(f.strike).toString(), premium, expires_ms }, yocto(0.01), 30);
       return <>Call option offered. {link(o.transaction.hash)}</>;
     }); }}>
       <p className="muted">None. Sell someone the right to buy this Pusaka at a fixed price until a date; you keep the premium either way.</p>
-      <label>Price they may buy at <span className="row"><input type="number" min="0.01" step="any" value={f.strike} onChange={(e) => setF({ ...f, strike: e.target.value })} required /> NEAR</span></label>
+      <label className="row"><input type="checkbox" checked={f.inBtc} onChange={(e) => setF({ ...f, inBtc: e.target.checked })} /> they pay that price in Bitcoin</label>
+      {f.inBtc ? <>
+        <label>Price they may buy at <span className="row"><input type="number" min="1000" value={f.sats} onChange={(e) => setF({ ...f, sats: e.target.value })} required /> sats</span></label>
+        <label>Paid to (your Bitcoin address) <input value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} placeholder="tb1q…" required spellCheck="false" autoCapitalize="none" /></label>
+      </> : <label>Price they may buy at <span className="row"><input type="number" min="0.01" step="any" value={f.strike} onChange={(e) => setF({ ...f, strike: e.target.value })} required /> NEAR</span></label>}
       <label>Premium for the option <span className="row"><input type="number" min="0.001" step="any" value={f.premium} onChange={(e) => setF({ ...f, premium: e.target.value })} required /> NEAR</span></label>
       <label>For <span className="row"><input type="number" min="1" value={f.days} onChange={(e) => setF({ ...f, days: e.target.value })} required /> days</span></label>
       <button disabled={!!busy}>{busy ? "Offering…" : "Offer a call option"}</button>
@@ -380,14 +386,20 @@ function Call({ id, s, accountId, isOwner, reload }) {
   );
   return (
     <div className="stack">
-      <p>The right to buy it for <strong>{near(c.strike)} NEAR</strong> until {when(c.expires_ms)}, premium {near(c.premium)} NEAR.{" "}
+      <p>The right to buy it for <strong>{c.strike_sats ? `${Number(c.strike_sats).toLocaleString()} sats, paid on Bitcoin` : `${near(c.strike)} NEAR`}</strong> until {when(c.expires_ms)}, premium {near(c.premium)} NEAR.{" "}
         {c.holder ? <>Held by <strong>{c.holder === accountId ? "you" : c.holder}</strong>.</> : "For sale."}</p>
       {!c.holder && accountId && !isOwner && <button disabled={!!busy} onClick={() => run("buy", async () =>
         <>The option is yours. {link((await tx2("buy_call", { token_id: id, expected_sign_epoch: s.info.sign_epoch }, BigInt(c.premium))).transaction.hash)}</>)}>
         Buy the option ({near(c.premium)} NEAR)</button>}
-      {c.holder === accountId && <button disabled={!!busy} onClick={() => run("ex", async () =>
+      {c.holder === accountId && !c.strike_sats && <button disabled={!!busy} onClick={() => run("ex", async () =>
         <>Exercised: the Pusaka is yours. {link((await tx2("exercise_call", { token_id: id }, BigInt(c.strike), 100)).transaction.hash)}</>)}>
         Exercise: buy it for {near(c.strike)} NEAR</button>}
+      {c.holder === accountId && c.strike_sats && !c.op_return && <button disabled={!!busy} onClick={() => run("res", async () =>
+        <>Reserved: 6 hours to pay on Bitcoin. {link((await tx2("reserve_btc_exercise", { token_id: id })).transaction.hash)}</>)}>
+        Exercise: pay {Number(c.strike_sats).toLocaleString()} sats on Bitcoin</button>}
+      {c.op_return && <p>Pay {Number(c.strike_sats).toLocaleString()} sats to script <code>{c.pay_to_script}</code> in one Bitcoin transaction with an
+        OP_RETURN output carrying <code>{c.op_return}</code>, by {when(c.btc_reserved_until_ms)}. Once it confirms, anyone submits
+        <code> prove_btc_exercise</code> with its proof and the Pusaka goes to {c.holder === accountId ? "you" : c.holder}.</p>}
       {isOwner && !c.holder && <button className="ghost" disabled={!!busy} onClick={() => run("cancel", async () =>
         <>Withdrawn. {link((await tx2("cancel_call", { token_id: id })).transaction.hash)}</>)}>Withdraw the offer</button>}
       {out}

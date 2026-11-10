@@ -167,6 +167,28 @@ pub fn btc_purchase_memo(token_id: &str, buyer: &AccountId, nonce: u64) -> Vec<u
     env::sha256_array(format!("pusaka-buy:{}:{token_id}:{buyer}:{nonce}", env::current_account_id()).as_bytes())[..20].to_vec()
 }
 
+/// A Bitcoin payment for something on NEAR: output `pay_vout` pays `pay_to` at least `min_sats`, output `memo_vout` is an
+/// OP_RETURN carrying exactly `memo` (binding it to one reservation), and its txid never paid for anything before.
+/// Returns the light client's proof arguments, the txid (display order, hex) and the sats paid.
+#[allow(clippy::too_many_arguments)]
+fn check_btc_payment(tx_hex: &str, pay_vout: u32, memo_vout: u32, pay_to: &[u8], min_sats: u64, memo: &[u8], block_hash: &str,
+                     tx_index: u64, merkle_proof: &[String], coinbase_txid: &str, coinbase_merkle_proof: &[String]) -> (Vec<u8>, String, u64) {
+    let tx = hex::decode(tx_hex).unwrap_or_else(|_| env::panic_str("tx_hex: hex"));
+    require!(tx.len() != 64, "64-byte transactions are not accepted");
+    let (paid, script) = btc::output(&tx, pay_vout);
+    require!(script == pay_to && paid >= min_sats, "the payment output doesn't pay the seller the price");
+    let (_, m) = btc::output(&tx, memo_vout);
+    require!(m.len() == 2 + memo.len() && m[0] == 0x6a && m[1] as usize == memo.len() && m[2..] == memo[..],
+        "the OP_RETURN isn't this reservation's");
+    let txid_internal = btc::sha256d(&tx);
+    let args = btc::proof_args_borsh(&txid_internal, block_hash, tx_index, merkle_proof, coinbase_txid, coinbase_merkle_proof, BTC_MIN_CONFIRMATIONS);
+    let mut txid = txid_internal;
+    txid.reverse();
+    let txid = hex::encode(txid);
+    require!(!env::storage_has_key(btc_paid_key(&txid).as_bytes()), "this Bitcoin payment already bought a Pusaka");
+    (args, txid, paid)
+}
+
 /// P2WPKH, P2WSH, P2TR, P2PKH or P2SH.
 fn standard_script(s: &[u8]) -> bool {
     matches!(s, [0x00, 0x14, rest @ ..] if rest.len() == 20)
@@ -182,7 +204,7 @@ pub fn clear_pq(token_id: &str) {
     env::storage_remove(agent_key(token_id).as_bytes());
     env::storage_remove(user_key(token_id).as_bytes());
     env::storage_remove(vault_key(token_id).as_bytes());
-    env::storage_remove(call_key(token_id).as_bytes()); // only an expired or exercised call is left by then
+    remove_call(token_id); // only an expired or exercised call is left by then
     // not the sign-in record: it expires by itself, so passing the NFT to an alt account can't clear it (V2-10)
 }
 
@@ -257,15 +279,57 @@ pub const CALL_MAX_MS: u64 = 365 * 86_400_000;
 
 /// A written call holds the Pusaka (no withdraw, sale, loan or transfer) until it expires, is cancelled or exercised.
 pub fn call_locks(token_id: &str) -> bool {
-    raw_get::<CoveredCall>(&call_key(token_id)).is_some_and(|c| env::block_timestamp_ms() <= c.expires_ms)
+    raw_get::<CoveredCall>(&call_key(token_id)).is_some_and(|c| env::block_timestamp_ms() <= c.expires_ms) || btc_exercise_holds(token_id)
 }
 
 /// An heir's claim ends an unsold call, but never one a buyer can still exercise.
 pub fn end_call_for_heir(token_id: &str) {
     if let Some(c) = raw_get::<CoveredCall>(&call_key(token_id)) {
         require!(c.holder.is_none() || env::block_timestamp_ms() > c.expires_ms, "CallOpen: the call's buyer may still exercise; claim after it expires");
-        env::storage_remove(call_key(token_id).as_bytes());
+        require!(!btc_exercise_holds(token_id), "CallOpen: the call's buyer is paying the strike on Bitcoin; claim after the reservation");
+        remove_call(token_id);
     }
+}
+
+fn remove_call(token_id: &str) {
+    env::storage_remove(call_key(token_id).as_bytes());
+    env::storage_remove(btc_strike_key(token_id).as_bytes());
+}
+
+// ---------- F16: a call whose strike is paid in native Bitcoin, proven by NEAR's light client ----------
+
+#[near(serializers = [borsh])]
+struct BtcStrike {
+    sats: u64,
+    pay_to: Vec<u8>,
+    /// Until when the call's holder may pay on Bitcoin (0 = not reserved); the proof may follow within PROOF_GRACE_MS.
+    until_ms: u64,
+    nonce: u64,
+}
+
+fn btc_strike_key(token_id: &str) -> String {
+    format!("cb:{token_id}")
+}
+
+fn btc_exercise_nonce_key(token_id: &str) -> String {
+    format!("cn:{token_id}")
+}
+
+/// A reserved Bitcoin exercise holds the Pusaka (and the call) until its time to pay plus the proof grace, and while a
+/// proof is with the light client (so a proof sent in the last seconds of the grace can't lose to a cancel).
+fn btc_exercise_holds(token_id: &str) -> bool {
+    env::storage_has_key(btc_exercise_proving_key(token_id).as_bytes())
+        || raw_get::<BtcStrike>(&btc_strike_key(token_id))
+            .is_some_and(|b| b.until_ms > 0 && env::block_timestamp_ms() <= b.until_ms.saturating_add(PROOF_GRACE_MS))
+}
+
+fn btc_exercise_proving_key(token_id: &str) -> String {
+    format!("cp:{token_id}")
+}
+
+/// The OP_RETURN a Bitcoin exercise must carry: binds the payment to this contract, token, holder and reservation.
+pub fn btc_exercise_memo(token_id: &str, holder: &AccountId, nonce: u64) -> Vec<u8> {
+    env::sha256_array(format!("pusaka-exercise:{}:{token_id}:{holder}:{nonce}", env::current_account_id()).as_bytes())[..20].to_vec()
 }
 
 /// F8, an agent with a budget: the holder lets one account (an AI agent) send NEAR out of the NFT's own
@@ -703,23 +767,13 @@ impl Pusaka {
                               tx_index: U64, merkle_proof: Vec<String>, coinbase_txid: String, coinbase_merkle_proof: Vec<String>) -> Promise {
         let l: BtcListing = raw_get(&btc_listing_key(&token_id)).unwrap_or_else(|| env::panic_str("NotListed"));
         let buyer = l.buyer.clone().unwrap_or_else(|| env::panic_str("NotReserved"));
-        let tx = hex::decode(&tx_hex).unwrap_or_else(|_| env::panic_str("tx_hex: hex"));
-        require!(tx.len() != 64, "64-byte transactions are not accepted");
-        let (paid, script) = btc::output(&tx, pay_vout);
-        require!(script == l.pay_to && paid >= l.price_sats, "the payment output doesn't pay the seller the price");
-        let (_, memo) = btc::output(&tx, memo_vout);
-        let want = btc_purchase_memo(&token_id, &buyer, l.nonce);
-        require!(memo.len() == 2 + want.len() && memo[0] == 0x6a && memo[1] as usize == want.len() && memo[2..] == want[..],
-            "the OP_RETURN isn't this reservation's");
-        let txid_internal = btc::sha256d(&tx);
-        let args = btc::proof_args_borsh(&txid_internal, &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof, BTC_MIN_CONFIRMATIONS);
-        let mut txid = txid_internal;
-        txid.reverse();
-        require!(!env::storage_has_key(btc_paid_key(&hex::encode(txid)).as_bytes()), "this Bitcoin payment already bought a Pusaka");
+        let memo = btc_purchase_memo(&token_id, &buyer, l.nonce);
+        let (args, txid, paid) = check_btc_payment(&tx_hex, pay_vout, memo_vout, &l.pay_to, l.price_sats, &memo,
+            &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof);
         Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
             .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
             .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(30))
-                .on_btc_purchase_proven(token_id, buyer, U64(l.nonce), hex::encode(txid), U64(paid)))
+                .on_btc_purchase_proven(token_id, buyer, U64(l.nonce), txid, U64(paid)))
     }
 
     /// Callback of `prove_btc_purchase`: hands the NFT over if the light client confirmed the payment and the
@@ -850,6 +904,8 @@ impl Pusaka {
         require!(expires_ms.0 >= now + CALL_MIN_MS && expires_ms.0 <= now + CALL_MAX_MS, "expires_ms: out of range");
         charge_storage(300, 0);
         let writer = env::predecessor_account_id();
+        // an expired Bitcoin call's strike must not carry over to this one (write_btc_call adds its own after this)
+        env::storage_remove(btc_strike_key(&token_id).as_bytes());
         raw_put(&call_key(&token_id), &CoveredCall { writer, strike: strike.0, premium: premium.0, expires_ms: expires_ms.0, holder: None });
         self.bump_epoch(&token_id, 1);
         self.log(&token_id, Event::CallWritten { strike, premium, expires_ms });
@@ -860,7 +916,8 @@ impl Pusaka {
         let c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
         require!(c.writer == env::predecessor_account_id(), "NotOwner");
         require!(c.holder.is_none() || env::block_timestamp_ms() > c.expires_ms, "Bought: the buyer may exercise until it expires");
-        env::storage_remove(call_key(&token_id).as_bytes());
+        require!(!btc_exercise_holds(&token_id), "Reserved: the buyer is paying the strike on Bitcoin");
+        remove_call(&token_id);
         self.log(&token_id, Event::CallCancelled);
     }
 
@@ -887,6 +944,7 @@ impl Pusaka {
         let mut c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
         require!(c.holder.as_ref() == Some(&env::predecessor_account_id()), "only the call's holder");
         require!(env::block_timestamp_ms() <= c.expires_ms, "Expired");
+        require!(!btc_exercise_holds(&token_id), "Reserved: a Bitcoin exercise is under way");
         c.holder = Some(to.clone());
         raw_put(&call_key(&token_id), &c);
         self.log(&token_id, Event::CallTransferred { to });
@@ -901,9 +959,10 @@ impl Pusaka {
         let paid = env::attached_deposit().as_yoctonear();
         require!(c.holder.as_ref() == Some(&buyer), "only the call's holder");
         require!(env::block_timestamp_ms() <= c.expires_ms, "Expired");
+        require!(!env::storage_has_key(btc_strike_key(&token_id).as_bytes()), "this call's strike is paid on Bitcoin: reserve_btc_exercise");
         require!(paid >= c.strike, "attach the strike");
         require!(self.tokens.owner_by_id.get(&token_id).as_ref() == Some(&c.writer), "the writer no longer holds it");
-        env::storage_remove(call_key(&token_id).as_bytes());
+        remove_call(&token_id);
         self.tokens.internal_transfer(&c.writer, &buyer, &token_id, None, None);
         clear_heir(&token_id);
         clear_pq(&token_id);
@@ -920,10 +979,94 @@ impl Pusaka {
 
     /// The open call on a Pusaka: writer, strike, premium, expiry and its buyer, if any.
     pub fn call_of(&self, token_id: TokenId) -> Option<Value> {
-        raw_get::<CoveredCall>(&call_key(&token_id)).filter(|c| env::block_timestamp_ms() <= c.expires_ms).map(|c| json!({
-            "writer": c.writer, "strike": U128(c.strike), "premium": U128(c.premium),
-            "expires_ms": U64(c.expires_ms), "holder": c.holder,
+        let b = raw_get::<BtcStrike>(&btc_strike_key(&token_id));
+        raw_get::<CoveredCall>(&call_key(&token_id)).filter(|c| env::block_timestamp_ms() <= c.expires_ms || btc_exercise_holds(&token_id)).map(|c| json!({
+            "writer": c.writer, "strike": b.is_none().then_some(U128(c.strike)), "premium": U128(c.premium),
+            "expires_ms": U64(c.expires_ms), "holder": c.holder.clone(),
+            "strike_sats": b.as_ref().map(|b| U64(b.sats)), "pay_to_script": b.as_ref().map(|b| hex::encode(&b.pay_to)),
+            "btc_reserved_until_ms": b.as_ref().filter(|b| b.until_ms > 0).map(|b| U64(b.until_ms)),
+            "btc_proof_until_ms": b.as_ref().filter(|b| b.until_ms > 0).map(|b| U64(b.until_ms.saturating_add(PROOF_GRACE_MS))),
+            "op_return": b.as_ref().filter(|b| b.until_ms > 0).and_then(|b| c.holder.as_ref().map(|h| hex::encode(btc_exercise_memo(&token_id, h, b.nonce)))),
         }))
+    }
+
+    // ---------- F16: a call whose strike is paid in native Bitcoin ----------
+
+    /// Owner: a covered call (F15) whose strike is paid in Bitcoin, `strike_sats` to `pay_to_script` (the writer's own
+    /// address). The premium is still paid in NEAR. Exercising: the holder reserves, pays on Bitcoin with the reservation's
+    /// OP_RETURN, and anyone proves it with NEAR's Bitcoin light client.
+    #[payable]
+    pub fn write_btc_call(&mut self, token_id: TokenId, strike_sats: U64, pay_to_script: String, premium: U128, expires_ms: U64) {
+        let script = hex::decode(&pay_to_script).unwrap_or_else(|_| env::panic_str("pay_to_script: hex"));
+        require!(standard_script(&script), "pay_to_script: a P2WPKH, P2WSH, P2TR, P2PKH or P2SH output script");
+        require!(strike_sats.0 >= 1_000, "strike_sats: at least 1,000");
+        // a NEAR strike nobody can pay: exercise_call refuses Bitcoin calls anyway
+        self.write_call(token_id.clone(), U128(u128::MAX), premium, expires_ms);
+        raw_put(&btc_strike_key(&token_id), &BtcStrike { sats: strike_sats.0, pay_to: script, until_ms: 0, nonce: 0 });
+    }
+
+    /// The call's holder: reserves a Bitcoin exercise before expiry. Returns the OP_RETURN (hex) the payment must carry.
+    /// Time to pay: RESERVE_MS, then PROOF_GRACE_MS for the proof; the Pusaka stays held meanwhile, even past expiry.
+    pub fn reserve_btc_exercise(&mut self, token_id: TokenId) -> String {
+        let c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
+        let mut b: BtcStrike = raw_get(&btc_strike_key(&token_id)).unwrap_or_else(|| env::panic_str("this call's strike is paid in NEAR"));
+        let holder = env::predecessor_account_id();
+        require!(c.holder.as_ref() == Some(&holder), "only the call's holder");
+        let now = env::block_timestamp_ms();
+        require!(now <= c.expires_ms, "Expired");
+        require!(!btc_exercise_holds(&token_id), "Reserved: an exercise is already under way");
+        // never reused for this token: an old payment's OP_RETURN can't match a new reservation
+        b.nonce = raw_get::<u64>(&btc_exercise_nonce_key(&token_id)).unwrap_or(0) + 1;
+        raw_put(&btc_exercise_nonce_key(&token_id), &b.nonce);
+        b.until_ms = now + RESERVE_MS;
+        let memo = btc_exercise_memo(&token_id, &holder, b.nonce);
+        raw_put(&btc_strike_key(&token_id), &b);
+        self.log(&token_id, Event::BtcExerciseReserved { holder, until_ms: U64(b.until_ms), op_return: hex::encode(&memo) });
+        hex::encode(memo)
+    }
+
+    /// Anyone: proves the holder's Bitcoin payment of the strike (output `pay_vout` pays the writer at least the strike,
+    /// output `memo_vout` is the reservation's OP_RETURN) with NEAR's Bitcoin light client; then the Pusaka goes to the holder.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prove_btc_exercise(&mut self, token_id: TokenId, tx_hex: String, pay_vout: u32, memo_vout: u32, block_hash: String,
+                              tx_index: U64, merkle_proof: Vec<String>, coinbase_txid: String, coinbase_merkle_proof: Vec<String>) -> Promise {
+        let c: CoveredCall = raw_get(&call_key(&token_id)).unwrap_or_else(|| env::panic_str("no call"));
+        let b: BtcStrike = raw_get(&btc_strike_key(&token_id)).unwrap_or_else(|| env::panic_str("this call's strike is paid in NEAR"));
+        let holder = c.holder.clone().unwrap_or_else(|| env::panic_str("nobody holds this call"));
+        require!(btc_exercise_holds(&token_id), "NotReserved: the holder reserves a Bitcoin exercise first");
+        let memo = btc_exercise_memo(&token_id, &holder, b.nonce);
+        let (args, txid, paid) = check_btc_payment(&tx_hex, pay_vout, memo_vout, &b.pay_to, b.sats, &memo,
+            &block_hash, tx_index.0, &merkle_proof, &coinbase_txid, &coinbase_merkle_proof);
+        require!(!env::storage_has_key(btc_exercise_proving_key(&token_id).as_bytes()), "a proof is already with the light client");
+        raw_put(&btc_exercise_proving_key(&token_id), &());
+        Promise::new(BTC_LIGHT_CLIENT.parse().unwrap())
+            .function_call("verify_transaction_inclusion_v2", args, NearToken::from_yoctonear(0), Gas::from_tgas(PROOF_TGAS))
+            .then(Self::ext(env::current_account_id()).with_static_gas(Gas::from_tgas(30))
+                .on_btc_exercise_proven(token_id, holder, U64(b.nonce), txid, U64(paid)))
+    }
+
+    /// Callback of `prove_btc_exercise`: hands the Pusaka to the call's holder if the light client confirmed the payment and
+    /// the same reservation still stands.
+    #[private]
+    pub fn on_btc_exercise_proven(&mut self, token_id: TokenId, holder: AccountId, nonce: U64, txid: String, sats: U64) -> bool {
+        env::storage_remove(btc_exercise_proving_key(&token_id).as_bytes());
+        let ok = matches!(env::promise_result_checked(0, 16), Ok(b) if b == b"true");
+        let (Some(c), Some(b)) = (raw_get::<CoveredCall>(&call_key(&token_id)), raw_get::<BtcStrike>(&btc_strike_key(&token_id))) else { return false };
+        if !ok || c.holder.as_ref() != Some(&holder) || b.nonce != nonce.0 || env::storage_has_key(btc_paid_key(&txid).as_bytes()) {
+            return false;
+        }
+        // the call holds the Pusaka (lock_reason); checked again so internal_transfer can't panic halfway
+        if self.tokens.owner_by_id.get(&token_id).as_ref() != Some(&c.writer) {
+            env::log_str(&format!("pusaka #{token_id}: Bitcoin exercise not completed: the writer no longer holds it"));
+            return false;
+        }
+        remove_call(&token_id);
+        raw_put(&btc_paid_key(&txid), &());
+        self.tokens.internal_transfer(&c.writer, &holder, &token_id, None, None);
+        clear_heir(&token_id);
+        clear_pq(&token_id);
+        self.log(&token_id, Event::BtcSale { from: c.writer, to: holder, sats, txid });
+        true
     }
 
     // ---------- F6: post-quantum (ML-DSA-65) ----------

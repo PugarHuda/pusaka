@@ -3,7 +3,7 @@
   "contract": "pusaka-v2.testnet",
   "note": "v2 runs beside v1 (pusaka-btc.testnet, renounced). Same contract plus F5/F6/F7 (contract/src/v2.rs); upgradeable through the DAO and a timelock.",
   "code": {
-    "wasm_sha256": "9fa6298302ee56ee6b235c44a6b35d9085e379ccd3aa8fce46e6aa922fbb753b",
+    "wasm_sha256": "f587ea2f414a0365cd33ffaa41ef87d9f5c1e4ea9f26e1ba62dbd8a0973cb09a",
     "build": "cargo near build non-reproducible-wasm --no-abi (cargo-near 0.22.0)",
     "deployed_tx": "CAtnMCghw4fphNTKA8NGyPg8aSvz3votn6W142o4oDNg",
     "init_tx": "44LTTzsKj6gBbMxMk4fdqpNMmVFcsFLXiGYv7E7KVBgk",
@@ -74,6 +74,11 @@
         "sha256": "9fa6298302ee56ee6b235c44a6b35d9085e379ccd3aa8fce46e6aa922fbb753b",
         "tx": "7C9PNi3DqjQUMjfDLk6s6qiV3jbmARq1wSNJAEnze8SG",
         "how": "DAO proposal 19 + timelock: F14 vault with clawback, F15 covered calls"
+      },
+      {
+        "sha256": "f587ea2f414a0365cd33ffaa41ef87d9f5c1e4ea9f26e1ba62dbd8a0973cb09a",
+        "tx": "9ndbzcAbw4LPjcQi93W1RU9yH1McrVGKPvez8UGyos1U",
+        "how": "DAO proposal 20 + timelock: F16 a call whose strike is paid in native Bitcoin, proven by the light client"
       }
     ]
   },

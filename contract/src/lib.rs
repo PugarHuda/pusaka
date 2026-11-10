@@ -288,6 +288,8 @@ pub enum Event {
     CallBought { holder: AccountId, premium: U128 },
     /// v2: the call option changed hands.
     CallTransferred { to: AccountId },
+    /// v2: the call's holder will pay the strike on Bitcoin; the payment must carry `op_return`.
+    BtcExerciseReserved { holder: AccountId, until_ms: U64, op_return: String },
 }
 
 /// The kinds of transaction the contract signs from a Pusaka's own NEAR account.

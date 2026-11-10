@@ -4423,3 +4423,200 @@ mod f14_f15 {
         c.buy_call("1".into(), e);
     }
 }
+
+mod f16 {
+    use super::*;
+
+    fn at(caller: &str, deposit: NearToken, ms: u64) {
+        let c = VMContextBuilder::new().current_account_id(acc("pusaka.testnet")).predecessor_account_id(acc(caller))
+            .attached_deposit(deposit).prepaid_gas(Gas::from_tgas(300)).block_timestamp(ms * 1_000_000).build();
+        testing_env!(c, test_vm_config(), RuntimeFeesConfig::test(), Default::default(), vec![]);
+    }
+    const SCRIPT: &str = "00141111111111111111111111111111111111111111";
+    const EXP: u64 = 2 * crate::v2::CALL_MIN_MS;
+    fn payment(script: &str, sats: u64, memo: &str) -> String {
+        let mut t = hex::decode("02000000").unwrap();
+        t.push(1);
+        t.extend_from_slice(&[0x43; 32]);
+        t.extend_from_slice(&[0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+        t.push(2);
+        t.extend_from_slice(&sats.to_le_bytes());
+        let s = hex::decode(script).unwrap();
+        t.push(s.len() as u8);
+        t.extend_from_slice(&s);
+        t.extend_from_slice(&0u64.to_le_bytes());
+        let m = hex::decode(memo).unwrap();
+        t.push(m.len() as u8 + 2);
+        t.extend_from_slice(&[0x6a, m.len() as u8]);
+        t.extend_from_slice(&m);
+        t.extend_from_slice(&[0, 0, 0, 0]);
+        hex::encode(t)
+    }
+    fn txid_of(tx: &str) -> String {
+        let mut h = btc::sha256d(&hex::decode(tx).unwrap());
+        h.reverse();
+        hex::encode(h)
+    }
+    fn owner(c: &Pusaka) -> String {
+        c.nft_token("1".into()).unwrap().owner_id.to_string()
+    }
+    /// alice writes a call on #1 with a 50,000-sat strike, bob buys it for 1 NEAR.
+    fn bought() -> Pusaka {
+        let mut c = setup();
+        at("alice.testnet", NearToken::from_millinear(10), 1_000);
+        c.write_btc_call("1".into(), U64(50_000), SCRIPT.into(), U128(NearToken::from_near(1).as_yoctonear()), U64(EXP));
+        let e = c.token_info("1".into()).unwrap().sign_epoch;
+        at("bob.testnet", NearToken::from_near(1), 2_000);
+        c.buy_call("1".into(), e);
+        c
+    }
+    fn reserve(c: &mut Pusaka, ms: u64) -> String {
+        at("bob.testnet", NearToken::from_yoctonear(0), ms);
+        c.reserve_btc_exercise("1".into())
+    }
+    fn prove(c: &mut Pusaka, tx: String, ms: u64) {
+        at("anyone.testnet", NearToken::from_yoctonear(0), ms);
+        let _ = c.prove_btc_exercise("1".into(), tx, 0, 1, "00".repeat(32), U64(1), vec![], "00".repeat(32), vec![]);
+    }
+
+    #[test]
+    fn f16_the_holder_exercises_by_paying_the_strike_in_bitcoin() {
+        let mut c = bought();
+        assert_eq!(c.call_of("1".into()).unwrap()["strike_sats"], json!("50000"));
+        let memo = reserve(&mut c, 3_000);
+        let tx = payment(SCRIPT, 50_000, &memo);
+        prove(&mut c, tx.clone(), 4_000);
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_exercise_proven("1".into(), acc("bob.testnet"), U64(1), txid_of(&tx), U64(50_000)));
+        assert_eq!(owner(&c), "bob.testnet");
+        assert!(c.call_of("1".into()).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "strike is paid on Bitcoin")]
+    fn f16_a_bitcoin_call_cant_be_exercised_with_near() {
+        let mut c = bought();
+        at("bob.testnet", NearToken::from_near(1000), 3_000);
+        c.exercise_call("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "doesn't pay the seller the price")]
+    fn f16_an_underpaid_strike_is_refused() {
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        prove(&mut c, payment(SCRIPT, 49_999, &memo), 4_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "OP_RETURN isn't this reservation's")]
+    fn f16_a_payment_for_another_reservation_is_refused() {
+        let mut c = bought();
+        reserve(&mut c, 3_000);
+        prove(&mut c, payment(SCRIPT, 50_000, &"00".repeat(20)), 4_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "only the call's holder")]
+    fn f16_only_the_holder_reserves() {
+        let mut c = bought();
+        at("mallory.testnet", NearToken::from_yoctonear(0), 3_000);
+        c.reserve_btc_exercise("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Expired")]
+    fn f16_no_reservation_after_expiry() {
+        let mut c = bought();
+        reserve(&mut c, EXP + 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "CallWritten")]
+    fn f16_a_reserved_exercise_holds_the_pusaka_past_expiry() {
+        // the holder may have paid just before expiry: the writer can't sell or empty it while the proof can still come
+        let mut c = bought();
+        reserve(&mut c, EXP - 1);
+        at("alice.testnet", NearToken::from_yoctonear(1), EXP + 1);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved")]
+    fn f16_the_writer_cant_cancel_while_the_holder_pays() {
+        let mut c = bought();
+        reserve(&mut c, EXP - 1);
+        at("alice.testnet", NearToken::from_yoctonear(0), EXP + 1);
+        c.cancel_call("1".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved")]
+    fn f16_the_option_cant_change_hands_mid_exercise() {
+        let mut c = bought();
+        reserve(&mut c, 3_000);
+        at("bob.testnet", NearToken::from_yoctonear(0), 3_500);
+        c.transfer_call("1".into(), acc("dave.testnet"));
+    }
+
+    #[test]
+    #[should_panic(expected = "NotReserved")]
+    fn f16_a_payment_without_a_reservation_is_refused() {
+        let mut c = bought();
+        prove(&mut c, payment(SCRIPT, 50_000, &"00".repeat(20)), 4_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "OP_RETURN isn't this reservation's")]
+    fn f16_a_bitcoin_payment_exercises_once() {
+        // refused twice over: the OP_RETURN names the old holder and nonce, and the txid is recorded as spent
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        let tx = payment(SCRIPT, 50_000, &memo);
+        prove(&mut c, tx.clone(), 4_000);
+        as_contract(vec![PromiseResult::Successful(b"true".to_vec())]);
+        assert!(c.on_btc_exercise_proven("1".into(), acc("bob.testnet"), U64(1), txid_of(&tx), U64(50_000)));
+        at("bob.testnet", NearToken::from_millinear(10), 5_000);
+        c.write_btc_call("1".into(), U64(50_000), SCRIPT.into(), U128(1), U64(5_000 + EXP));
+        let e = c.token_info("1".into()).unwrap().sign_epoch;
+        at("carol.testnet", NearToken::from_yoctonear(1), 6_000);
+        c.buy_call("1".into(), e);
+        at("carol.testnet", NearToken::from_yoctonear(0), 7_000);
+        c.reserve_btc_exercise("1".into());
+        prove(&mut c, tx, 8_000);
+    }
+
+    #[test]
+    fn f16_a_near_call_after_an_expired_bitcoin_call_exercises_in_near() {
+        let mut c = bought();
+        at("alice.testnet", NearToken::from_millinear(10), EXP + 1);
+        c.write_call("1".into(), U128(NearToken::from_near(2).as_yoctonear()), U128(1), U64(EXP + 1 + EXP));
+        assert!(c.call_of("1".into()).unwrap()["strike_sats"].is_null());
+        let e = c.token_info("1".into()).unwrap().sign_epoch;
+        at("carol.testnet", NearToken::from_yoctonear(1), EXP + 2);
+        c.buy_call("1".into(), e);
+        at("carol.testnet", NearToken::from_near(2), EXP + 3);
+        c.exercise_call("1".into());
+        assert_eq!(owner(&c), "carol.testnet");
+    }
+
+    #[test]
+    #[should_panic(expected = "Reserved")]
+    fn f16_a_proof_with_the_light_client_holds_past_the_grace() {
+        let mut c = bought();
+        let memo = reserve(&mut c, 3_000);
+        let last = 3_000 + crate::v2::RESERVE_MS + crate::v2::PROOF_GRACE_MS;
+        prove(&mut c, payment(SCRIPT, 50_000, &memo), last);
+        at("alice.testnet", NearToken::from_yoctonear(0), last.max(EXP) + 1);
+        c.cancel_call("1".into());
+    }
+
+    #[test]
+    fn f16_a_lapsed_reservation_frees_the_pusaka_after_expiry() {
+        let mut c = bought();
+        reserve(&mut c, 3_000);
+        let after = 3_000 + crate::v2::RESERVE_MS + crate::v2::PROOF_GRACE_MS + EXP + 1;
+        at("alice.testnet", NearToken::from_yoctonear(1), after);
+        c.list("1".into(), NearToken::from_near(1), None, None);
+    }
+}
