@@ -24,7 +24,7 @@ Everything network-specific lives in `shared/btc.mjs` (`CONFIG`) and one Rust fe
 
 ## Paying with any asset via NEAR Intents (mainnet only)
 
-NEAR Intents has no testnet (hackathon rule Q-007), which is why this waits for mainnet.
+NEAR Intents itself has no testnet (hackathon rule Q-007), which is why paying with any asset waits for mainnet. The NFT's own Intents balance already works on testnet through Tidepool's unmodified `defuse` verifier (see [V2.md](V2.md)).
 
 - **Flow:** the buyer picks an asset (USDC on Base, SOL, BTC…). The app asks the 1Click API for a quote whose output is the listing's current price in NEAR, delivered to the Pusaka contract with a memo naming the token. On settlement, the contract completes `buy` for that buyer.
 - **Contract work:** a payment entry point that accepts the settled NEAR on behalf of a named buyer, bound to `expected_sign_epoch` like `buy`, and refunds if the listing changed.

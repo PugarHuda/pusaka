@@ -10,11 +10,11 @@
 //   box:      [{ at, region?, for?, label? }]  highlight box around region
 //   callout:  [{ at, region?, for?, text }]    a note pointing at region
 //   cuts:     [{ from, to, label }]            remove a wait from the clip; label says so ("{s}" = seconds cut; "" = no label, for scrolling)
-//   start/end: trim the clip; hold: seconds the scene stays after its voice-over; caption: the scene's headline on screen
+//   start/end: trim the clip (the voice drives timing: the clip is sped up or held to it, no silence); caption: the scene's headline on screen
 //   x:        overrides for the X cut (shorter vo, other cuts...)
 // Compositions at the bottom list the scenes of each video. Scenes whose clip isn't recorded yet are skipped.
 
-export const voice = { voice: "en-US-AndrewMultilingualNeural", rate: "+10%" };
+export const voice = { voice: "en-US-AndrewMultilingualNeural", rate: "+25%" };
 const OK = "⏩ {s} s cut: approve + confirm"; // a wallet approval and the transaction confirming, cut short
 
 export const scenes = {

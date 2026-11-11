@@ -94,6 +94,14 @@ export const Subtitles = ({ subs, f }) => {
   );
 };
 
+/** One retimed piece of a recording: played at `rate`, or one still frame when rate is 0. */
+const Piece = ({ src, g, style }) => (
+  <Sequence from={g.out} durationInFrames={g.len} layout="none">
+    {g.rate ? <OffthreadVideo src={staticFile(src)} trimBefore={g.src} playbackRate={g.rate} muted style={style} />
+      : <Freeze frame={g.src}><OffthreadVideo src={staticFile(src)} muted style={style} /></Freeze>}
+  </Sequence>
+);
+
 /** A wallet popup, shown as its own window beside the app, with its own highlight boxes. */
 const Popup = ({ p, f, boxes, callouts }) => {
   const [pw, ph] = p.size, bar = 40;
@@ -115,11 +123,7 @@ const Popup = ({ p, f, boxes, callouts }) => {
           <span style={{ marginLeft: 10 }}>wallet.intear.tech</span>
         </div>
         <div style={{ position: "relative", width: pw, height: ph, overflow: "hidden", transform: `scale(${s})`, transformOrigin: "0 0" }}>
-          {p.pieces.map((g, i) => (
-            <Sequence key={i} from={g.out} durationInFrames={g.len} layout="none">
-              <OffthreadVideo src={staticFile(p.src)} trimBefore={g.src} muted style={{ width: W, height: H, position: "absolute", left: 0, top: 0 }} />
-            </Sequence>
-          ))}
+          {p.pieces.map((g, i) => <Piece key={i} src={p.src} g={g} style={{ width: W, height: H, position: "absolute", left: 0, top: 0 }} />)}
           {boxes.map((b, i) => <Highlight key={i} {...b} f={f} scale={s} />)}
         </div>
       </div>
@@ -144,7 +148,7 @@ const Card = ({ card, f, dur }) => {
   );
 };
 
-/** One scene: the recorded clip (kept segments, frozen tail), zoom, boxes, popups, captions, voice and subtitles. */
+/** One scene: the recorded clip (retimed pieces), zoom, boxes, popups, captions, voice and subtitles. */
 export const Scene = ({ sc }) => {
   const f = useCurrentFrame();
   const z = zoomAt(sc.zooms, f);
@@ -155,16 +159,7 @@ export const Scene = ({ sc }) => {
       {sc.card ? <Card card={sc.card} f={f} dur={sc.dur} /> : (
         <AbsoluteFill style={{ opacity: fade }}>
           <div style={{ position: "absolute", width: W, height: H, transformOrigin: "0 0", transform: `translate(${W / 2 - z.cx * z.s}px, ${H / 2 - z.cy * z.s}px) scale(${z.s})` }}>
-            {sc.segs.map((g, i) => (
-              <Sequence key={i} from={g.out} durationInFrames={g.len} layout="none">
-                <OffthreadVideo src={staticFile(sc.clip)} trimBefore={g.src} muted style={{ width: W, height: H, position: "absolute" }} />
-              </Sequence>
-            ))}
-            {sc.freeze && (
-              <Sequence from={sc.freeze.out} layout="none">
-                <Freeze frame={sc.freeze.src}><OffthreadVideo src={staticFile(sc.clip)} muted style={{ width: W, height: H, position: "absolute" }} /></Freeze>
-              </Sequence>
-            )}
+            {sc.segs.map((g, i) => <Piece key={i} src={sc.clip} g={g} style={{ width: W, height: H, position: "absolute" }} />)}
             {main(sc.boxes).map((b, i) => <Highlight key={i} {...b} f={f} scale={z.s} />)}
           </div>
           {main(sc.callouts).map((c, i) => <Callout key={i} {...c} box={toScreen(z, c.box)} f={f} />)}
