@@ -43,14 +43,17 @@ function V2List({ accountId }) {
     } catch (e) { setMsg(e.message); }
   }
   return (
-    <section>
+    <section className="mine wide">
       <h1>Smart Pusakas</h1>
       <Intro />
       {accountId ? <button onClick={mint}>Mint a Smart Pusaka</button> : <button onClick={() => connector.connect()}>Connect NEAR wallet to mint</button>}
       {msg && <p className="muted" role="status">{msg}</p>}
       {!toks ? <p className="muted">Reading {V2}…</p> : toks.error ? <p className="error">Couldn't read {V2}: {toks.error}</p> : (
-        <ul className="v2-list">
-          {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => <li key={t.token_id}><a href={`#/v2/${t.token_id}`}>Smart Pusaka #{t.token_id}</a> <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></li>)}
+        <ul className="card-grid v2-grid">
+          {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => (
+            <li key={t.token_id}><a href={`#/v2/${t.token_id}`}><span className="v2-num">#{t.token_id}</span><span className="v2-name">Smart Pusaka</span>
+              <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></a></li>
+          ))}
         </ul>
       )}
     </section>

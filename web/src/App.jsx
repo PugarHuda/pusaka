@@ -1661,29 +1661,39 @@ const REFUSED_HERE = NETWORK === "testnet" ? REFUSED : REFUSED.filter((r) => !r.
 function Refused() {
   const [seen, setSeen] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  const [only, setOnly] = useState("all");
+  const shown = REFUSED_HERE.filter((r) => only === "all" || (only === "v2") === !!r.v2);
+  const count = (k) => REFUSED_HERE.filter((r) => k === "all" || (k === "v2") === !!r.v2).length;
   useEffect(() => {
     refusals(REFUSED_HERE.map((r) => r.hash), [ORIGINAL, V2_CONTRACT]).then(setSeen, (e) => setSeen({ error: e.message }));
   }, [attempt]);
   return (
-    <section className="mine">
+    <section className="mine wide">
       <h1>What the contract refused</h1>
       <p className="lede">Real attempts against <code>{CONTRACT}</code>, each turned down by the contract itself. Who sent it, what it called and the contract's reason are read from NEAR just now, not stored on this page.</p>
       <p className="muted">These rules can't be switched off. <a href="#/docs">Why</a></p>
       {!seen ? <p className="muted">Reading NEAR…</p>
         : seen.error ? <p className="error" role="alert">Couldn't read NEAR's archive: {seen.error}. <button className="ghost" onClick={() => { setSeen(null); setAttempt((n) => n + 1); }}>Try again</button></p>
-        : <ol className="refused">{REFUSED_HERE.map((r) => {
+        : <>
+        <div className="chips" role="group" aria-label="Which contract">
+          {[["all", "All"], ["v1", "Pusaka"], ["v2", "Smart Pusaka"]].map(([k, l]) => (
+            <button key={k} className={`chip${only === k ? " is-here" : ""}`} aria-pressed={only === k} onClick={() => setOnly(k)}>{l} <span>{count(k)}</span></button>
+          ))}
+        </div>
+        <ol className="refused card-grid">{shown.map((r) => {
           const x = seen.get(r.hash);
           return (
             <li key={r.hash}>
-              <h2>{r.attack}{r.v2 && <> <a className="pill pill-soft" href="#/v2">Smart Pusaka</a></>}</h2>
-              {x ? <p><strong>Refused:</strong> {explain(x.panic)}</p> : <p className="error">Couldn't confirm a refusal in this transaction.</p>}
+              <span className="tag">{r.v2 ? <a href="#/v2">Smart Pusaka</a> : "Pusaka"}</span>
+              <h2>{r.attack}</h2>
+              {x ? <p className="verdict"><strong>Refused:</strong> {explain(x.panic)}</p> : <p className="error">Couldn't confirm a refusal in this transaction.</p>}
               <p className="muted">
                 {x && <><code>{x.method}</code>{r.v2 && <> on <code>{V2_CONTRACT}</code></>} from {x.signer}, {new Date(x.at).toLocaleString()} · </>}
                 <a href={`${NEAR_EXPLORER}/tx/${r.hash}`} target="_blank" rel="noreferrer">{r.hash.slice(0, 8)}… on NEAR</a> · test <code>{r.test}</code>
               </p>
             </li>
           );
-        })}</ol>}
+        })}</ol></>}
     </section>
   );
 }
@@ -1703,7 +1713,7 @@ function Agents() {
   }, []);
   const add = `claude mcp add --transport http pusaka ${MCP_URL}`;
   return (
-    <section className="mine">
+    <section className="mine wide">
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
@@ -1712,11 +1722,11 @@ function Agents() {
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>
         <h2>{d.tools.length} tools on this endpoint</h2>
-        <ul>{d.tools.map((t) => <li key={t.name}><code>{t.name}</code><span className="muted">{t.description.split(/(?<=\.)\s/)[0]}</span></li>)}</ul>
+        <ul className="card-grid">{d.tools.map((t) => <li key={t.name}><code>{t.name}</code><span className="muted clamp" title={t.description}>{t.description.split(/(?<=\.)\s/)[0]}</span></li>)}</ul>
         <h2>Prompts</h2>
-        <ul>{d.prompts.map((p) => <li key={p.name}><code>{p.name}</code><span className="muted">{p.title}</span></li>)}</ul>
+        <ul className="card-grid">{d.prompts.map((p) => <li key={p.name}><code>{p.name}</code><span className="muted">{p.title}</span></li>)}</ul>
         <h2>Resources</h2>
-        <ul><li><code>pusaka://contract</code></li>{d.templates.map((r) => <li key={r.uriTemplate}><code>{r.uriTemplate}</code><span className="muted">{r.title}</span></li>)}</ul>
+        <ul className="card-grid"><li><code>pusaka://contract</code><span className="muted">The contract: code, keys, upgrades</span></li>{d.templates.map((r) => <li key={r.uriTemplate}><code>{r.uriTemplate}</code><span className="muted">{r.title}</span></li>)}</ul>
       </>}
     </section>
   );

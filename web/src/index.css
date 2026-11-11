@@ -74,6 +74,7 @@ body { overflow-x: hidden; padding-bottom: 0; }
   border-radius: var(--r-sheet);
   box-shadow: 0 30px 80px -30px rgba(40, 60, 90, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.6);
   overflow: hidden;
+  overflow: clip; /* clips like hidden without becoming a scroll box, so sticky (the docs contents) still sticks */
 }
 
 a { color: inherit; text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
@@ -142,8 +143,27 @@ input:focus, textarea:focus, select:focus { border-color: var(--ink); background
 .nav-link:hover { text-decoration: underline; }
 .who { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .bar button { white-space: nowrap; }
-.docs nav ul { list-style: none; padding: 0; gap: 0.35rem 1rem; }
-.docs article { scroll-margin-top: 1rem; }
+/* docs: contents on the left that follow the reading, text at a readable measure (developer-docs pattern) */
+.docs { max-width: 1080px; margin: 0 auto; padding-top: 2.5rem; }
+.docs h1 { font: 400 clamp(2.4rem, 5vw, 3.4rem)/1.02 var(--serif); letter-spacing: -0.02em; margin: 0 0 2rem; }
+.docs-body { display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: clamp(2rem, 4vw, 4rem); align-items: start; }
+.toc { position: sticky; top: 1.5rem; }
+.toc p { margin: 0 0 0.7rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+.toc ul { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); }
+.toc a { display: block; margin-left: -2px; padding: 0.32rem 0 0.32rem 0.9rem; border-left: 2px solid transparent; color: var(--ink-soft); font-size: 0.92rem; line-height: 1.35; text-decoration: none; transition: color 0.15s, border-color 0.15s; }
+.toc a:hover { color: var(--ink); }
+.toc a.is-here { color: var(--ink); font-weight: 600; border-left-color: var(--lav-ink); }
+.docs-text { max-width: var(--measure); }
+.docs article { scroll-margin-top: 1.5rem; padding-bottom: 1.8rem; }
+.docs article + article { border-top: 1px solid var(--line); padding-top: 1.8rem; }
+.docs article h2 { font: 400 1.65rem/1.2 var(--serif); letter-spacing: -0.01em; margin: 0 0 0.7rem; }
+.docs article p { margin: 0 0 0.9rem; }
+@media (max-width: 900px) {
+  .docs-body { grid-template-columns: 1fr; gap: 1.5rem; }
+  .toc { position: static; }
+  .toc ul { display: flex; flex-wrap: wrap; gap: 0.4rem; border: 0; }
+  .toc a { margin: 0; padding: 0.35rem 0.8rem; border: 0; border-radius: 999px; background: var(--panel); }
+}
 
 main { padding: 0 clamp(1.2rem, 3vw, 2.6rem) 4rem; min-height: 100vh; } /* footer starts below the fold, so loading content never pushes it */
 footer { border-top: 1px solid var(--line); padding: 1.5rem clamp(1.2rem, 3vw, 2.6rem); color: var(--ink-soft); font-size: 0.85rem; }
@@ -454,6 +474,33 @@ footer p { max-width: var(--measure); margin: 0; }
 .refused h2 { margin: 0 0 0.4rem; }
 .refused p { margin: 0.25rem 0; }
 .mine ul { list-style: none; padding: 0; margin: 0; }
+/* wide pages: a readable header, then a grid of cards that reflows 3 → 2 → 1 columns */
+.mine.wide { max-width: 1180px; }
+.mine.wide > p { max-width: var(--measure); }
+.mine.wide .lede { margin-left: 0; text-align: left; }
+.card-grid { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 1rem; }
+.mine .card-grid > li { display: flex; flex-direction: column; gap: 0.45rem; margin: 0; padding: 1.1rem 1.25rem; border: 1px solid var(--line); border-radius: var(--r-widget); background: var(--card); overflow-wrap: anywhere; }
+.mine .card-grid > li > code:first-child { align-self: flex-start; font-weight: 600; }
+.mine .refused.card-grid > li { display: flex; }
+.refused h2 { font-size: 1rem; line-height: 1.4; }
+.refused .verdict { padding: 0.55rem 0.75rem; border-radius: 10px; background: var(--panel); font-size: 0.93rem; }
+.refused .muted { margin-top: auto; padding-top: 0.3rem; font-size: 0.82rem; line-height: 1.5; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.tag { align-self: flex-start; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.tag a { color: var(--lav-ink); text-decoration: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.6rem 0 0; }
+.chips .chip { min-height: 2.5rem; padding: 0.4rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); font-weight: 500; box-shadow: none; }
+.chips .chip:hover:not(:disabled) { color: var(--ink); background: var(--chip-hover); box-shadow: none; }
+.chips .chip.is-here, .chips .chip.is-here:hover:not(:disabled) { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.chips .chip span { color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
+.chips .chip.is-here span { color: inherit; opacity: 0.7; }
+.mine .v2-grid > li { padding: 0; }
+.v2-grid { margin-top: 1.6rem; }
+.mine .v2-grid a { display: flex; flex-direction: column; gap: 0.2rem; padding: 1.2rem 1.3rem; border-radius: inherit; text-decoration: none; color: inherit; font-weight: 400; }
+.mine .v2-grid a:hover { background: var(--panel); }
+.v2-num { font: 400 2.4rem/1 var(--serif); color: var(--lav-ink); }
+.v2-name { font-weight: 600; }
+.v2-grid .muted { font-size: 0.88rem; overflow-wrap: anywhere; }
 .mine li { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; padding: 0.65rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .mine li a { font-weight: 600; }
 .mine-btc { font-variant-numeric: tabular-nums; }

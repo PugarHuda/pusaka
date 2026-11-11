@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 // #/docs: how Pusaka works. The product pages stay short; the explanations live here. Loaded on demand.
 const REPO = "https://github.com/PugarHuda/pusaka/blob/main";
 
@@ -91,11 +93,28 @@ const SECTIONS = [
 ];
 
 export default function DocsPage() {
+  const [here, setHere] = useState(SECTIONS[0][0]);
+  useEffect(() => { // the contents mark the section being read: the topmost one in the upper third of the screen
+    const io = new IntersectionObserver((es) => {
+      const top = es.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (top) setHere(top.target.id);
+    }, { rootMargin: "0px 0px -66% 0px" });
+    SECTIONS.forEach(([id]) => { const el = document.getElementById(id); if (el) io.observe(el); });
+    return () => io.disconnect();
+  }, []);
   return (
     <section className="docs">
       <h1>How it works</h1>
-      <nav aria-label="On this page"><ul className="row">{SECTIONS.map(([id, title]) => <li key={id}><a href="#/docs" onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView(); }}>{title}</a></li>)}</ul></nav>
-      {SECTIONS.map(([id, title, body]) => <article key={id} id={id}><h2>{title}</h2>{body}</article>)}
+      <div className="docs-body">
+        <nav aria-label="On this page" className="toc">
+          <p>On this page</p>
+          <ul>{SECTIONS.map(([id, title]) => (
+            <li key={id}><a href="#/docs" className={here === id ? "is-here" : undefined} aria-current={here === id ? "location" : undefined}
+              onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); setHere(id); }}>{title}</a></li>
+          ))}</ul>
+        </nav>
+        <div className="docs-text">{SECTIONS.map(([id, title, body]) => <article key={id} id={id}><h2>{title}</h2>{body}</article>)}</div>
+      </div>
     </section>
   );
 }
