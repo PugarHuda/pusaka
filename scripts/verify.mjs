@@ -61,8 +61,10 @@ let total = 0, utxoChecks = 0, mismatches = [], unreachable = [];
 // The same per-token audit the web app's "Check it yourself" runs in a browser (shared/audit.mjs).
 step = "auditing every Pusaka on Bitcoin";
 let keysChecked = 0;
+const infos = new Map(); // token_id -> token_info, reused by the replay below
 async function audit(t) {
   const info = await view("token_info", { token_id: t.token_id });
+  infos.set(t.token_id, info);
   total += Number(info.verified_sats);
   if (!info.btc_pubkey) return;
   // 30 s per token at most: an explorer that doesn't answer makes it "not checked", not a hang
@@ -118,10 +120,21 @@ step = "replaying every contract event from FastNear's archival index";
       resume_token = r.resume_token;
     }
     const events = [];
+    // every proof the contract stored came from an on_deposit_proven callback whose light-client call said true
+    const proofs = new Map(), TRUE = Buffer.from("true").toString("base64"), clients = new Set();
     for (let i = 0; i < txs.length; i += 20) {
       const { transactions } = await post("/v0/transactions", { tx_hashes: txs.slice(i, i + 20).map((t) => t.transaction_hash) });
       // a skipped batch would replay a partial history: stop instead (inconclusive, never a pass)
       if (!Array.isArray(transactions)) throw new Error(`batch ${i / 20 + 1} missing`);
+      for (const t of transactions) {
+        const fcs = (t.receipts ?? []).map((r) => ({ o: r.execution_outcome.outcome, fc: r.receipt?.receipt?.Action?.actions?.[0]?.FunctionCall }));
+        const lc = fcs.find((x) => x.fc?.method_name?.startsWith("verify_transaction_inclusion") && x.o.status?.SuccessValue === TRUE);
+        for (const { o, fc } of fcs) if (lc && fc?.method_name === "on_deposit_proven" && o.executor_id === CONTRACT && o.status?.SuccessValue === TRUE) {
+          const a = JSON.parse(Buffer.from(fc.args, "base64").toString());
+          proofs.set(`${a.token_id}:${a.txid}:${a.vout}`, { value: String(a.value), tx: t.transaction.hash });
+          clients.add(lc.o.executor_id);
+        }
+      }
       for (const t of transactions) for (const r of t.receipts ?? []) {
         const o = r.execution_outcome;
         if (o.outcome.executor_id !== CONTRACT || !("SuccessValue" in (o.outcome.status ?? {}) || "SuccessReceiptId" in (o.outcome.status ?? {}))) continue;
@@ -152,6 +165,10 @@ step = "replaying every contract event from FastNear's archival index";
     const differ = tokens.filter((t) => owner.has(t.token_id) && owner.get(t.token_id) !== t.owner_id).map((t) => `#${t.token_id}`);
     ok(!broken.length && !differ.length, `replayed from genesis: ${txs.length} transactions, ${mints} logged mints and ${transfers} transfers give every owner the contract reports now`,
       [...broken, ...differ.map((d) => `${d} owner differs`), unlogged.length ? `never moved since minting before nft_mint was logged: ${unlogged.join(", ")}` : ""].filter(Boolean).join("; ") || `${owner.size} of ${tokens.length} Pusakas, each followed hand to hand`);
+    const held = [...infos].flatMap(([id, info]) => info.proven_utxos.map((u) => ({ id, ...u })));
+    const orphan = held.filter((u) => proofs.get(`${u.id}:${u.txid}:${u.vout}`)?.value !== String(u.value)).map((u) => `#${u.id} ${u.txid.slice(0, 10)}:${u.vout}`);
+    ok(!orphan.length, `each of the ${held.length} proven UTXOs the contract counts traces to a proof transaction on chain where the light client answered true`,
+      orphan.length ? `no such proof for: ${orphan.join(", ")}` : `${proofs.size} accepted proofs in the history, light client ${[...clients].join(", ")}`);
   } catch (e) {
     inconclusive++;
     console.log(`⚠ replay not checked (FastNear's archival index didn't answer: ${e.message}); run again later`);

@@ -21,6 +21,7 @@ Expect `all checks passed`, with these lines (numbers move as the demo is used):
 ✓ the app's /api/reserves matches the contract: … sats verified in total
 ✓ all … NEAR transactions cited in the README and docs/ are on chain: via FastNear's archival index
 ✓ replayed from genesis: 553 transactions, 26 logged mints and 60 transfers give every owner the contract reports now: …
+✓ each of the 13 proven UTXOs the contract counts traces to a proof transaction on chain where the light client answered true: …
 ```
 
 If a line starts with ⚠, a Bitcoin explorer (mempool.space or Blockstream) didn't answer from your network: those
@@ -41,6 +42,9 @@ What each line means:
 - **Replayed from genesis**: every `nft_mint` / `nft_transfer` event the contract ever logged (all its transactions,
   from FastNear's archival index) is replayed in chain order; each transfer must start from the owner the log had
   so far, and the result must equal every owner `nft_tokens` reports today. Nothing is taken from our servers.
+- **Proof provenance**: every UTXO the contract counts in `verified_sats` must match (token, txid, vout, value) an
+  `on_deposit_proven` callback in its history, in a transaction where the Bitcoin light client's
+  `verify_transaction_inclusion` returned `true`. The contract can't count Bitcoin nobody proved.
 
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 
