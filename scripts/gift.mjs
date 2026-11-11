@@ -19,10 +19,11 @@ const [cmd, a1, a2] = process.argv.slice(2);
 if (cmd === "create") {
   const [owner, token_id] = [a1, a2];
   const kp = KeyPair.fromRandom("ed25519");
-  await call(account(owner), "gift", { token_id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
+  // the link is saved before the call: an RPC error after the tx landed must not lose the only key that claims it
   fs.mkdirSync(GIFTS, { recursive: true });
   const file = path.join(GIFTS, `pusaka-${token_id}.txt`);
   fs.writeFileSync(file, `${APP}/#/gift/${kp.toString()}\n`);
+  await call(account(owner), "gift", { token_id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
   console.log(`Pusaka #${token_id} is a gift link now: ${JSON.stringify(await view("gift_of", { token_id }))}; the link is in ${file}`);
 } else if (cmd === "claim") {
   const secret = fs.readFileSync(a1, "utf8").trim().split("#/gift/")[1];
