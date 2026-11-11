@@ -361,6 +361,19 @@ And a third time **by an AI agent over MCP** (`node mcp/swap-agent.mjs pusaka-s-
 
 Run it yourself: `node scripts/intents-exit.mjs <holder> <id> <testnet4_funding_txid>`.
 
+**The proceeds stay inside the NFT (Pusaka v2).** On v2 every NFT has its own keyless NEAR account, so the swap can pay
+*the NFT* instead of a person: the USDC then goes with the Pusaka when it's sold, and leaves only through the current
+holder's `account_call`. Live (12 Nov): Pusaka v2 #7 swapped 25,000 testnet4 sats for **18.516581 USDC** paid to its own
+account `0s81d19ba8ffb1bd70da590dd9f221407ae8f8b8ed` (NEAR MPC signed in 7.6 s).
+- Bitcoin testnet4 tx: [6a1da233…](https://mempool.space/testnet4/tx/6a1da23360c92e0fe43b2fd2011452f5577fd2eb77bceaeb317ee86d065cbaf7)
+- NEAR settlement: [HpmXdtLV…](https://testnet.near.rocks/tx/HpmXdtLVgDz2wuyASsDNBLM5xMY7Gh87qzXPs1VcWYy4), [B1J7w1Jz…](https://testnet.near.rocks/tx/B1J7w1Jz4BwRmnfzz8UNLH36QwAWWZB5hS5aGSbjP1Vf) and [8BjNbMyN…](https://testnet.near.rocks/tx/8BjNbMyNUcWs3B17EbESF2MGKGF2dfRwrtwkJ9LKrkWh)
+- A stranger's `account_call` to move it: refused on chain, `NotOwner` ([7hwnhmi9…](https://testnet.near.rocks/tx/7hwnhmi9uEdWmnRXtbCkYpwRL2qnmMoi7t4nrVxLfyir)).
+- The holder took 5 USDC out through `account_call` → `ft_transfer` ([3t6EPjnJ…](https://testnet.near.rocks/tx/3t6EPjnJ3B7vqBhjvGQjpqDEyWuKbeZksKW8P4nkJb2u)); 13.516581 USDC stays in the NFT.
+
+Run it: `PUSAKA_CONTRACT=pusaka-v2.testnet node scripts/intents-exit.mjs <holder> <id> <txid> 25000 --to <account_of id>`
+(register the account on `usdc.tidepool-sandbox.testnet` first, `storage_deposit`), or over MCP:
+`pusaka_swap_to_usdc` with `into_nft: true`, which registers it for you.
+
 **The NFT itself, sold through NEAR Intents.** Above, the Bitcoin leaves the NFT. Here the whole Pusaka changes hands,
 Bitcoin inside, for USDC, settled by the Intents verifier. Seller and buyer each sign a NEP-413 `token_diff`
 (`-1 nep171:pusaka-btc.testnet:15, +5 USDC` and the reverse). The seller's `nft_transfer_call` deposits the NFT into the

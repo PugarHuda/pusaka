@@ -67,12 +67,12 @@ async function spend(amount, what, { confirmed = false } = {}) {
   catch (e) { spent -= amount; throw e; }
 }
 
-const view = (method, args = {}) =>
-  provider.callFunction({ contractId: CONTRACT, method, args, blockQuery: { finality: "optimistic" } });
+const view = (method, args = {}, contractId = CONTRACT) =>
+  provider.callFunction({ contractId, method, args, blockQuery: { finality: "optimistic" } });
 
-async function call(method, args, { deposit = 0n, tgas = 100 } = {}) {
+async function call(method, args, { deposit = 0n, tgas = 100, receiver = CONTRACT } = {}) {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
-  return account.callFunction({ contractId: CONTRACT, methodName: method, args, deposit, gas: teraToGas(tgas) });
+  return account.callFunction({ contractId: receiver, methodName: method, args, deposit, gas: teraToGas(tgas) });
 }
 
 const ok = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2) }] });
@@ -436,9 +436,9 @@ reg("pusaka_withdraw_btc", {
 }));
 
 reg("pusaka_swap_to_usdc", {
-  description: "Testnet: sell BTC out of your Pusaka for USDC on NEAR through NEAR Intents, executed. The contract builds the Bitcoin transaction to a live quote's deposit address, NEAR MPC signs it, and the USDC is paid to this agent's NEAR account; refunds go back to the Pusaka's own Bitcoin address. Runs on Tidepool (1Click's API on testnet, NEAR's defuse verifier; its Bitcoin side is testnet4 with a custodial test relayer), so name the testnet4 tx that funded the Pusaka. Returns once the Bitcoin is sent; follow it with pusaka_swap_status (about one testnet4 block).",
-  inputSchema: { token_id: z.string(), funding_txid: z.string(), sats: z.number().int().min(10_000).max(500_000) },
-}, tool(async ({ token_id, funding_txid, sats }) => {
+  description: "Testnet: sell BTC out of your Pusaka for USDC on NEAR through NEAR Intents, executed. The contract builds the Bitcoin transaction to a live quote's deposit address, NEAR MPC signs it, and the USDC is paid to this agent's NEAR account; refunds go back to the Pusaka's own Bitcoin address. Runs on Tidepool (1Click's API on testnet, NEAR's defuse verifier; its Bitcoin side is testnet4 with a custodial test relayer), so name the testnet4 tx that funded the Pusaka. Returns once the Bitcoin is sent; follow it with pusaka_swap_status (about one testnet4 block). On Pusaka v2, into_nft: true pays the USDC to the NFT's own NEAR account instead: the proceeds stay inside the NFT, go with it when it's sold, and leave only through pusaka_account_send/account_call.",
+  inputSchema: { token_id: z.string(), funding_txid: z.string(), sats: z.number().int().min(10_000).max(500_000), into_nft: z.boolean().optional() },
+}, tool(async ({ token_id, funding_txid, sats, into_nft }) => {
   if (NETWORK !== "testnet") throw new Error("Executed swaps run on testnet only (Tidepool); on mainnet use pusaka_inspect's exit quote.");
   const FEE = 500;
   // the proceeds come to this agent, but the Pusaka's BTC still leaves it: an outflow, put to the person before any quote
@@ -448,7 +448,18 @@ reg("pusaka_swap_to_usdc", {
   const ins = (await testnet4Coins(funding_txid, addr)).slice(0, 8);
   const have = ins.reduce((a, u) => a + u.value, 0);
   if (have < sats + FEE) throw new Error(`That tx left ${have} sats unspent at Pusaka #${token_id}'s address; this swap needs ${sats + FEE}.`);
-  const q = await swapQuote(sats, ACCOUNT_ID, addr);
+  if (into_nft && !IS_SIBLING) throw new Error("into_nft needs Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet): only v2 NFTs have their own account.");
+  const recipient = into_nft ? await view("account_of", { token_id }) : ACCOUNT_ID;
+  if (into_nft) {
+    // the USDC contract pays only registered accounts: register the NFT's account first, or the payout would bounce
+    const usdc = TIDEPOOL_USDC.slice(7);
+    if (!(await view("storage_balance_of", { account_id: recipient }, usdc))) {
+      const { min } = await view("storage_balance_bounds", {}, usdc);
+      await spend(BigInt(min), "USDC storage for the NFT's account");
+      await call("storage_deposit", { account_id: recipient, registration_only: true }, { deposit: BigInt(min), tgas: 30, receiver: usdc });
+    }
+  }
+  const q = await swapQuote(sats, recipient, addr);
   await spend(WITHDRAW_DEPOSIT, "withdraw");
   const signed = await call("withdraw", {
     token_id, utxos: ins.map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
@@ -456,7 +467,7 @@ reg("pusaka_swap_to_usdc", {
   }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
   const txid = await broadcastTestnet4(finalize(signed, ins.map((u) => u.value)).toHex());
   await submitDeposit(txid, q.depositAddress);
-  return { quote_id: q.id, usdc: q.usdc, min_usdc: q.minUsdc, deposit_address: q.depositAddress, bitcoin_txid: txid,
+  return { quote_id: q.id, recipient, usdc: q.usdc, min_usdc: q.minUsdc, deposit_address: q.depositAddress, bitcoin_txid: txid,
     explorer: `https://mempool.space/testnet4/tx/${txid}`, next: "pusaka_swap_status with this deposit_address" };
 }));
 

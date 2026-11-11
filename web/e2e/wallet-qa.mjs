@@ -330,6 +330,10 @@ try {
     const dl = p.waitForEvent("download");
     await p.getByRole("link", { name: "Download the key file" }).click();
     const seedHex = JSON.parse(fs.readFileSync(await (await dl).path(), "utf8")).ml_dsa65_seed_hex;
+    // Playwright deletes its downloads with the browser: keep the holder's PQ key, or the NFT stays locked for good (v2 #6 did)
+    const keyOut = new URL(`../../.keys/pq-v2-wallet-qa-${Date.now()}.json`, import.meta.url);
+    fs.writeFileSync(keyOut, fs.readFileSync(await (await dl).path()));
+    console.log("key file kept in .keys/ (gitignored)");
     console.log("key file saved:", seedHex.length === 64);
     await approve(() => p.getByRole("button", { name: /register the key/ }).click());
     console.log("pq set:", (await result()).replace(/\s+/g, " "));

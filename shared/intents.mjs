@@ -41,6 +41,7 @@ export async function exitQuote(sats, evm) {
 // The same tb1 address and MPC key hold coins on testnet3 and testnet4.
 export const TIDEPOOL = "https://www.usetidepool.tech/v0";
 export const TESTNET4 = "https://mempool.emzy.de/testnet4/api"; // Esplora without /address: coins are found by funding txid
+const TESTNET4_ALT = "https://mempool.space/testnet4/api";
 export const TIDEPOOL_BTC = "nep141:btc.tp-omft.testnet";
 export const TIDEPOOL_USDC = "nep141:usdc.tidepool-sandbox.testnet";
 
@@ -53,8 +54,13 @@ const ok = async (r) => {
 /** Confirmed, unspent outputs of testnet4 tx `txid` paying `address`. */
 export async function testnet4Coins(txid, address) {
   if (!/^[0-9a-f]{64}$/i.test(txid.trim())) throw new Error("That isn't a Bitcoin transaction id (64 hex characters).");
-  const get = (p) => fetch(`${TESTNET4}${p}`).then((r) => { if (!r.ok) throw new Error(`testnet4 explorer answered ${r.status}`); return r.json(); });
-  const [tx, spends] = await Promise.all([get(`/tx/${txid.trim()}`), get(`/tx/${txid.trim()}/outspends`)]);
+  const get = (p, base = TESTNET4) => fetch(`${base}${p}`).then((r) => { if (!r.ok) throw new Error(`testnet4 explorer answered ${r.status}`); return r.json(); });
+  let [tx, spends] = await Promise.all([get(`/tx/${txid.trim()}`), get(`/tx/${txid.trim()}/outspends`)]);
+  // one explorer's index can lag a block behind its own tip (seen on emzy, 12 Nov): ask a second before saying "unconfirmed"
+  if (!tx.status?.confirmed) {
+    const alt = await Promise.all([get(`/tx/${txid.trim()}`, TESTNET4_ALT), get(`/tx/${txid.trim()}/outspends`, TESTNET4_ALT)]).catch(() => null);
+    if (alt?.[0].status?.confirmed) [tx, spends] = alt;
+  }
   if (!tx.status?.confirmed) throw new Error("That testnet4 transaction has no confirmation yet. Try again after the next block.");
   return tx.vout.map((o, vout) => ({ txid: txid.trim().toLowerCase(), vout, value: o.value, to: o.scriptpubkey_address }))
     .filter((u, i) => u.to === address && !spends[i]?.spent);

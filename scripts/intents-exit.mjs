@@ -1,5 +1,8 @@
 // Live: a Pusaka's own Bitcoin swapped through NEAR Intents, executed, on testnet.
-//   node intents-exit.mjs <owner.testnet> <token_id> <testnet4_funding_txid> [sats=20000]
+//   node intents-exit.mjs <owner.testnet> <token_id> <testnet4_funding_txid> [sats=20000] [--to <account>]
+//   --to: where the USDC goes (default the owner). On Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet) pass the NFT's own
+//   account (`account_of`): the proceeds then stay inside the NFT, move with it when it's sold, and leave only via
+//   the holder's `account_call`.
 // NEAR Intents (1Click) has no testnet, so this uses Tidepool (usetidepool.tech): the same API on testnet, settled by
 // NEAR's unmodified `defuse` verifier. Its Bitcoin route is testnet4 with a custodial test relayer (README). The web
 // app's "Swap to USDC" form runs the same steps from shared/intents.mjs.
@@ -7,7 +10,9 @@ import assert from "node:assert/strict";
 import { testnet4Coins, swapQuote, broadcastTestnet4, submitDeposit, swapStatus, SWAP_DONE, TIDEPOOL_USDC } from "@pusaka/shared";
 import { account, call, view, btcAddress, scriptHex, finalize, WITHDRAW_DEPOSIT, NEAR_EXPLORER } from "./lib.mjs";
 
+const toAt = process.argv.indexOf("--to"), to = toAt > 0 ? process.argv.splice(toAt, 2)[1] : null;
 const [ownerId, id, fundingTxid, satsArg] = process.argv.slice(2);
+const recipient = to ?? ownerId;
 if (!ownerId || !id || !fundingTxid) throw new Error("usage: node intents-exit.mjs <owner> <token_id> <funding_txid> [sats]");
 const sats = Number(satsArg ?? 20_000), FEE = 500;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -21,8 +26,8 @@ console.log(`Pusaka #${id} ${addr}: ${have} sats on testnet4 in ${fundingTxid.sl
 assert.ok(have >= sats + FEE, `needs ${sats + FEE} sats`);
 
 // 1. live quote: BTC -> USDC on NEAR to the owner, refunds to the Pusaka's own address
-const q = await swapQuote(sats, ownerId, addr);
-console.log(`1. quote ${q.id}: ${sats} sats -> ${q.usdc} USDC (min ${q.minUsdc}) to ${ownerId}; deposit to ${q.depositAddress}`);
+const q = await swapQuote(sats, recipient, addr);
+console.log(`1. quote ${q.id}: ${sats} sats -> ${q.usdc} USDC (min ${q.minUsdc}) to ${recipient}; deposit to ${q.depositAddress}`);
 
 // 2. the contract builds the spend, NEAR MPC signs it
 const t0 = Date.now();
@@ -43,7 +48,7 @@ for (let i = 0; i < 120; i++) {
   await sleep(15_000);
 }
 console.log(`3. ${st.status}`, JSON.stringify(st.swapDetails ?? {}).slice(0, 600));
-const bal = await view("ft_balance_of", { account_id: ownerId }, TIDEPOOL_USDC.slice(7));
-console.log(`   ${ownerId} holds ${Number(bal) / 1e6} USDC on ${TIDEPOOL_USDC.slice(7)}`);
+const bal = await view("ft_balance_of", { account_id: recipient }, TIDEPOOL_USDC.slice(7));
+console.log(`   ${recipient} holds ${Number(bal) / 1e6} USDC on ${TIDEPOOL_USDC.slice(7)}`);
 for (const h of st.swapDetails?.nearTxHashes ?? []) console.log(`   settlement ${NEAR_EXPLORER}/tx/${h}`);
 assert.equal(st.status, "SUCCESS");
