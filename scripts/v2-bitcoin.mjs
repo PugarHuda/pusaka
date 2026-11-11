@@ -97,12 +97,12 @@ if (step === "proof") {
   console.log(`paid ${price} sats for #${token_id}, OP_RETURN ${l.op_return}: txid ${await broadcast(psbt.extractTransaction().toHex())}`);
 } else if (step === "prove") {
   const [who, token_id, txid] = a;
-  const { vout, ...proof } = await depositProof(txid, 0);
+  const { vout: _vout, ...proof } = await depositProof(txid, 0); // the purchase method takes pay_vout instead
   const o = await tx(who, "prove_btc_purchase", { token_id, ...proof, pay_vout: 0, memo_vout: 1 }, 0n, 300);
   console.log(`proved; #${token_id} now held by ${(await view("nft_token", { token_id }, V2)).owner_id}: ${link(o)}`);
 } else if (step === "prove-exercise") {
   const [who, token_id, txid] = a;
-  const { vout, ...proof } = await depositProof(txid, 0);
+  const { vout: _vout, ...proof } = await depositProof(txid, 0); // the purchase method takes pay_vout instead
   const o = await tx(who, "prove_btc_exercise", { token_id, ...proof, pay_vout: 0, memo_vout: 1 }, 0n, 300);
   console.log(`proved; #${token_id} now held by ${(await view("nft_token", { token_id }, V2)).owner_id}: ${link(o)}`);
 } else throw new Error("step: proof | rent | btc-list | reserve | payer | pay | prove | prove-exercise");

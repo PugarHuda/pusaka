@@ -16,10 +16,11 @@ Expect `all checks passed`, with these lines (numbers move as the demo is used):
 ✓ NEP-330 build info names the reproducible image: sourcescan/cargo-near:0.21.1-rust-1.96.1
 ✓ nobody holds a key to the contract account: no key at all (or only open gift-link keys limited to claim)
 ✓ new code only after a public announcement: upgrades renounced: final
-✓ all 21 Pusaka BTC keys are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
-✓ verified_sats = proven deposits never signed away; 9 proven deposits found on Bitcoin, confirmed, paying the right address: …
+✓ all 27 Pusaka BTC keys are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
+✓ verified_sats = proven deposits never signed away; 13 proven deposits found on Bitcoin, confirmed, paying the right address: …
 ✓ the app's /api/reserves matches the contract: … sats verified in total
 ✓ all … NEAR transactions cited in the README and docs/ are on chain: via FastNear's archival index
+✓ replayed from genesis: 553 transactions, 26 logged mints and 60 transfers give every owner the contract reports now: …
 ```
 
 If a line starts with ⚠, a Bitcoin explorer (mempool.space or Blockstream) didn't answer from your network: those
@@ -37,6 +38,9 @@ What each line means:
   the MPC to sign with it, and the contract only asks for the current NFT owner.
 - **Proven deposits**: `verified_sats` is recomputed from the token's proven UTXOs minus the ones it ever signed,
   and each UTXO is looked up on Bitcoin: confirmed, at or below the light client's height, paying this address.
+- **Replayed from genesis**: every `nft_mint` / `nft_transfer` event the contract ever logged (all its transactions,
+  from FastNear's archival index) is replayed in chain order; each transfer must start from the owner the log had
+  so far, and the result must equal every owner `nft_tokens` reports today. Nothing is taken from our servers.
 
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 

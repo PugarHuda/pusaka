@@ -102,6 +102,62 @@ for (let i = 0; i < hashes.length; i += 20) {
 const missing = hashes.filter((h) => !found.has(h));
 ok(missing.length === 0, `all ${hashes.length} NEAR transactions cited in the README and docs/ are on chain`, missing.length ? `not found: ${missing.join(", ")}` : "via FastNear's archival index");
 
+// 6b. Replay from genesis: every NEP-171 nft_mint / nft_transfer the contract ever logged, in chain order, must
+//     give exactly the owners the contract reports now. Nothing is trusted but the transaction logs.
+step = "replaying every contract event from FastNear's archival index";
+{
+  const post = (p, body) => fetch(`https://tx.${NETWORK === "mainnet" ? "main" : "test"}.fastnear.com${p}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
+  }).then((r) => { if (!r.ok) throw new Error(`FastNear ${r.status}`); return r.json(); });
+  try {
+    const txs = [];
+    for (let resume_token; ;) {
+      const r = await post("/v0/account", { account_id: CONTRACT, ...(resume_token && { resume_token }) });
+      txs.push(...r.account_txs);
+      if (!r.resume_token || !r.account_txs.length) break;
+      resume_token = r.resume_token;
+    }
+    const events = [];
+    for (let i = 0; i < txs.length; i += 20) {
+      const { transactions } = await post("/v0/transactions", { tx_hashes: txs.slice(i, i + 20).map((t) => t.transaction_hash) });
+      // a skipped batch would replay a partial history: stop instead (inconclusive, never a pass)
+      if (!Array.isArray(transactions)) throw new Error(`batch ${i / 20 + 1} missing`);
+      for (const t of transactions) for (const r of t.receipts ?? []) {
+        const o = r.execution_outcome;
+        if (o.outcome.executor_id !== CONTRACT || !("SuccessValue" in (o.outcome.status ?? {}) || "SuccessReceiptId" in (o.outcome.status ?? {}))) continue;
+        o.outcome.logs.forEach((l, k) => {
+          if (!l.startsWith("EVENT_JSON:")) return;
+          const e = JSON.parse(l.slice(11));
+          if (e.standard === "nep171" && (e.event === "nft_mint" || e.event === "nft_transfer")) events.push({ at: [o.block_height, o.index, k], e });
+        });
+      }
+    }
+    // one receipt can show up in two transactions' lists (a refund, a callback): keep each log once
+    const seen = new Set(), ordered = events.sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1] || a.at[2] - b.at[2])
+      .filter((x) => { const k = x.at.join(":"); return !seen.has(k) && seen.add(k); });
+    const owner = new Map(), broken = [];
+    let mints = 0, transfers = 0;
+    for (const { e } of ordered) for (const d of e.data) for (const id of d.token_ids) {
+      if (e.event === "nft_mint") {
+        // emit_mint_events re-logged early mints for indexers (memo says so): a consistency check, not a new mint
+        if (d.memo?.startsWith("re-emitted") && owner.has(id)) { if (owner.get(id) !== d.owner_id) broken.push(`#${id}: re-emitted mint names ${d.owner_id}, the log had ${owner.get(id)}`); continue; }
+        mints++; owner.set(id, d.owner_id); continue;
+      }
+      transfers++;
+      // tokens minted before the contract logged nft_mint (#1-#4) start at their first transfer's sender
+      if (owner.has(id) && owner.get(id) !== d.old_owner_id) broken.push(`#${id}: moved from ${d.old_owner_id} but the log had it with ${owner.get(id)}`);
+      owner.set(id, d.new_owner_id);
+    }
+    const unlogged = tokens.filter((t) => !owner.has(t.token_id)).map((t) => `#${t.token_id}`);
+    const differ = tokens.filter((t) => owner.has(t.token_id) && owner.get(t.token_id) !== t.owner_id).map((t) => `#${t.token_id}`);
+    ok(!broken.length && !differ.length, `replayed from genesis: ${txs.length} transactions, ${mints} logged mints and ${transfers} transfers give every owner the contract reports now`,
+      [...broken, ...differ.map((d) => `${d} owner differs`), unlogged.length ? `never moved since minting before nft_mint was logged: ${unlogged.join(", ")}` : ""].filter(Boolean).join("; ") || `${owner.size} of ${tokens.length} Pusakas, each followed hand to hand`);
+  } catch (e) {
+    inconclusive++;
+    console.log(`⚠ replay not checked (FastNear's archival index didn't answer: ${e.message}); run again later`);
+  }
+}
+
 // 7. Pusaka v2 (testnet): the code is the recorded build, changes only via the DAO + timelock, and every NFT's own
 //    account is keyless and runs the token-account global contract published by hash.
 const V2 = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}-v2.json`);
