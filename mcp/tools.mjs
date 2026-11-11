@@ -441,15 +441,17 @@ reg("pusaka_swap_to_usdc", {
 }, tool(async ({ token_id, funding_txid, sats, into_nft }) => {
   if (NETWORK !== "testnet") throw new Error("Executed swaps run on testnet only (Tidepool); on mainnet use pusaka_inspect's exit quote.");
   const FEE = 500;
-  // the proceeds come to this agent, but the Pusaka's BTC still leaves it: an outflow, put to the person before any quote
-  await outflow(ACCOUNT_ID, `swap ${sats} sats from Pusaka #${token_id} for USDC paid to ${ACCOUNT_ID} on NEAR, at a live NEAR Intents quote with at most 1% slippage (Tidepool testnet)`);
+  if (into_nft && !IS_SIBLING) throw new Error("into_nft needs Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet): only v2 NFTs have their own account.");
+  // the payee is settled first, so the outflow gate (allowlist + confirmation) checks and names the account actually paid
+  const recipient = into_nft ? await view("account_of", { token_id }) : ACCOUNT_ID;
+  if (!recipient) throw new Error(`No account for Pusaka #${token_id}`);
+  // the Pusaka's BTC leaves it either way: an outflow, put to the person before any quote
+  await outflow(recipient, `swap ${sats} sats from Pusaka #${token_id} for USDC paid to ${into_nft ? `the NFT's own account ${recipient} (it stays with the NFT)` : recipient} on NEAR, at a live NEAR Intents quote with at most 1% slippage (Tidepool testnet)`);
   const info = await view("token_info", { token_id });
   const addr = btcAddress(info.btc_pubkey);
   const ins = (await testnet4Coins(funding_txid, addr)).slice(0, 8);
   const have = ins.reduce((a, u) => a + u.value, 0);
   if (have < sats + FEE) throw new Error(`That tx left ${have} sats unspent at Pusaka #${token_id}'s address; this swap needs ${sats + FEE}.`);
-  if (into_nft && !IS_SIBLING) throw new Error("into_nft needs Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet): only v2 NFTs have their own account.");
-  const recipient = into_nft ? await view("account_of", { token_id }) : ACCOUNT_ID;
   if (into_nft) {
     // the USDC contract pays only registered accounts: register the NFT's account first, or the payout would bounce
     const usdc = TIDEPOOL_USDC.slice(7);
