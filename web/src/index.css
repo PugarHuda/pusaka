@@ -372,6 +372,49 @@ footer p { max-width: var(--measure); margin: 0; }
 .piece-price { color: var(--lav-ink); font-size: 0.86rem; }
 .piece-vs { color: var(--ink-soft); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .piece-pending { color: var(--ink-soft); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+/* market cards: state as a badge, sats over 8-decimal BTC, the price in bold; empty ones step back */
+.piece { position: relative; }
+.piece.is-empty { background: transparent; border: 1px dashed var(--chip-hover); }
+.piece.is-empty .emblem { opacity: 0.6; filter: saturate(0.6); transition: opacity 0.2s, filter 0.2s, transform 0.3s ease; }
+.piece.is-empty:hover .emblem { opacity: 1; filter: none; }
+.piece-badge { position: absolute; top: 0.85rem; left: 0.85rem; z-index: 1; padding: 0.28em 0.7em; border-radius: 999px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.01em; background: var(--paper); color: var(--ink); }
+.piece-badge.is-sale { background: var(--leaf-pale); color: var(--leaf-ink); }
+.piece-badge.is-borrow { background: var(--lav-pale); color: var(--lav-ink); }
+.piece-badge.is-lent { background: var(--brass-pale); color: var(--brass-ink); }
+.piece .piece-btc { display: flex; flex-direction: column; align-items: center; gap: 0.05rem; }
+.piece-btc strong { color: var(--ink); font-weight: 600; }
+.piece-btc small { font-size: 0.74rem; color: var(--ink-soft); }
+.piece .piece-price { align-self: stretch; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--chip-hover); color: var(--ink-soft); font-size: 0.84rem; }
+.piece-price strong { display: block; color: var(--ink); font-size: 1.05rem; }
+
+/* detail: facts beside the picture, the deal on top, jump links that stay in reach */
+.face-facts { display: grid; margin: 1.1rem 0 1rem; padding: 0.3rem 1rem; text-align: left; background: var(--paper); border-radius: var(--r-widget); }
+.face-facts div { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); font-size: 0.92rem; }
+.face-facts div:last-child { border-bottom: 0; }
+.face-facts dt { color: var(--ink-soft); }
+.face-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.face-facts .piece-badge { position: static; }
+.deal { display: grid; gap: 1.4rem; padding: 1.6rem 1.8rem; background: var(--panel); border-radius: var(--r-card); }
+.detail-body .deal section { padding: 0; border: 0; }
+.deal .actions { padding-top: 1.2rem; border-top: 1px solid var(--chip-hover); }
+.deal .actions:empty { display: none; }
+.detail-nav { position: sticky; top: 0; z-index: 3; display: flex; gap: 0.35rem; overflow-x: auto; scrollbar-width: none; margin: 1.8rem 0 0; padding: 0.7rem 0; background: var(--paper); border-bottom: 1px solid var(--line); }
+.detail-nav::-webkit-scrollbar { display: none; }
+.detail-nav a { flex: none; padding: 0.42rem 0.9rem; border-radius: 999px; color: var(--ink-soft); font-size: 0.88rem; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.detail-nav a:hover { background: var(--panel); color: var(--ink); }
+.detail-nav a.is-here { background: var(--ink); color: var(--paper); }
+.detail-body [id^="d-"] { scroll-margin-top: 4.5rem; }
+/* section titles lead, amounts inside them follow; only the deal's amount is the big number */
+.detail-body h2 { font: 400 1.5rem/1.2 var(--serif); letter-spacing: -0.01em; color: var(--ink); margin: 0 0 0.7rem; }
+.detail-body .deal h2 { font: 600 0.9rem/1.3 var(--sans); letter-spacing: 0; color: var(--ink-soft); }
+.detail-body section .amount { font-size: clamp(1.5rem, 2.6vw, 1.9rem); }
+.detail-body .deal .amount { font-size: clamp(2.4rem, 5vw, 3.6rem); }
+@media (max-width: 760px) {
+  .detail .detail-face { padding: 1.3rem 1rem; }
+  .detail .detail-face .emblem { max-width: 170px; }
+  .detail .detail-face h1 { font-size: 2.2rem; margin-top: 0.6rem; }
+  .deal { padding: 1.2rem; }
+}
 
 /* ---------- home: closing ---------- */
 
@@ -414,10 +457,9 @@ footer p { max-width: var(--measure); margin: 0; }
 .detail-face .emblem { width: 100%; height: auto; max-width: 300px; filter: drop-shadow(0 22px 26px rgba(60, 50, 120, 0.25)); }
 .detail-face h1 { font: 400 2.8rem/1.05 var(--serif); letter-spacing: -0.02em; margin: 1rem 0 0.3rem; }
 .detail-face p { margin: 0; overflow-wrap: anywhere; }
-.detail-body { max-width: var(--measure); }
+.detail-body { max-width: 46rem; }
 .detail-body section { padding: 1.6rem 0; border-bottom: 1px solid var(--line); }
 .detail-body section:first-child { padding-top: 0; }
-.detail-body h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.6rem; color: var(--ink-soft); }
 
 .amount { margin: 0; font: 400 clamp(2.4rem, 5vw, 3.6rem)/1.02 var(--serif); letter-spacing: -0.02em; }
 .amount span { font-variant-numeric: tabular-nums; }
@@ -608,7 +650,7 @@ footer p { max-width: var(--measure); margin: 0; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 .share { display: flex; justify-content: center; gap: 0.4rem; margin-top: 0.8rem; flex-wrap: wrap; }
-.trail h2, .checklist h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; color: var(--ink-soft); }
+.checklist h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; color: var(--ink-soft); }
 .trail { padding: 1.6rem 0; border-bottom: 1px solid var(--line); }
 .trail > p { margin: 0 0 0.8rem; font-size: 0.92rem; }
 .trail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }

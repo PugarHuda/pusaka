@@ -482,14 +482,23 @@ const FILTERS = {
 };
 const SORTS = {
   new: ["Newest", (a, b) => Number(b.id) - Number(a.id)],
-  btc: ["Most Bitcoin", (a, b) => Number(b.info.verified_sats) - Number(a.info.verified_sats)],
+  // ties (most are empty): something you can act on first, then newest
+  btc: ["Most Bitcoin", (a, b) => Number(b.info.verified_sats) - Number(a.info.verified_sats) || !!dealOf(b.info) - !!dealOf(a.info) || Number(b.id) - Number(a.id)],
   cheap: ["Cheapest for sale", (a, b) => (a.info.price_now ? Number(BigInt(a.info.price_now) / 10n ** 18n) : Infinity) - (b.info.price_now ? Number(BigInt(b.info.price_now) / 10n ** 18n) : Infinity)],
 };
+
+/** What a Pusaka is up to, for its badge: [kind, label] or null. */
+function dealOf(i) {
+  if (i.listing) return ["sale", "For sale"];
+  if (Object.keys(i.token.approved_account_ids ?? {}).length > 0) return ["sale", "On Mintbase"];
+  if (i.loan) return i.loan.lender ? ["lent", "Lent against"] : ["borrow", "Borrowing"];
+  return null;
+}
 
 function Market({ accountId }) {
   const { tokens: all, error, retry } = useTokens();
   const [filter, setFilter] = useState("all");
-  const [sort, setSort] = useState("new");
+  const [sort, setSort] = useState("btc");
   const [, bump] = useState(0);
   useEffect(() => { const f = () => bump((n) => n + 1); addEventListener("pusaka:watch", f); return () => removeEventListener("pusaka:watch", f); }, []);
   const tokens = all;
@@ -531,15 +540,18 @@ function Market({ accountId }) {
         {shown?.map((t) => (
           <div key={t.id} className="piece-wrap">
           <WatchStar id={t.id} />
-          <a href={`#/pusaka/${t.id}`} className="piece">
+          <a href={`#/pusaka/${t.id}`} className={`piece${Number(t.info.verified_sats) ? "" : " is-empty"}`}>
+            {dealOf(t.info) && <span className={`piece-badge is-${dealOf(t.info)[0]}`}>{dealOf(t.info)[1]}</span>}
             <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
-            <span className="piece-btc">{btc(Number(t.info.verified_sats))} BTC verified</span>
-            {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{btc(t.bal.safe + t.bal.pending - Number(t.info.verified_sats))} not proven yet</span>}
-            {t.info.listing && <span className="piece-price">For sale at {near(t.info.price_now ?? t.info.listing.price)} NEAR</span>}
+            <span className="piece-btc">{Number(t.info.verified_sats)
+              ? <><strong>{Number(t.info.verified_sats).toLocaleString()} sats</strong>{px && <> · {usd(Number(t.info.verified_sats) / 1e8 * px.btcUsd)}</>}<small>BTC verified</small></>
+              : <><strong>Empty</strong><small>no BTC verified yet</small></>}</span>
+            {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{(t.bal.safe + t.bal.pending - Number(t.info.verified_sats)).toLocaleString()} sats not proven yet</span>}
+            {t.info.listing && <span className="piece-price">For sale at <strong>{near(t.info.price_now ?? t.info.listing.price)} NEAR</strong></span>}
             {t.info.listing && px && Number(t.info.verified_sats) > 0 && <span className="piece-vs">{vsLabel(vsInside(t.info.price_now ?? t.info.listing.price, Number(t.info.verified_sats), px))} the BTC inside</span>}
             {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
-            {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : `Asking to borrow ${near(t.info.loan.principal)} NEAR`}</span>}
+            {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : <>Asking to borrow <strong>{near(t.info.loan.principal)} NEAR</strong></>}</span>}
           </a>
           </div>
         ))}
@@ -735,16 +747,30 @@ function Detail({ id, accountId }) {
         <Tilt><Vessel id={id} info={info} locked={locked} /></Tilt>
         <h1>Pusaka #{id}</h1>
         <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong> <WatchStar id={id} /></p>
+        <dl className="face-facts">
+          <div><dt>Bitcoin inside</dt><dd>{Number(info.verified_sats) ? `${Number(info.verified_sats).toLocaleString()} sats` : "Empty"}</dd></div>
+          {px && Number(info.verified_sats) > 0 && <div><dt>Worth</dt><dd>{usd(Number(info.verified_sats) / 1e8 * px.btcUsd)}</dd></div>}
+          <div><dt>Status</dt><dd>{dealOf(info) ? <span className={`piece-badge is-${dealOf(info)[0]}`}>{dealOf(info)[1]}</span> : info.pending ? "Signing" : "Held"}</dd></div>
+        </dl>
         <ShareLinks id={id} btcText={`${btc(Number(info.verified_sats))} BTC`} />
       </div>
 
       <div className="detail-body">
         {isOwner && <OwnerChecklist info={info} letter={hasLetter(info)} pendingSats={bal ? Math.max(0, bal.safe + bal.pending - Number(info.verified_sats)) : 0} />}
-        <section>
-          <h2>Bitcoin inside, verified on NEAR</h2>
-          <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
-          {px && Number(info.verified_sats) > 0 && <p className="muted">About {usd(Number(info.verified_sats) / 1e8 * px.btcUsd)} at mainnet BTC prices.</p>}
-          <ExitQuote sats={Number(info.verified_sats)} evm={evmAddress(info.btc_pubkey)} />
+        <div className="deal">
+          <section>
+            <h2>Bitcoin inside, verified on NEAR</h2>
+            <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
+            <p className="muted">{Number(info.verified_sats).toLocaleString()} sats{px && Number(info.verified_sats) > 0 && <>, about {usd(Number(info.verified_sats) / 1e8 * px.btcUsd)} at mainnet BTC prices</>}.</p>
+            <ExitQuote sats={Number(info.verified_sats)} evm={evmAddress(info.btc_pubkey)} />
+          </section>
+          <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
+        </div>
+
+        <DetailNav sections={[["d-btc", "Bitcoin"], ["d-proof", "Proof"], !IS_SIBLING && ["d-ai", "AI appraisal"], (t.eth || t.sol || t.nearAcct) && ["d-chains", "Other chains"], ["d-heir", "Heir & letter"], ["d-history", "History"]].filter(Boolean)} />
+
+        <section id="d-btc">
+          <h2>Its Bitcoin address</h2>
           <p className="muted">
             {Number(info.verified_sats) > 0
               ? <>{Number(info.verified_sats).toLocaleString()} sats proven by the Bitcoin light client on NEAR and never signed
@@ -776,17 +802,7 @@ function Detail({ id, accountId }) {
           {info.btc_pubkey && <SelfCheck id={id} explorer={EXPLORER} />}
         </section>
 
-        <ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />
-
-        {!IS_SIBLING && <Appraisal id={id} />}
-
-        {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
-        {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
-        {t.nearAcct && <NearAccountSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
-        {t.nearAcct && <NbtcSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
-        {t.nearAcct && <StakeSection t={t} canStake={isOwner && !locked} onDone={refresh} />}
-
-        <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
+        <div id="d-proof"><ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />
 
         <details className="why">
           <summary>Why the seller can't keep the Bitcoin</summary>
@@ -799,26 +815,66 @@ function Detail({ id, accountId }) {
               count toward the amount you see until they're spent, and a purchase fails if that record changed after
               you checked.</li>
           </ul>
-        </details>
+        </details></div>
 
-        <HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} />
+        {!IS_SIBLING && <div id="d-ai"><Appraisal id={id} /></div>}
 
-        {!IS_SIBLING && <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />}
+        <div id="d-chains">
+          {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+          {t.sol && <SolSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+          {t.nearAcct && <NearAccountSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+          {t.nearAcct && <NbtcSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
+          {t.nearAcct && <StakeSection t={t} canStake={isOwner && !locked} onDone={refresh} />}
+        </div>
 
-        <section>
-          <h2>History</h2>
-          <Ledger history={info.history} />
-          <ol className="history">
-            {[...info.history].reverse().map((h, i) => (
-              <li key={i}>
-                <time>{new Date(Number(h.at_ms)).toLocaleString()}</time>
-                <span>{describe(h.event)}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
+        <div id="d-heir"><HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} />
+
+        {!IS_SIBLING && <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />}</div>
+
+        <History history={info.history} />
       </div>
     </article>
+  );
+}
+
+/** The newest events, the rest one click away. */
+function History({ history }) {
+  const [all, setAll] = useState(false);
+  const list = [...history].reverse();
+  return (
+    <section id="d-history">
+      <h2>History</h2>
+      <Ledger history={history} />
+      <ol className="history">
+        {(all ? list : list.slice(0, 8)).map((h, i) => (
+          <li key={i}>
+            <time>{new Date(Number(h.at_ms)).toLocaleString()}</time>
+            <span>{describe(h.event)}</span>
+          </li>
+        ))}
+      </ol>
+      {list.length > 8 && <button className="ghost" onClick={() => setAll(!all)}>{all ? "Show the newest only" : `Show all ${list.length} events`}</button>}
+    </section>
+  );
+}
+
+/** Sticky jump links for a long page; the one being read is marked. */
+function DetailNav({ sections }) {
+  const [here, setHere] = useState(sections[0][0]);
+  const key = sections.map(([id]) => id).join();
+  useEffect(() => { // the last section whose top has passed under the nav
+    const ids = key.split(",");
+    const f = () => setHere(ids.reduce((cur, id) => ((document.getElementById(id)?.getBoundingClientRect().top ?? Infinity) < 120 ? id : cur), ids[0]));
+    addEventListener("scroll", f, { passive: true }); f();
+    return () => removeEventListener("scroll", f);
+  }, [key]);
+  return (
+    <nav className="detail-nav" aria-label="On this page">
+      {sections.map(([id, label]) => (
+        <a key={id} href={location.hash} className={here === id ? "is-here" : undefined} aria-current={here === id ? "location" : undefined}
+          onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); setHere(id); }}>{label}</a>
+      ))}
+    </nav>
   );
 }
 

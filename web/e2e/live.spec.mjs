@@ -46,7 +46,7 @@ test("the landing page counts on-chain ownership changes, none of which needed a
 
 test("every Pusaka for sale says how its price compares with the verified BTC inside", async ({ page }) => {
   await page.goto("/#/market");
-  const forSale = page.locator(".piece").filter({ hasText: "For sale at" }).filter({ hasNotText: "0.00000000 BTC verified" });
+  const forSale = page.locator(".piece").filter({ hasText: "For sale at" }).filter({ hasNotText: "no BTC verified yet" });
   await expect(forSale.first()).toBeVisible({ timeout: 30_000 });
   test.skip((await page.request.get("/api/prices")).status() !== 200, "price feed down: the comparison is hidden then, by design");
   for (const card of await forSale.all()) await expect(card.locator(".piece-vs")).toHaveText(/^\d[\d.,]*% (below|above) the BTC inside$/, { timeout: 30_000 });
