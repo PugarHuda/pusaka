@@ -46,6 +46,18 @@ What each line means:
   `on_deposit_proven` callback in its history, in a transaction where the Bitcoin light client's
   `verify_transaction_inclusion` returned `true`. The contract can't count Bitcoin nobody proved.
 
+### 1b. The same proof on mainnet, free (30 seconds)
+
+```
+node scripts/mainnet-proof.mjs
+```
+
+Builds the exact bytes Pusaka's contract sends to NEAR's Bitcoin light client (`proof_args_borsh`, 6 confirmations as
+in the `mainnet` build) for a real Bitcoin **mainnet** transaction, and asks the mainnet light client
+`btc-client.bridge.near` as a view call: `true`. The same proof with one merkle hash changed: `false`. No wallet,
+no NEAR spent. (12 Nov: tx `e1ad57ea…` in block 975,511, 13-step proof, accepted; the forged one refused.)
+If the default explorer rate-limits you, `BTC_MAINNET_ESPLORA=https://mempool.space/api` uses another.
+
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 
 ```
