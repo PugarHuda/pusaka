@@ -48,9 +48,11 @@ const ev = (name) => tcb.event_log?.find((e) => e.event === name);
 const composeHash = calculateAppComposeHash(cfg.compose, { publicLogs: cfg.publicLogs, publicSysinfo: cfg.publicSysinfo });
 const reported = ev("compose-hash")?.event_payload;
 if (reported !== composeHash) throw new Error(`compose hash mismatch: TEE ${reported}, local ${composeHash}`);
-// Phala's KMS digest is the same on every dstack version; the CLI pins it.
-const KMS = "83368b43a0fc6f824f5a9220592df85fd30e2d405ecbd253a5c6354af63e6c9b41aec557c38a38e348ab87f9ac8fc68c";
-if (ev("key-provider")?.digest !== KMS) throw new Error(`unexpected key provider ${ev("key-provider")?.digest}`);
+// Phala's KMS digest: the CLI pins the first; Phala's KMS reported the second from 12 Nov 2026 (Shade CLI 2.4.0, still the
+// latest, doesn't list it yet). ponytail: trusted on first use like the RTMRs below; anything else is refused.
+const KMS = ["83368b43a0fc6f824f5a9220592df85fd30e2d405ecbd253a5c6354af63e6c9b41aec557c38a38e348ab87f9ac8fc68c",
+  "1de9cfa982eab350c1c6719fed6f35f9be554d202c26d354e498b0b9e6ad2e6e1e02df3abfa85bd8113c9ea219c16deb"];
+if (!KMS.includes(ev("key-provider")?.digest)) throw new Error(`unexpected key provider ${ev("key-provider")?.digest}`);
 // ponytail: RTMRs are trusted on first use (no published 0.5.12 table yet). Upgrade: recompute with
 // dstack-mr from the reproducible 0.5.12 image and compare. The quote itself is verified on-chain at register_agent.
 const measurements = {
