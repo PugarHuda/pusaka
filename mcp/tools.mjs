@@ -611,7 +611,7 @@ reg("pusaka_withdraw_sol", {
 }));
 
 // ---------- Pusaka v2: the NFT's own account, its name, the post-quantum lock (always on the v2 deployment) ----------
-const V2C = IS_SIBLING ? CONTRACT : SIBLINGS[0];
+const V2C = NETWORK === "testnet" ? "pusaka-v2.testnet" : null; // the Smart Pusaka deployment (the main contract on this branch)
 const v2view = (method, args) => { if (!V2C) throw new Error(`No Pusaka v2 on ${NETWORK}.`); return provider.callFunction({ contractId: V2C, method, args, blockQuery: { finality: "optimistic" } }); };
 reg("pusaka_token_account", {
   description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, what's inside (other Pusakas it holds, with their verified sats, and its USDC: a buyer of this NFT gets all of it), whether the post-quantum (ML-DSA-65) lock is on and open, and any agent's on-chain daily budget.",
