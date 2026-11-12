@@ -1,11 +1,11 @@
-// GET /api/audit?token_id=N -> independent proof-of-reserves audit of one Pusaka, paid per call over x402 (HTTP 402).
+// GET /api/audit?token_id=N[&contract=pusaka-btc.testnet] -> independent proof-of-reserves audit of one Pusaka, paid per call over x402 (HTTP 402).
 // No payment: 402 with the requirements (PAYMENT-REQUIRED header and JSON body). With a PAYMENT-SIGNATURE header (a NEP-366
 // SignedDelegate for one wNEAR ft_transfer to us): verify it, run the audit, and only then settle it on NEAR; our relayer
 // pays the gas. The facilitator runs in-process: the public testnet one gates /verify and /settle behind a hand-issued key.
 import { x402HTTPResourceServer } from "@x402/core/http";
 import { createNearResourceServer } from "@fastnear/x402/server";
 import { createNearFacilitator } from "@fastnear/x402/facilitator";
-import { NETWORK, NEAR_RPC } from "@pusaka/shared";
+import { CONTRACT, SIBLINGS, NETWORK, NEAR_RPC } from "@pusaka/shared";
 import { auditContract, auditToken, viewFinal } from "@pusaka/shared/audit";
 
 export const X402_NETWORK = `near:${NETWORK}`;
@@ -53,17 +53,21 @@ export default async function handler(req, res) {
   res.setHeader("access-control-expose-headers", "payment-required, payment-response");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") return res.status(405).json({ error: "GET only" });
-  const tokenId = new URL(req.url, "http://x").searchParams.get("token_id");
+  const q = new URL(req.url, "http://x").searchParams;
+  const tokenId = q.get("token_id");
   if (!/^\d{1,9}$/.test(tokenId ?? "")) return res.status(400).json({ error: "?token_id=<number> required" });
+  // the main contract or its frozen classic sibling, nothing else
+  const contract = q.get("contract") ?? CONTRACT;
+  if (![CONTRACT, ...SIBLINGS].includes(contract)) return res.status(400).json({ error: `contract must be one of ${[CONTRACT, ...SIBLINGS].join(", ")}` });
   try {
     // nothing is charged for a token that doesn't exist
-    const info = await viewFinal("token_info", { token_id: tokenId });
+    const info = await viewFinal("token_info", { token_id: tokenId }, contract);
     if (!info) return res.status(404).json({ error: `no Pusaka #${tokenId}` });
     const s = await paywallServer();
     const ctx = { adapter: adapter(req), path: new URL(req.url, "http://x").pathname, method: "GET" };
     const r = await s.processHTTPRequest(ctx);
     if (r.type === "payment-error") return send(res, r.response);
-    const checks = [...await auditToken(tokenId, { info }), ...await auditContract()];
+    const checks = [...await auditToken(tokenId, { info, contract }), ...await auditContract(contract)];
     // a Bitcoin explorer we couldn't reach is not a result: don't settle, the payer can retry with a fresh signature
     if (checks.some((c) => c.ok === null)) return res.status(503).json({ error: "a source was unreachable; not charged, retry", checks });
     const settled = await s.processSettlement(r.paymentPayload, r.paymentRequirements, r.declaredExtensions, { request: ctx });
@@ -73,7 +77,7 @@ export default async function handler(req, res) {
       return send(res, { ...settled.response, body: { error: `payment not settled (${settled.errorReason}); check your wNEAR balance before retrying` } });
     }
     for (const [k, v] of Object.entries(settled.headers)) res.setHeader(k, v);
-    res.status(200).json({ token_id: tokenId, verdict: checks.every((c) => c.ok) ? "reserves verified" : "FAILED: do not rely on this Pusaka",
+    res.status(200).json({ contract, token_id: tokenId, verdict: checks.every((c) => c.ok) ? "reserves verified" : "FAILED: do not rely on this Pusaka",
       checks, paid: { tx: settled.transaction, network: settled.network, payer: settled.payer } });
   } catch (e) {
     res.status(e.status ?? 502).json({ error: e.status ? e.message : "NEAR RPC unavailable" });

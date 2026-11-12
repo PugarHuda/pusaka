@@ -68,12 +68,12 @@ export async function auditToken(tokenId, { lc, info, contract = CONTRACT } = {}
 }
 
 /** The contract-level facts behind every token: no access key, code final. */
-export async function auditContract() {
-  const keys = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: CONTRACT })).keys;
+export async function auditContract(contract = CONTRACT) {
+  const keys = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: contract })).keys;
   const full = keys.filter((k) => k.access_key.permission === "FullAccess").length;
-  const up = await viewFinal("upgrade_status").catch(() => ({}));
+  const up = await viewFinal("upgrade_status", {}, contract).catch(() => ({}));
   return [
-    { ok: full === 0, what: "nobody holds a full-access key to the contract", detail: `${CONTRACT}: ${full} full-access key(s)` },
+    { ok: full === 0, what: "nobody holds a full-access key to the contract", detail: `${contract}: ${full} full-access key(s)` },
     { ok: !!up.renounced, what: "the contract's code can never change", detail: up.renounced ? "upgrades renounced" : "upgrades still possible" },
   ];
 }
