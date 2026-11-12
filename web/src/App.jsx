@@ -894,7 +894,7 @@ function Detail({ id, accountId }) {
           {info.btc_pubkey && <SelfCheck id={id} explorer={EXPLORER} />}
         </section>
 
-        <div id="d-proof"><ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} />
+        <div id="d-proof"><ProofTrail info={info} explorer={EXPLORER} nearExplorer={NEAR_EXPLORER} lightClient={BTC_LIGHT_CLIENT} contract={CONTRACT} />
 
         <details className="why">
           <summary>Why the seller can't keep the Bitcoin</summary>

@@ -2,7 +2,7 @@
 // and loading skeletons. All of them read the contract; nothing here is decorative data.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderSVG } from "uqr";
-import { near, view } from "./near.js";
+import { near, provider, view } from "./near.js";
 import { loadInfos } from "./mine.js";
 import { useNow, watched, WATCH_KEY } from "./util.js";
 
@@ -127,9 +127,15 @@ export function GallerySkeleton({ n = 10 }) {
 
 // ---------- proof trail, owner checklist, command palette ----------
 
+// Deposits proven by Pusaka's Shade Agent (an attested TEE), read once per visit (shared/tee.mjs)
+let teeOnce;
+const teeProofsOnce = () => (teeOnce ??= import("@pusaka/shared/tee").then(({ teeProofs }) => teeProofs((method, args, contractId) => provider.callFunction({ contractId, method, args }))).catch(() => new Map()));
+
 /** Each counted deposit, step by step: sent on Bitcoin, proven by NEAR's light client, counted (or signed away). */
-export function ProofTrail({ info, explorer, nearExplorer, lightClient }) {
+export function ProofTrail({ info, explorer, nearExplorer, lightClient, contract }) {
   const signed = new Set(info.signed_outpoints.map((o) => `${o.txid}:${o.vout}`));
+  const [tee, setTee] = useState(null);
+  useEffect(() => { if (info.proven_utxos.length) teeProofsOnce().then(setTee); }, [info.proven_utxos.length]);
   if (!info.proven_utxos.length) return null;
   return (
     <section className="trail" aria-label="Proof trail">
@@ -143,6 +149,7 @@ export function ProofTrail({ info, explorer, nearExplorer, lightClient }) {
             <span className="trail-steps">
               <a href={`${explorer}/tx/${u.txid}`} target="_blank" rel="noreferrer"><i className="ok" />Sent on Bitcoin <code>{u.txid.slice(0, 10)}…:{u.vout}</code></a>
               <a href={`${nearExplorer}/account/${lightClient}`} target="_blank" rel="noreferrer"><i className="ok" />Merkle proof checked by NEAR's light client</a>
+              {(() => { const t = tee?.get(`${contract}:${info.token.token_id}:${u.txid}:${u.vout}`); return t && <a href={`${nearExplorer}/tx/${t.tx}`} target="_blank" rel="noreferrer" title={`Sent by ${t.agent}, registered on pusaka-agent.testnet with a TDX attestation checked on-chain`}><i className="ok" />Proven by Pusaka's attested TEE agent <code>{t.agent.slice(0, 8)}…</code></a>; })()}
               <span>{out ? <><i className="out" />Signed away by the holder: no longer counted</> : <><i className="ok" />Counted in this Pusaka's verified Bitcoin</>}</span>
             </span>
           </li>

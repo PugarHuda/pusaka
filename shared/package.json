@@ -10,6 +10,7 @@
     "./bip322": "./bip322.mjs",
     "./lcproof": "./lcproof.mjs",
     "./nbtc": "./nbtc.mjs",
+    "./tee": "./tee.mjs",
     "./holderproof": "./holderproof.mjs"
   },
   "dependencies": {
