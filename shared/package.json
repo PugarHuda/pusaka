@@ -9,6 +9,7 @@
     "./pq": "./pq.mjs",
     "./bip322": "./bip322.mjs",
     "./lcproof": "./lcproof.mjs",
+    "./nbtc": "./nbtc.mjs",
     "./holderproof": "./holderproof.mjs"
   },
   "dependencies": {

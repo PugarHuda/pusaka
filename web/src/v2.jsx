@@ -2,7 +2,8 @@
 // lock, an agent budget, sign-in, BIP-322, rental, Bitcoin sale, vault and call options. How each works: #/docs.
 // Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
-import { ORIGINAL, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
+import { ORIGINAL, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, NBTC, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
+import { redeemPlan } from "@pusaka/shared/nbtc";
 import { witnessFromMpc } from "@pusaka/shared/bip322";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
 import { base64, hex } from "@scure/base";
@@ -27,7 +28,8 @@ async function insideOf(account) {
   for (const c of [ORIGINAL, V2]) for (const t of await view("nft_tokens_for_owner", { account_id: account, from_index: "0", limit: 20 }, c).catch(() => []))
     pusakas.push({ c, id: t.token_id, sats: Number((await view("token_info", { token_id: t.token_id }, c)).verified_sats) });
   const usdc = Number(await view("ft_balance_of", { account_id: account }, USDC).catch(() => 0)) / 1e6;
-  return { pusakas, usdc };
+  const nbtc = Number(await view("ft_balance_of", { account_id: account }, NBTC).catch(() => 0));
+  return { pusakas, usdc, nbtc };
 }
 const accountOf = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "optimistic" } }).catch(() => null);
 const link = (h) => <a href={`${NEAR_EXPLORER}/tx/${h}`} target="_blank" rel="noreferrer">view transaction</a>;
@@ -110,9 +112,10 @@ export function V2Token({ id, accountId, embedded = false }) {
         : <p className="muted">{s.intents ? "Nothing yet." : "Couldn't read the verifier."}</p>}
       <h2>What a buyer also gets</h2>
       {!s.inside ? <p className="muted">Couldn't read its account's holdings.</p>
-        : !s.inside.pusakas.length && !s.inside.usdc ? <p className="muted">Nothing besides the above. Put a Pusaka or tokens into its account and they're sold with it.</p>
+        : !s.inside.pusakas.length && !s.inside.usdc && !s.inside.nbtc ? <p className="muted">Nothing besides the above. Put a Pusaka or tokens into its account and they're sold with it.</p>
         : <ul className="v2-inside">
             {s.inside.pusakas.map((p) => <li key={p.c + p.id}><a href={`${location.pathname}${p.c === V2 ? `?contract=${V2}` : ""}#/pusaka/${p.id}`}>{p.c === V2 ? "Smart Pusaka" : "Pusaka"} #{p.id}</a>: {p.sats.toLocaleString()} sats of Bitcoin proven inside</li>)}
+            {s.inside.nbtc > 0 && <li>{s.inside.nbtc.toLocaleString()} sats of nBTC (Omni Bridge) in its account: Bitcoin on NEAR, redeemable to this Pusaka's own Bitcoin address</li>}
             {s.inside.usdc > 0 && <li>{s.inside.usdc} USDC in its account</li>}
             <li className="muted">All of it changes hands with this NFT and leaves only through its holder; the account can move assets, never sign for them, so nothing can be kept back after a sale.</li>
           </ul>}
@@ -184,6 +187,12 @@ function Owner({ id, s, owner, reload }) {
         {busy === "open" ? "Creating…" : "Create its account (0.01 NEAR)"}</button>}
       {!s.b && <button className="ghost" disabled={!!busy} onClick={() => run("name", async () => link((await tx("name_account", { token_id: id }, yocto(0.05))).transaction.hash))}>
         {busy === "name" ? "Naming…" : `Give it the name t${id}.${V2} (0.05 NEAR)`}</button>}
+      {s.inside?.nbtc > 0 && <button className="ghost" disabled={!!busy} onClick={() => run("redeem", async () => {
+        // nBTC back to native Bitcoin, paid to this Pusaka's own address: one connector coin spent whole (shared/nbtc.mjs)
+        const p = await redeemPlan({ have: s.inside.nbtc, to: btcAddress(s.info.btc_pubkey), view });
+        const o = await tx("account_call", { token_id: id, alias: false, ...p.call }, 1n);
+        return <>Redeeming {Number(p.total).toLocaleString()} nBTC: {p.sats.toLocaleString()} sats come back to this Pusaka's Bitcoin address once Near-One's relayer has NEAR MPC sign the payout (minutes). {link(o.transaction.hash)}</>;
+      })}>{busy === "redeem" ? "Redeeming…" : `Redeem its nBTC to its own Bitcoin address`}</button>}
       <form className="stack" onSubmit={(e) => { e.preventDefault(); run("send", async () => {
         const o = await tx("account_call", { token_id: id, alias: useAlias, receiver_id: to.trim().toLowerCase(), method_name: "", args: "", deposit: yocto(amount).toString(), gas_tgas: 0 }, 1n);
         return <>Sent {amount} NEAR from the Pusaka's {useAlias ? "named" : ""} account. {link(o.transaction.hash)}</>;

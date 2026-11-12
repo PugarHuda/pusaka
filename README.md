@@ -42,7 +42,7 @@ The original contract stays frozen for good; the Market shows both as one list.
 > - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 
-**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (56 tools,
+**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (57 tools,
 spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
 
 *Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
@@ -149,7 +149,7 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 
 **Markets and agents**
 - A market contract: bids and buy pools priced per verified sat, perpetual loans with rate auctions. [How](docs/FEATURES.md#bids-per-verified-sat-and-loans-with-no-due-date-a-second-market-contract)
-- An MCP server with 56 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
+- An MCP server with 57 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
 
 **Why it holds**: the seller can't keep a way back into the Bitcoin. Every attack in the [threat model](docs/THREAT-MODEL.md) has a test named after it, and the [Refused](https://pusaka-two.vercel.app/#/refused) page shows 39 real attempts the contracts turned down. [Measured on testnet](docs/EVIDENCE.md) · [every NEAR primitive used](docs/EVIDENCE.md#every-near-primitive-pusaka-uses-and-where-to-see-it-live).
 

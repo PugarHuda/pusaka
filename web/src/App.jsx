@@ -498,8 +498,8 @@ function Vessel({ id, info, locked }) {
 }
 
 /** The market: every Pusaka with its state, standing loan offers, and the latest on-chain activity. */
-/** Bitcoin a Pusaka carries: its own proven sats plus those of the Pusakas wrapped in its account (Smart Pusakas). */
-const satsOf = (i) => Number(i.verified_sats) + (i.inside?.sats ?? 0);
+/** Bitcoin a Pusaka carries: its own proven sats, those of the Pusakas wrapped in its account, and the nBTC there (Smart Pusakas). */
+const satsOf = (i) => Number(i.verified_sats) + (i.inside?.sats ?? 0) + (i.inside?.nbtc ?? 0);
 const ALL_CONTRACTS = NETWORK === "testnet" ? [ORIGINAL, ...SIBLINGS] : [ORIGINAL];
 const viewAt = (c, method, args) => provider.callFunction({ contractId: c, method, args, blockQuery: { finality: "optimistic" } });
 /** A token's page, on whichever deployment it lives. */
@@ -507,7 +507,7 @@ const pageOf = (c, id) => c === CONTRACT ? `#/pusaka/${id}` : `${location.pathna
 /** What a Smart Pusaka's own account holds and is sold with: Pusakas that can't leave on their own, and USDC. */
 async function insideOf(id) {
   const acct = await viewAt(SMART, "account_of", { token_id: id });
-  const out = { sats: 0, ids: [], keys: [], usdc: 0 };
+  const out = { sats: 0, ids: [], keys: [], usdc: 0, nbtc: 0 };
   for (const c of ALL_CONTRACTS) for (const t of await viewAt(c, "nft_tokens_for_owner", { account_id: acct, from_index: "0", limit: 20 }).catch(() => [])) {
     const i = await viewAt(c, "token_info", { token_id: t.token_id });
     // a wrapped Pusaka with a listing, loan, approval or signature in flight could leave on its own: not counted. (The
@@ -516,7 +516,9 @@ async function insideOf(id) {
     out.sats += Number(i.verified_sats); out.ids.push(`${c === SMART ? "Smart " : ""}Pusaka #${t.token_id}`); out.keys.push(`${c}:${t.token_id}`);
   }
   out.usdc = Number(await viewAt("usdc.tidepool-sandbox.testnet", "ft_balance_of", { account_id: acct }).catch(() => 0)) / 1e6;
-  return out.ids.length || out.usdc ? out : null;
+  // nBTC (Omni Bridge) in its account: Bitcoin on NEAR that it can redeem to its own address (shared/nbtc.mjs)
+  out.nbtc = Number(await viewAt(NBTC, "ft_balance_of", { account_id: acct }).catch(() => 0));
+  return out.ids.length || out.usdc || out.nbtc ? out : null;
 }
 /** The other deployments' Pusakas (Smart ones next to classic ones), so the Market is one list. */
 function useOtherTokens() {
@@ -624,7 +626,7 @@ function Market({ accountId }) {
               ? <><strong>{satsOf(t.info).toLocaleString()} sats</strong>{px && <> · {usd(satsOf(t.info) / 1e8 * px.btcUsd)}</>}<small>BTC verified</small></>
               : <><strong>{t.info.inside?.usdc ? `${t.info.inside.usdc} USDC` : "Empty"}</strong><small>{t.info.inside?.usdc ? "in its own account" : "no BTC verified yet"}</small></>}</span>
             {innerOf[`${t.c}:${t.id}`] && <span className="piece-inside"><b>Inside</b> Smart Pusaka #{innerOf[`${t.c}:${t.id}`]}: sold with it</span>}
-            {t.info.inside && <span className="piece-inside"><b>Bundle</b> {[...t.info.inside.ids, t.info.inside.usdc ? `${t.info.inside.usdc} USDC` : null].filter(Boolean).join(" + ")}</span>}
+            {t.info.inside && <span className="piece-inside"><b>Bundle</b> {[...t.info.inside.ids, t.info.inside.nbtc ? `${t.info.inside.nbtc.toLocaleString()} sats nBTC` : null, t.info.inside.usdc ? `${t.info.inside.usdc} USDC` : null].filter(Boolean).join(" + ")}</span>}
             {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{(t.bal.safe + t.bal.pending - Number(t.info.verified_sats)).toLocaleString()} sats not proven yet</span>}
             {t.info.listing && <span className="piece-price">{dealOf(t.info)[0] === "auction" ? "Now" : "For sale at"} <strong>{near(t.info.price_now ?? t.info.listing.price)} NEAR</strong>
               {dealOf(t.info)[0] === "auction" && <small> falls to {near(t.info.listing.floor)} by {new Date(Number(t.info.listing.end_ms)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small>}</span>}
@@ -816,7 +818,7 @@ function Detail({ id, accountId }) {
   const [inside, setInside] = useState(null);
   useEffect(() => { if (CONTRACT === SMART) insideOf(id).then(setInside, () => {}); }, [id]);
   const name = `${CONTRACT === SMART ? "Smart Pusaka" : "Pusaka"} #${id}`;
-  const bundleList = inside && [...inside.ids, inside.usdc ? `${inside.usdc} USDC` : null].filter(Boolean).join(" + ");
+  const bundleList = inside && [...inside.ids, inside.nbtc ? `${inside.nbtc.toLocaleString()} sats nBTC` : null, inside.usdc ? `${inside.usdc} USDC` : null].filter(Boolean).join(" + ");
 
   if (missing) return <section><h1>No Pusaka #{id}</h1><p className="error">There is no Pusaka #{id} yet. <a href="#/">See all Pusaka</a></p></section>;
   if (!t && failed) return <p className="error">Couldn't reach NEAR to load Pusaka #{id}. <button onClick={refresh}>Try again</button></p>;
@@ -1867,7 +1869,7 @@ function Agents() {
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
-      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 56 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 57 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
       {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>

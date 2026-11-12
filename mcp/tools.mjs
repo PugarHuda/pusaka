@@ -20,6 +20,7 @@ import {
 import { isAddress, parseEther, parseUnits } from "viem";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
 import { verifySignIn, verifyBtcProof } from "@pusaka/shared/holderproof";
+import { redeemPlan } from "@pusaka/shared/nbtc";
 import { createNearX402Client } from "@fastnear/x402";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { createLocalNearSigner } from "@fastnear/x402/node";
@@ -645,6 +646,22 @@ reg("pusaka_account_send", {
   const o = await account.callFunctionRaw({ contractId: V2C, methodName: "account_call", gas: teraToGas(300), deposit: 1n,
     args: { token_id, alias, receiver_id: receiver, method_name: "", args: "", deposit: toYocto(near).toString(), gas_tgas: 0 } });
   return { tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}`, from: await v2view(alias ? "alias_of" : "account_of", { token_id }) };
+}));
+
+reg("pusaka_redeem_nbtc", {
+  description: "Pusaka v2, holder: turn the nBTC (Omni Bridge) in the NFT's own account back into native Bitcoin, paid to the Pusaka's own Bitcoin address (so it stays with the NFT). Spends one Omni connector coin whole (its rules); returns the plan and the NEAR tx. Near-One's relayer then has NEAR MPC sign the payout. `dry: true` only plans.",
+  inputSchema: { token_id: z.string(), dry: z.boolean().optional() },
+}, tool(async ({ token_id, dry = false }) => {
+  const acct = await v2view("account_of", { token_id });
+  const info = await v2view("token_info", { token_id });
+  const to = btcAddress(info.btc_pubkey);
+  const have = await provider.callFunction({ contractId: NBTC, method: "ft_balance_of", args: { account_id: acct } });
+  const plan = await redeemPlan({ have, to, view: (method, args, contractId) => provider.callFunction({ contractId, method, args }) });
+  const out = { account: acct, nbtc: Number(have), pays_to: to, sats: plan.sats, btc_fee: plan.btc_fee, bridge_fee: plan.bridge_fee, nbtc_spent: Number(plan.total), connector_coin: plan.input };
+  if (dry) return out;
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const o = await account.callFunctionRaw({ contractId: V2C, methodName: "account_call", gas: teraToGas(300), deposit: 1n, args: { token_id, alias: false, ...plan.call } });
+  return { ...out, tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
 reg("pusaka_set_agent", {

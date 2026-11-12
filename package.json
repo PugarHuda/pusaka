@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@fastnear/x402": "^2.5.0",
-    "@omni-bridge/btc": "^0.21.0",
     "@phala/dcap-qvl": "^0.7.1",
     "@resvg/resvg-js": "^2.6.2",
     "@x402/core": "~2.30.0",
