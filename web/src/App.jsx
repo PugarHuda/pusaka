@@ -224,7 +224,7 @@ export default function App() {
       </header>
       {minting && <p className="toast" role="status">{minting}</p>}
       <CommandPalette accountId={accountId} />
-      {IS_SIBLING && <p className="sibling-banner" role="note">You're viewing <strong>Smart Pusakas</strong>: same Bitcoin, sales and loans, plus <a href="#/v2">its own account, vault and more</a>. <a href="#/docs">How it works</a> · <a href={`${location.pathname}#/`}>Back to all Pusakas</a></p>}
+      {IS_SIBLING && <p className="sibling-banner" role="note">You're viewing <strong>classic Pusakas</strong> (the first contract, frozen for good: its code can never change). Their Bitcoin, sales and loans work as before; wrap one into a <a href={`${location.pathname}#/v2`}>Smart Pusaka</a> to give it an account of its own. <a href="#/docs">How it works</a> · <a href={`${location.pathname}#/`}>Back to all Pusakas</a></p>}
       <main tabIndex={-1}>{tokenId === "bad"
         ? <section><h1>Page not found</h1><p className="error">There's nothing at {location.hash}. <a href="#/">See all Pusaka</a></p></section>
         : tokenId === "mine" ? <Mine accountId={accountId} />

@@ -6,6 +6,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
 // Deployed accounts: deployments/<network>.json records them (code hash, deploy tx, accounts); read here.
 import TESTNET from "../deployments/testnet.json" with { type: "json" };
+import TESTNET_V2 from "../deployments/testnet-v2.json" with { type: "json" };
 
 // One switch for everything network-specific. Node: PUSAKA_NETWORK=mainnet; Vite: VITE_NETWORK=mainnet.
 const env = (k) => globalThis.process?.env?.[k] ?? import.meta.env?.[`VITE_${k.replace("PUSAKA_", "")}`];
@@ -13,7 +14,9 @@ export const NETWORK = env("PUSAKA_NETWORK") ?? "testnet";
 
 const CONFIG = {
   testnet: {
-    contract: TESTNET.contract,
+    // One contract: Smart Pusaka (v2) does everything v1 did and more; v1 (pusaka-btc.testnet) stays on chain, frozen,
+    // reachable as a sibling with ?contract=pusaka-btc.testnet, and its Pusakas can be wrapped into a v2 one.
+    contract: TESTNET_V2.contract,
     mpc: TESTNET.uses.mpc,
     nearRpc: "https://test.rpc.fastnear.com",
     nearRpcFallbacks: ["https://near-testnet.drpc.org", "https://rpc.testnet.near.org"],
@@ -59,7 +62,7 @@ const CONFIG = {
 if (!CONFIG) throw new Error(`unknown network ${NETWORK}`);
 
 // The web app can open a known sibling deployment with ?contract=… (allowlisted, so a link can't point it at a lookalike).
-export const SIBLINGS = { testnet: ["pusaka-v2.testnet"], mainnet: [] }[NETWORK];
+export const SIBLINGS = { testnet: [TESTNET.contract], mainnet: [] }[NETWORK];
 const fromUrl = (() => { try { const c = new URLSearchParams(globalThis.location?.search ?? "").get("contract"); return SIBLINGS.includes(c) ? c : null; } catch { return null; } })();
 export const CONTRACT = env("PUSAKA_CONTRACT") ?? fromUrl ?? CONFIG.contract;
 export const ORIGINAL = CONFIG.contract;
