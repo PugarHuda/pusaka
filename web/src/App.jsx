@@ -524,7 +524,7 @@ function Market({ accountId }) {
   const tokens = all;
   const shown = all?.filter((t) => FILTERS[filter][1](t.info)).sort(SORTS[sort][1]);
   const px = usePrices();
-  const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
+  const sats = tokens?.reduce((a, t) => a + satsOf(t.info), 0);
   const count = (f) => tokens?.filter((t) => f(t.info)).length ?? 0;
   return (
     <div className="market">
