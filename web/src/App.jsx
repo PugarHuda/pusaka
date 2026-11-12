@@ -364,6 +364,29 @@ function useTokens() {
   return { tokens, error, retry: () => { setError(""); setAttempt((n) => n + 1); } };
 }
 
+/** Mainnet-ready, checked by the visitor's own browser: Pusaka's proof for a real Bitcoin mainnet transaction, asked of
+ * NEAR's mainnet light client (a free view call), and a forged copy that must be refused. No Pusaka server involved. */
+function MainnetReady() {
+  const [r, setR] = useState(null);
+  const run = async () => {
+    setR({ busy: true });
+    try { setR(await (await import("@pusaka/shared/lcproof")).mainnetProofCheck()); } catch (e) { setR({ error: e.message }); }
+  };
+  return (
+    <p className="moves mainnet-ready">
+      Testnet today, mainnet-ready: NEAR's <strong>mainnet</strong> Bitcoin light client checks the very proof Pusaka sends.{" "}
+      {!r && <button type="button" className="ghost" onClick={run}>Ask it now, from your browser</button>}
+      {r?.busy && <span className="muted">Building a proof for the latest Bitcoin block and asking btc-client.bridge.near…</span>}
+      {r?.error && <span className="error">{r.error} <button type="button" className="ghost" onClick={run}>Try again</button></span>}
+      {r?.txid && <span role="status">
+        Bitcoin tx <a href={`https://mempool.space/tx/${r.txid}`} target="_blank" rel="noreferrer"><code>{r.txid.slice(0, 12)}…</code></a> in
+        block {r.height.toLocaleString()} ({r.steps}-step proof): <strong className={r.accepted ? "ok" : "error"}>{r.accepted ? "accepted" : "rejected"}</strong>;
+        the same proof with one hash changed: <strong className={r.forgedAccepted ? "error" : "ok"}>{r.forgedAccepted ? "accepted" : "refused"}</strong>.
+      </span>}
+    </p>
+  );
+}
+
 /** The landing page: what a Pusaka is, with live readings; the market itself is #/market. */
 function Home() {
   const { tokens, error, retry } = useTokens();
@@ -409,6 +432,7 @@ function Home() {
           <strong> 0 Bitcoin transactions, 0 Bitcoin fees</strong>, no confirmations to wait for.
         </p>
       )}
+      <MainnetReady />
 
       <section className="feature" aria-label="How a Pusaka changes hands">
         <div className="feature-card">

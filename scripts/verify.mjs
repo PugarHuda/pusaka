@@ -7,6 +7,7 @@ import path from "node:path";
 import { base58 } from "@scure/base";
 import { CONTRACT, MPC, NETWORK, BTC_LIGHT_CLIENT, lightClientHeight, nearFetch } from "@pusaka/shared";
 import { auditToken } from "@pusaka/shared/audit";
+import { mainnetProofCheck, MAINNET_LIGHT_CLIENT } from "@pusaka/shared/lcproof";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
 // the README plus the docs/ pages that hold the detail moved out of it
@@ -176,6 +177,18 @@ step = "replaying every contract event from FastNear's archival index";
     inconclusive++;
     console.log(`⚠ replay not checked (FastNear's archival index didn't answer: ${e.message}); run again later`);
   }
+}
+
+// 6c. Mainnet-ready: the same proof bytes, for a real Bitcoin mainnet transaction, accepted by NEAR's mainnet light
+//     client as a free view call, and a forged one refused (shared/lcproof.mjs; scripts/mainnet-proof.mjs alone).
+step = "asking NEAR's mainnet Bitcoin light client";
+try {
+  const m = await mainnetProofCheck({ esplora: process.env.BTC_MAINNET_ESPLORA ?? "https://mempool.space/api" });
+  ok(m.accepted && !m.forgedAccepted, "mainnet-ready: NEAR's mainnet light client accepts Pusaka's proof for a real Bitcoin mainnet tx and refuses a forged one",
+    `${MAINNET_LIGHT_CLIENT}, tx ${m.txid.slice(0, 12)}… in block ${m.height}, forged accepted: ${m.forgedAccepted}`);
+} catch (e) {
+  inconclusive++;
+  console.log(`⚠ mainnet light-client check not run (${e.message}); try BTC_MAINNET_ESPLORA=https://mempool.emzy.de/api, or node scripts/mainnet-proof.mjs later`);
 }
 
 // 7. Pusaka v2 (testnet): the code is the recorded build, changes only via the DAO + timelock, and every NFT's own
