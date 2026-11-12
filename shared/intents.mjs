@@ -19,8 +19,13 @@ export function exitQuoteRequest(sats, evm, now = Date.now()) {
   };
 }
 
+/** 1Click refuses BTC swaps below roughly this many sats (measured: 3,400 answers 400; ~6,400 is quoted). */
+export const EXIT_MIN_SATS = 6_500;
+
 /** Live quote: { usdc, minUsdc, usdIn, seconds, signature, id }. Throws with 1Click's message on refusal. */
 export async function exitQuote(sats, evm) {
+  // don't ask for a quote 1Click is certain to refuse (it answers 400, which also shows as a browser console error)
+  if (sats < EXIT_MIN_SATS) throw new Error(`NEAR Intents: below its minimum for Bitcoin (about ${EXIT_MIN_SATS.toLocaleString("en-US")} sats), so no exit quote`);
   const r = await fetch(`${ONECLICK}/quote`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(exitQuoteRequest(sats, evm)), signal: AbortSignal.timeout(30_000), // 1Click gives up on its solvers after 25 s

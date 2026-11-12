@@ -14,7 +14,10 @@ assert.throws(() => exitQuoteRequest(1000, "tb1qxyz"), /EVM address/);
 
 // a refusal surfaces 1Click's own reason
 globalThis.fetch = async () => new Response(JSON.stringify({ message: "Amount is too low for bridge" }), { status: 400 });
-await assert.rejects(exitQuote(1, evm), /NEAR Intents: Amount is too low/);
+await assert.rejects(exitQuote(10_000, evm), /NEAR Intents: Amount is too low/);
+// below 1Click's minimum nothing is asked at all (no 400 in the console)
+globalThis.fetch = async () => { throw new Error("must not be called"); };
+await assert.rejects(exitQuote(3_400, evm), /below its minimum for Bitcoin/);
 globalThis.fetch = async (_, init) => {
   assert.equal(JSON.parse(init.body).dry, true);
   return new Response(JSON.stringify({ quote: { amountOutFormatted: "76.84", minAmountOut: "76074467", amountInUsd: "77.05", timeEstimate: 807 }, signature: "ed25519:x", correlationId: "c" }));
