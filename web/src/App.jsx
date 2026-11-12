@@ -469,7 +469,7 @@ function Vessel({ id, info, locked }) {
     Promise.all([view("usdc_info", { token_id: id }).catch(() => []), view("heir_of", { token_id: id }).catch(() => null)])
       .then(([u, h]) => setX({ usdc: u.reduce((a, c) => a + Number(c.verified), 0), heir: !!h }));
   }, [id, info]);
-  return <Emblem pubkey={info.btc_pubkey} sats={Number(info.verified_sats)} usdc={x.usdc} heir={x.heir} letter={hasLetter(info)} locked={locked} size={320} />;
+  return <Emblem pubkey={info.btc_pubkey} sats={satsOf(info)} usdc={x.usdc} heir={x.heir} letter={hasLetter(info)} locked={locked} size={320} />;
 }
 
 /** The market: every Pusaka with its state, standing loan offers, and the latest on-chain activity. */
@@ -702,7 +702,9 @@ function OfferBook({ infos, accountId, mineOnly }) {
   if (!mineOnly && !shown.length) return null;
   const apr = (o) => (Number(o.repay) / Number(o.principal) - 1) * 365 * DAY_MS / Number(o.duration_ms);
   // a listed one can take it once bought (the demo path: buy, then borrow); one with a loan request can't
-  const takers = (o) => (infos ?? []).filter((i) => !i.loan && Number(i.verified_sats) >= Number(o.min_verified_sats));
+  // a Pusaka held by a Smart Pusaka's own account (0s…/t<id>.) can't take a loan offer: that account only moves assets
+  const wrapped = (i) => /^0s[0-9a-f]{40}$/.test(i.token.owner_id) || i.token.owner_id.endsWith(`.${SMART}`);
+  const takers = (o) => (infos ?? []).filter((i) => !i.loan && !wrapped(i) && Number(i.verified_sats) >= Number(o.min_verified_sats));
   const cancel = async (oid) => {
     setBusy(oid); setMsg("");
     try { await call("cancel_loan_offer", { offer_id: oid }); setMsg("Offer cancelled. Your NEAR is on its way back."); await load(); }
@@ -789,6 +791,7 @@ function Detail({ id, accountId }) {
   const [inside, setInside] = useState(null);
   useEffect(() => { if (CONTRACT === SMART) insideOf(id).then(setInside, () => {}); }, [id]);
   const name = `${CONTRACT === SMART ? "Smart Pusaka" : "Pusaka"} #${id}`;
+  const bundleList = inside && [...inside.ids, inside.usdc ? `${inside.usdc} USDC` : null].filter(Boolean).join(" + ");
 
   if (missing) return <section><h1>No Pusaka #{id}</h1><p className="error">There is no Pusaka #{id} yet. <a href="#/">See all Pusaka</a></p></section>;
   if (!t && failed) return <p className="error">Couldn't reach NEAR to load Pusaka #{id}. <button onClick={refresh}>Try again</button></p>;
@@ -802,13 +805,14 @@ function Detail({ id, accountId }) {
   return (
     <article className="detail">
       <div className="detail-face">
-        <Tilt><Vessel id={id} info={info} locked={locked} /></Tilt>
+        <Tilt><Vessel id={id} info={{ ...info, inside }} locked={locked} /></Tilt>
         <h1>{name}</h1>
         <p className="muted">Owned by <strong>{isOwner ? "you" : owner}</strong> <WatchStar id={id} /></p>
         <dl className="face-facts">
-          <div><dt>Bitcoin inside</dt><dd>{Number(info.verified_sats) ? `${Number(info.verified_sats).toLocaleString()} sats` : "Empty"}</dd></div>
-          {inside && <div><dt>In its account</dt><dd>{[...inside.ids, inside.usdc ? `${inside.usdc} USDC` : null].filter(Boolean).join(" + ")}</dd></div>}
-          {px && (Number(info.verified_sats) > 0 || inside) && <div><dt>Worth</dt><dd>{usd((Number(info.verified_sats) + (inside?.sats ?? 0)) / 1e8 * px.btcUsd + (inside?.usdc ?? 0))}</dd></div>}
+          <div><dt>Bitcoin inside</dt><dd>{satsOf({ ...info, inside }) ? `${satsOf({ ...info, inside }).toLocaleString()} sats` : "Empty"}</dd></div>
+          {inside && <div><dt>In its account</dt><dd>{bundleList}</dd></div>}
+          {px && (satsOf({ ...info, inside }) > 0 || inside?.usdc > 0) && <div><dt>Worth</dt><dd>{usd(satsOf({ ...info, inside }) / 1e8 * px.btcUsd + (inside?.usdc ?? 0))}
+            {inside?.usdc > 0 && satsOf({ ...info, inside }) > 0 && <small> ({usd(satsOf({ ...info, inside }) / 1e8 * px.btcUsd)} BTC + {usd(inside.usdc)} USDC)</small>}</dd></div>}
           <div><dt>Status</dt><dd>{dealOf(info) ? <span className={`piece-badge is-${dealOf(info)[0]}`}>{dealOf(info)[1]}</span> : info.pending ? "Signing" : "Held"}</dd></div>
         </dl>
         <ShareLinks id={id} btcText={`${btc(Number(info.verified_sats))} BTC`} />
@@ -819,13 +823,13 @@ function Detail({ id, accountId }) {
         <div className="deal">
           <section>
             <h2>Bitcoin inside, verified on NEAR</h2>
-            <p className="amount"><span>{btc(Number(info.verified_sats))}</span> BTC</p>
-            <p className="muted">{Number(info.verified_sats).toLocaleString()} sats{px && Number(info.verified_sats) > 0 && <>, about {usd(Number(info.verified_sats) / 1e8 * px.btcUsd)} at mainnet BTC prices</>}.</p>
+            <p className="amount"><span>{btc(satsOf({ ...info, inside }))}</span> BTC</p>
+            <p className="muted">{satsOf({ ...info, inside }).toLocaleString()} sats{px && satsOf({ ...info, inside }) > 0 && <>, about {usd(satsOf({ ...info, inside }) / 1e8 * px.btcUsd)} at mainnet BTC prices</>}
+              {inside?.sats > 0 && (Number(info.verified_sats) ? <>: {Number(info.verified_sats).toLocaleString()} at its own address, {inside.sats.toLocaleString()} inside {inside.ids.join(", ")}</> : <>, all of it inside {inside.ids.join(", ")}</>)}.</p>
             <ExitQuote sats={Number(info.verified_sats)} evm={evmAddress(info.btc_pubkey)} />
-            {inside && <p className="deal-bundle"><b>Also comes with it:</b> {[...inside.ids, inside.usdc ? `${inside.usdc} USDC` : null].filter(Boolean).join(" + ")}
-              {inside.sats > 0 && <> ({inside.sats.toLocaleString()} more sats of proven Bitcoin)</>}. They sit in its own account and change hands with it. <a href="#d-smart">What's inside</a></p>}
+            {inside && <p className="deal-bundle"><b>A bundle:</b> {bundleList} sit in its own account and change hands with it. <a href="#d-smart">What's inside</a></p>}
           </section>
-          <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} />
+          <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} bundle={bundleList} />
         </div>
 
         <DetailNav sections={[["d-btc", "Bitcoin"], ["d-proof", "Proof"], CONTRACT === SMART && ["d-smart", "Smart features"], !IS_SIBLING && ["d-ai", "AI appraisal"], (t.eth || t.sol || t.nearAcct) && ["d-chains", "Other chains"], ["d-heir", "Heir & letter"], ["d-history", "History"]].filter(Boolean)} />
@@ -1903,7 +1907,7 @@ const when = (ms) => new Date(Number(ms)).toLocaleString();
 
 // ---------- actions ----------
 
-function Actions({ t, accountId, isOwner, onDone, px }) {
+function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
   const { id, info } = t;
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
@@ -2017,7 +2021,7 @@ function Actions({ t, accountId, isOwner, onDone, px }) {
           return <p className="stats">You pay about {usd(paid)} for {usd(inside)} of BTC: {vsLabel(vsInside(now, Number(info.verified_sats), px))} its value at mainnet prices.</p>;
         })()}
         <p className="muted">
-          You get {btc(Number(info.verified_sats))} BTC (verified on NEAR). The NEAR goes to {info.listing.seller}.
+          You get {bundle ? <>{Number(info.verified_sats) ? <>{btc(Number(info.verified_sats))} BTC at its own address and </> : null}{bundle}</> : <>{btc(Number(info.verified_sats))} BTC</>} (verified on NEAR). The NEAR goes to {info.listing.seller}.
         </p>
         {falling && <AuctionClock listing={info.listing} />}
         <LoanMarket t={t} accountId={accountId} isOwner={isOwner} busy={busy} run={run} />

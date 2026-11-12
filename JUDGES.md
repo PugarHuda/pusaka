@@ -12,7 +12,7 @@ node scripts/verify.mjs
 Expect `all checks passed`, with these lines (numbers move as the demo is used):
 
 ```
-✓ deployed code = the README's reproducible build: sha256 …, commit …
+✓ deployed code = the recorded build: sha256 …, commit …
 ✓ NEP-330 build info names the reproducible image: sourcescan/cargo-near:0.21.1-rust-1.96.1
 ✓ nobody holds a key to the contract account: no key at all (or only open gift-link keys limited to claim)
 ✓ new code only after a public announcement: upgrades renounced: final
