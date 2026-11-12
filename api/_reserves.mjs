@@ -1,7 +1,7 @@
 // Proof of reserves straight from the contract: every Pusaka, its BTC address and the deposits
 // NEAR's Bitcoin light client proved. Shared by api/reserves.mjs and api/badge.mjs.
 import { FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
-import { CONTRACT, SIBLINGS, NETWORK, BTC_LIGHT_CLIENT, btcAddress, nearProvider } from "@pusaka/shared";
+import { CONTRACT, SIBLINGS, NBTC, NETWORK, BTC_LIGHT_CLIENT, btcAddress, nearProvider } from "@pusaka/shared";
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const view = (method, args, contractId = CONTRACT) => provider.callFunction({ contractId, method, args, blockQuery: { finality: "final" } });
@@ -29,9 +29,17 @@ export async function reserves() {
     list.push(...(await Promise.all(tokens.map((t) => tokenReserve(t.token_id, c)))).filter(Boolean));
   }
   const sum = (xs) => xs.reduce((s, t) => s + t.verified_sats, 0);
+  // nBTC (Omni Bridge) in Smart Pusakas' own accounts: Bitcoin on NEAR they can redeem to their own address. Listed apart:
+  // it rests on the Omni connector, not on this contract's light-client proofs.
+  const nbtc = SIBLINGS.length ? (await Promise.all(list.filter((t) => t.contract === CONTRACT).map(async (t) => {
+    const acct = await view("account_of", { token_id: t.token_id }).catch(() => null);
+    const sats = acct ? Number(await view("ft_balance_of", { account_id: acct }, NBTC).catch(() => 0)) : 0;
+    return sats ? { token_id: t.token_id, account: acct, nbtc_sats: sats } : null;
+  }))).filter(Boolean) : [];
   return {
     network: NETWORK, contract: CONTRACT, siblings: SIBLINGS, light_client: BTC_LIGHT_CLIENT, at: new Date().toISOString(),
     total_verified_sats: sum(list),
+    nbtc: { total_sats: nbtc.reduce((s, x) => s + x.nbtc_sats, 0), token: NBTC, accounts: nbtc },
     by_contract: Object.fromEntries([CONTRACT, ...SIBLINGS].map((c) => [c, sum(list.filter((t) => t.contract === c))])),
     how_to_check: "verified_sats counts only deposits proven by the light client and never signed for; recompute with view token_info on the contract",
     tokens: list,

@@ -169,6 +169,16 @@ test("axe: dark mode has no serious or critical violations either (contrast incl
   }
 });
 
+test("verify page: a pasted text that isn't a Pusaka signature is refused, with the reason", async ({ page }) => {
+  await page.goto("/#/verify");
+  await expect(page.getByRole("heading", { name: "Verify a Pusaka's signature" })).toBeVisible();
+  await page.getByLabel("Signed message").fill("example.com wants you to sign in with your Ethereum account:\n0xabc");
+  await page.getByLabel(/Signature/).fill("0x1234");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText("✗ Not valid")).toBeVisible();
+  await expect(page.getByText(/it is a Pusaka sign-in message/)).toBeVisible();
+});
+
 // ---------- visual regression (pages whose pixels don't depend on live data) ----------
 
 test("visual: not-found page", async ({ page }) => {
