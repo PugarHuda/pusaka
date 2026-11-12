@@ -2,56 +2,48 @@
 
 [![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
 
-**NFTs that hold real Bitcoin, proven on-chain. Sell the NFT and the Bitcoin goes with it.**
+**An NFT that holds real Bitcoin, and NEAR itself knows how much. Sell, lend or bequeath the NFT, and the Bitcoin goes with it.**
 
-Each Pusaka is a NEAR NFT (NEP-171) that controls its own native Bitcoin address through
-[NEAR Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures). The address's key is held by the
-NEAR MPC network and can only be used by the Pusaka contract, and the contract only asks for a signature when the
-**current NFT owner** requests one. So transferring the NFT transfers control of the BTC, in one NEAR transaction:
-no bridge, no wrapped BTC, no custodian, no private key the seller could keep a copy of.
+Each Pusaka is a NEAR NFT (NEP-171) with its own native Bitcoin address, signed for by the NEAR MPC network through
+[Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) only when the **current NFT owner** asks.
+Every deposit is **proven on NEAR** against Bitcoin's own headers by NEAR's Bitcoin light client, and the contract
+subtracts every output it ever signed away: `verified_sats` is a number a buyer, lender, heir or AI agent can rely on
+with no indexer, no oracle, no wrapped BTC and no trust in us.
 
-And the Bitcoin inside is **proven, not claimed**: every deposit is checked on NEAR against Bitcoin's own block
-headers by NEAR's on-chain Bitcoin light client, and the contract subtracts every output it ever signed away. A buyer,
-a lender or an agent reads `verified_sats` from the contract and needs no indexer, no oracle and no trust in us.
+**60 seconds, no wallet:**
+```
+npm install && node scripts/verify.mjs        # every claim below, checked against NEAR, its MPC, its light client and Bitcoin
+node scripts/mainnet-proof.mjs                # the same proof, accepted by NEAR's *mainnet* Bitcoin light client (free view call)
+```
+Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin proven inside it, and what you can do now.
+
+## Why it's different
+
+| | NFT with a NEAR (sub-)account (Satchel, Capybazaar) | NFT with a Chain Signatures address (Handover, Incorpr) | BTC escrow with light-client proofs (Trueque) | **Pusaka** |
+|---|---|---|---|---|
+| Bitcoin inside | wrapped token only | native, balance read off-chain | native, proven once for one deal | **native UTXOs, proven on NEAR** |
+| Balance stays right after spends | n/a | no (nothing on NEAR tracks it) | n/a (escrow ends) | **yes: proven minus every signed output, always** |
+| What can be done with it | transfer | transfer | one swap | **sell (also Dutch auction, Mintbase, NEAR Intents), borrow against it, offers and refinancing, heir with guardians, gift link, stake its NEAR, bundle it inside another NFT** |
+| Seller can't keep a way back in | keyless account | sign log | escrow | **sign epoch: a buy fails if anything was signed since the buyer looked** |
+| Code anyone can trust | varies | varies | varies | **keyless, upgrades renounced, reproducible build (NEP-330), every event replayed from genesis by `verify.mjs`** |
+
+One NFT is a whole set of wallets: the same MPC key holds an address on every EVM chain (ETH, USDC), a second Ed25519
+key is a Solana address and the NFT's own NEAR account. **Smart Pusakas** (`pusaka-v2.testnet`) add a keyless NEAR
+account per NFT: it can hold USDC from a NEAR Intents swap of the NFT's own Bitcoin, or another Pusaka, and all of it
+is sold, lent and inherited as one bundle (live: an AI agent bought one at 66% below its contents, then an heir inherited it).
+The original contract stays frozen for good; the Market shows both as one list.
 
 > **What's real, and what isn't (yet).**
-> - **Real, on NEAR testnet, every claim with a tx hash:** native BTC (testnet), the Bitcoin light-client proofs, MPC signing
->   for BTC/EVM/Solana/NEAR, sales, loans, inheritance, gift links, the MCP agent tools, and Smart Pusakas (the NFT's own account,
->   post-quantum lock, an AI agent's on-chain daily budget, signing in as the NFT, its own NEAR Intents balance, a purchase paid in
->   real testnet Bitcoin, a vault, call options), and a Pusaka sold for USDC through NEAR Intents. `node scripts/verify.mjs` checks the contract's state against chain with no wallet.
-> - **Testnet only.** No mainnet deployment; mainnet needs funds (runbook: `docs/MAINNET.md`).
-> - **The NEAR Intents exit executes on Tidepool**, a 1Click-compatible testnet sandbox (unmodified `defuse` verifier); 1Click's
->   real liquidity is mainnet-only. On the original contract, the exit is a live 1Click quote.
-> - **NEAR MPC itself:** on 10 Nov `v1.signer` on mainnet reports 16 participants and a signing threshold of 11, and NEAR One's
->   [operator overview](https://mpc-operators.nearone.org/overview.html) says each node runs in an Intel TDX TEE.
-> - **The DAO council that could upgrade Smart Pusakas (`pusaka-v2.testnet`) is our own three demo accounts.** It shows the mechanism, not independence. The
->   original contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
+> - **Real, on NEAR testnet, every claim with a tx hash** (178 of them, all checked by `verify.mjs`).
+> - **Mainnet:** not deployed (needs funds; `docs/MAINNET.md`), but `scripts/mainnet-proof.mjs` shows Pusaka's proof
+>   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
+> - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`
+>   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote.
+> - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
+>   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 
-**How this differs from other "the NFT is a wallet" designs.** The common design gives each NFT its own NEAR
-(sub-)account. That account can hold NEAR and NEP-141 tokens, so Bitcoin can only be there as a wrapped token, and
-someone has to vouch for the wrapper. A Chain Signatures design that gives the NFT an EVM address does better, but a
-buyer still checks that address's balance off-chain. Pusaka puts **native BTC** in the NFT: a real Bitcoin address
-holding UTXOs, with no wrapper. The contract itself knows how much is inside: `verified_sats` is proven by the light
-client, net of everything it has ever signed away. So a price, a loan or an inheritance can be set against BTC the
-chain has verified, not BTC someone says is there.
-
-| | NFT with a NEAR sub-account | NFT with a BTC/EVM address (Chain Signatures) | **Pusaka** |
-|---|---|---|---|
-| Bitcoin inside | wrapped token only | native, but nothing on NEAR knows how much | **native UTXOs at its own address** |
-| Contents provable on NEAR | NEAR assets only | no: the balance is read off-chain from the other chain | **yes: `verified_sats`, light-client proven** |
-| Seller can't keep a way back in | keyless account | sign log | **sign epoch: a buy fails if anything was signed since the buyer looked; outside markets wait 1 h (mainnet 24 h) after the last signature** (the counter-based lock proposed for ERC-6551 front-running, [ethereum-magicians #13030](https://ethereum-magicians.org/t/erc-6551-non-fungible-token-bound-accounts/13030/118)) |
-| Borrow against what's inside | — | — | **BTC-collateral loans, enforced by the contract** |
-| Sell it as Bitcoin | — | price set blind, or trust the seller | **market price shown against the proven BTC inside; signing from the web app, not a CLI** |
-
-One NFT is a whole set of wallets: the same MPC key that holds its Bitcoin also controls one address on every EVM
-chain (ETH and USDC on Ethereum, Base and Arbitrum), and a second, Ed25519 MPC key is both a **Solana address** and the
-Pusaka's **own NEAR account**. Sell the NFT and all of it moves at once, with a sealed letter only the current holder
-can read and a 2.5% royalty for the creator on every resale.
-
-It is a standard NEAR NFT, so it trades outside our app too: NEP-178 approvals and NEP-199 payouts let any NEAR
-market sell it (tested live on Mintbase's market), and the contract freezes the BTC for as long as a market may sell it.
-
-**Judges and screeners:** [JUDGES.md](JUDGES.md) is a five-minute path; `node scripts/verify.mjs` checks the core claims below (code, keys, MPC derivation, proven BTC, reserves; cited transaction hashes for existence) against NEAR, its MPC signer, its Bitcoin light client and Bitcoin, with no wallet.
+**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (55 tools,
+spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
 
 *Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
 
@@ -70,13 +62,13 @@ agent owned and governed by its members (tracks Social Money, Autonomous Busines
 
 ## Try it in two minutes (testnet wallet only)
 
-1. Open **https://pusaka-two.vercel.app**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
-2. **Buy:** Pusaka #4 is for sale by Dutch auction (0.6 falling to 0.45 NEAR) with 10,000 sats verified on NEAR (#10 and #11 are listed the same way, in case a judge before you bought it). Click *Buy*. **See:** "You own Pusaka #4", and you can now *Withdraw* its BTC to any `tb1…` address.
-3. **Lend:** Pusaka #1 asks to borrow 0.5 NEAR, repaying 0.501 within 3 days (about 24% a year), backed by 90,946 verified sats (loan-to-value about 3%); #12, #13 and #14 ask the same, backed by 10,000 sats each. The page also shows what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
-   Stock runs out? `node scripts/restock.mjs` mints new demo Pusakas, funds each with 10,000 sats from #1's own BTC (a real withdrawal), proves them through the light client and lists them; re-run it after a Bitcoin confirmation (it needs the demo account's key, so it is for us, not for judges).
-4. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
-5. **See the attacks it refused:** open [#/refused](https://pusaka-two.vercel.app/#/refused). **See:** 11 real transactions against `pusaka-btc.testnet` (the seller withdrawing after a sale or while listed, a front-run signature, a borrower pulling collateral, a lender seizing early, an early heir, relayer dust, early and swapped code), plus 28 against Smart Pusakas (a stranger or the previous holder spending from the NFT's own account, the seller or their AI agent emptying it while listed, a missing or replayed post-quantum unlock, an agent over its budget or paying an unlisted account, a stranger posing as the agent or granting itself a budget), each one's sender, method and the contract's own panic read live from NEAR's archive, with the test that guards it.
-6. **Don't trust our page:** open any Pusaka (e.g. [#/pusaka/11](https://pusaka-two.vercel.app/#/pusaka/11)) and click *Check it yourself*. **See:** your browser asks NEAR, its MPC signer, its Bitcoin light client and Bitcoin directly (no Pusaka server) and ticks off: no full-access key on the contract, code final, the Bitcoin key is the MPC's derivation for this contract, `verified_sats` = proven deposits never signed away, and each deposit is confirmed on Bitcoin to this address. Same code as `scripts/verify.mjs` (`shared/audit.mjs`).
+1. Open **https://pusaka-two.vercel.app/#/market**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
+2. **Buy:** Pusaka #27 (11,000 sats verified) is for sale at 0.35 NEAR, #10 at 0.5; #4 is a Dutch auction falling to 0.4 NEAR. Each card says how its price compares with the BTC inside. Click one, then *Buy*. **See:** "You own Pusaka #N", and you can *Withdraw* its BTC to any `tb1…` address.
+3. **Lend:** #14 and #25 ask to borrow against 10,000 verified sats each. The page shows the loan-to-value and what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
+4. **A bundle:** Smart Pusaka #7 holds classic Pusaka #22 (11,500 sats) and 12.5 USDC in its own account; its page says so before you buy, and the Market counts that Bitcoin once.
+5. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
+6. **See the attacks it refused:** [#/refused](https://pusaka-two.vercel.app/#/refused) lists real failed transactions (a seller withdrawing after a sale, a front-run signature, an early heir, a stranger spending from an NFT's own account, …), each with the contract's own panic read live from NEAR's archive and the test that guards it.
+7. **Don't trust our page:** open any Pusaka and click *Check it yourself*: your browser asks NEAR, its MPC signer, its light client and Bitcoin directly. Same code as `scripts/verify.mjs`.
 
 ## Try it
 
