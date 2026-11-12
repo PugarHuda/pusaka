@@ -6,7 +6,7 @@ services:
       SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
       SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
     platform: linux/amd64
-    image: ghcr.io/pugarhuda/pusaka-agent@sha256:08949076824f6794739a5c774dbe65b63b3adef21a9b856fd9146bb51b6f0df9
+    image: ghcr.io/pugarhuda/pusaka-agent@sha256:80fb5b0c1fd74e1e9fc0a3065e298384ff7c067ae641a1bdfce45c77bf61c699
     container_name: pusaka-agent
     ports:
       - 3000:3000
