@@ -246,6 +246,16 @@ out with an MPC-signed `ft_transfer` ([FbT94gnj…](https://testnet.near.rocks/t
 Try: `node scripts/withdraw-nbtc.mjs <owner> <token_id> <receiver> <sats>`. Verifying a deposit on the connector
 yourself needs a staked trusted relayer (1,000 NEAR); Near-One's relayer does it for you.
 
+**And back to native Bitcoin, from a Smart Pusaka's keyless account (13 Nov, live).** The round trip with no key anywhere:
+classic #5 sent 2,300 nBTC to Smart Pusaka #4's `0s…` account ([Vg8RtvNg…](https://testnet.near.rocks/tx/Vg8RtvNgVXpab2hDZawD8JjLorUEeAPy7BjUDzWcNdU));
+classic #1 paid 3,000 native sats to that account's Omni deposit address (`234a0f97…`) and 2,800 nBTC were minted to it;
+then the holder had the account redeem 3,600 nBTC through the connector (`account_call` → `ft_transfer_call`,
+[3fh6nare…](https://testnet.near.rocks/tx/3fh6naremmRQhwQciDiWWSUtPKDADcWDicRTHAdpK64y)), and Near-One's relayer had NEAR MPC
+sign the payout: **3,281 sats to Pusaka #4's own Bitcoin address**, Bitcoin tx
+[5aa00f73…](https://mempool.space/testnet/tx/5aa00f73d680bdb7664171e6ff2de018f63916cd6461e5406f63429021ac0a74), spending exactly the
+connector UTXO we planned. The connector's rules (more inputs than change outputs, change below its smallest input) mean the
+redeem spends one of its UTXOs whole. Try: `node scripts/v2-nbtc-redeem.mjs <holder> <token_id> [--dry]`.
+
 ## Staking: the NFT earns
 
 A Pusaka's own NEAR account (its Ed25519 MPC key) can delegate to a validator. `stake_near(token_id, pool, action, amount, nonce, block_hash)` has the contract build one FunctionCall from that account to a staking pool (`deposit_and_stake`, `unstake` or `withdraw_all`) and NEAR's MPC network sign it, like every other transaction the Pusaka makes. The stake and its rewards belong to the account, so **they move with the NFT**: a buyer gets the staked NEAR and the rewards still accruing, and only the current holder can unstake.
