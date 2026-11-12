@@ -24,6 +24,12 @@ const refused = async (sd, status, re) => {
 const good = await sign();
 await verifyDelegate(checkDelegate(b64(good)));
 console.log("a genuine delegate passes");
+// Smart Pusakas (an allowlisted sibling) are relayed with the same checks; any other contract is refused before any gas
+await verifyDelegate(checkDelegate(b64(await sign({ receiverId: "pusaka-v2.testnet" }))));
+console.log("a genuine delegate to the Smart Pusaka contract passes");
+const elsewhere = await sign({ receiverId: "wrap.testnet" });
+assert.throws(() => checkDelegate(b64(elsewhere)), /only calls to pusaka-btc.testnet or pusaka-v2.testnet are relayed/);
+console.log("a delegate to any other contract is refused");
 
 // Work on decoded copies; re-sign with the sender's own key where a valid signature is needed.
 const { sha256 } = await import("@noble/hashes/sha2.js");

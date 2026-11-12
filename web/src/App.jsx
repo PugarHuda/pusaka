@@ -983,16 +983,15 @@ function ProveDeposits({ t, accountId, onDone }) {
   // Proving costs the visitor nothing (the relayer pays), so start as soon as a deposit is ready.
   const auto = useRef(false);
   useEffect(() => {
-    if (todo.length && !auto.current && !IS_SIBLING) { auto.current = true; proveFree(true); }
+    if (todo.length && !auto.current) { auto.current = true; proveFree(true); }
   }, [todo.length]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!todo.length && !unconfirmed.length && !msg) return null;
   const sum = (xs) => xs.reduce((a, u) => a + u.value, 0);
 
   async function proveFree(automatic = false) {
-    if (IS_SIBLING) { setMsg({ ok: false, text: "Free proofs serve the original contract. Connect a wallet and prove from it." }); return; }
     setBusy("free"); setMsg(automatic ? { ok: true, text: "Proving the new deposit on NEAR, gas paid by Pusaka's relayer…" } : null);
     try {
-      const r = await fetch("/api/prove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_id: id }) });
+      const r = await fetch("/api/prove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token_id: id, contract: CONTRACT }) });
       forgetViews();
       const body = await r.json().catch(() => ({}));
       if (r.status === 503) throw new Error("The relayer isn't set up on this deployment. Connect a wallet and prove from it instead.");
