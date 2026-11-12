@@ -1,6 +1,6 @@
 // An agent pays per call over x402 for a Pusaka proof-of-reserves audit: GET /api/audit answers 402, we sign a NEP-366
 // ft_transfer of wNEAR (no gas needed: the server's relayer submits it) and retry; prints the NEAR tx of the payment.
-//   node scripts/x402-pay.mjs <token_id> [--url https://…/api/audit] [--from pusaka-buyer.testnet] [--max-yocto 10000000000000000000000]
+//   node scripts/x402-pay.mjs <token_id> [--url "https://…/api/audit?contract=pusaka-btc.testnet"] [--from pusaka-buyer.testnet] [--max-yocto 10000000000000000000000]
 // Without --url it serves api/audit.mjs locally, with pusaka-relayer.testnet (from .keys/) as the settling relayer.
 import http from "node:http";
 import fs from "node:fs";
@@ -31,7 +31,8 @@ if (!url) {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   url = `http://127.0.0.1:${server.address().port}/api/audit`;
 }
-const target = `${url}?token_id=${tokenId}`;
+const t = new URL(url); t.searchParams.set("token_id", tokenId); // keeps a ?contract= already in --url
+const target = t.href;
 
 // 1. unpaid call: read the price before agreeing to it
 const first = await fetch(target);
