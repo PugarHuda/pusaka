@@ -175,7 +175,8 @@ test("visual: not-found page", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
   await page.goto("/#/nothing-here");
   await expect(page.getByText(/nothing at/i)).toBeVisible();
-  await expect(page).toHaveScreenshot("not-found.png", { fullPage: true, maxDiffPixelRatio: 0.02, mask: [page.locator(".bell, header .live")] });
+  // ponytail: main only — a fullPage shot captures the fixed backdrop past the first viewport differently run to run
+  await expect(page.locator("main")).toHaveScreenshot("not-found.png", { maxDiffPixelRatio: 0.02 });
 });
 
 test("visual: Your Pusakas without a wallet, light, then dark when the system switches while it's open", async ({ page }) => {
