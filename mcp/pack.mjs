@@ -6,7 +6,9 @@ import path from "node:path";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const DIST = path.join(import.meta.dirname, "dist");
-fs.rmSync(DIST, { recursive: true, force: true });
+// empty it rather than remove it: Windows refuses to delete a folder a shell is standing in
+fs.mkdirSync(DIST, { recursive: true });
+for (const f of fs.readdirSync(DIST)) fs.rmSync(path.join(DIST, f), { recursive: true, force: true });
 fs.mkdirSync(path.join(DIST, "shared"), { recursive: true });
 fs.mkdirSync(path.join(DIST, "deployments"), { recursive: true });
 
@@ -60,7 +62,7 @@ Network: NEAR testnet (contract \`pusaka-btc.testnet\`). Source: https://github.
 fs.writeFileSync(path.join(DIST, "server.json"), JSON.stringify({
   $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   name: "io.github.PugarHuda/pusaka",
-  description: "Pusaka on NEAR: NFTs that each control a native Bitcoin address; buy, lend, borrow and inherit with caps.",
+  description: "NFTs on NEAR that each control a native Bitcoin address: buy, lend, borrow, inherit, with caps",
   repository: { url: "https://github.com/PugarHuda/pusaka", source: "github", subfolder: "mcp" },
   version,
   packages: [{
