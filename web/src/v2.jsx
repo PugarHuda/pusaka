@@ -2,7 +2,7 @@
 // lock, an agent budget, sign-in, BIP-322, rental, Bitcoin sale, vault and call options. How each works: #/docs.
 // Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
-import { MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
+import { ORIGINAL, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
 import { witnessFromMpc } from "@pusaka/shared/bip322";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
 import { base64, hex } from "@scure/base";
@@ -18,6 +18,14 @@ async function intentsOf(account) {
   const ids = (await view("mt_tokens_for_owner", { account_id: account, limit: 20 }, VERIFIER)).map((t) => t.token_id);
   const amounts = ids.length ? await view("mt_batch_balance_of", { account_id: account, token_ids: ids }, VERIFIER) : [];
   return ids.map((t, i) => [t, amounts[i]]).filter(([, a]) => a !== "0");
+}
+/** Everything a buyer of the NFT also gets: Pusakas (v1 or v2) its account holds, with their proven Bitcoin, and its USDC. */
+async function insideOf(account) {
+  const pusakas = [];
+  for (const c of [ORIGINAL, V2]) for (const t of await view("nft_tokens_for_owner", { account_id: account, from_index: "0", limit: 20 }, c).catch(() => []))
+    pusakas.push({ c, id: t.token_id, sats: Number((await view("token_info", { token_id: t.token_id }, c)).verified_sats) });
+  const usdc = Number(await view("ft_balance_of", { account_id: account }, USDC).catch(() => 0)) / 1e6;
+  return { pusakas, usdc };
 }
 const accountOf = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "optimistic" } }).catch(() => null);
 const link = (h) => <a href={`${NEAR_EXPLORER}/tx/${h}`} target="_blank" rel="noreferrer">view transaction</a>;
@@ -72,8 +80,8 @@ function V2Token({ id, accountId }) {
       const [acct, alias, pq, ag, user, btcSale, vault, call] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }),
         view("agent_of", { token_id: id }), view("user_of", { token_id: id }), view("btc_listing_of", { token_id: id }),
         view("vault_of", { token_id: id }).catch(() => null), view("call_of", { token_id: id }).catch(() => null)]);
-      const [a, b, intents] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null)]);
-      return { info, acct, alias, pq, ag, user, btcSale, vault, call, a, b, intents };
+      const [a, b, intents, inside] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null), insideOf(acct).catch(() => null)]);
+      return { info, acct, alias, pq, ag, user, btcSale, vault, call, a, b, intents, inside };
     })().catch((e) => ({ error: e.message })).then((x) => live && setS(x));
     return () => { live = false; };
   }, [id, tick]);
@@ -95,6 +103,14 @@ function V2Token({ id, accountId }) {
       <h2>Its NEAR Intents balance</h2>
       {s.intents?.length ? <p>{s.intents.map(([t, a]) => amountOf(t, a)).join(", ")}, held by its account inside NEAR Intents.</p>
         : <p className="muted">{s.intents ? "Nothing yet." : "Couldn't read the verifier."}</p>}
+      <h2>What a buyer also gets</h2>
+      {!s.inside ? <p className="muted">Couldn't read its account's holdings.</p>
+        : !s.inside.pusakas.length && !s.inside.usdc ? <p className="muted">Nothing besides the above. Put a Pusaka or tokens into its account and they're sold with it.</p>
+        : <ul className="v2-inside">
+            {s.inside.pusakas.map((p) => <li key={p.c + p.id}><a href={`${location.pathname}${p.c === V2 ? `?contract=${V2}` : ""}#/pusaka/${p.id}`}>{p.c === V2 ? "Smart Pusaka" : "Pusaka"} #{p.id}</a>: {p.sats.toLocaleString()} sats of Bitcoin proven inside</li>)}
+            {s.inside.usdc > 0 && <li>{s.inside.usdc} USDC in its account</li>}
+            <li className="muted">All of it changes hands with this NFT and leaves only through its holder; the account can move assets, never sign for them, so nothing can be kept back after a sale.</li>
+          </ul>}
       <h2>Post-quantum lock</h2>
       {s.pq ? <p>On: every action by the holder needs a fresh unlock signed with their ML-DSA-65 key and checked on-chain
         {s.pq.open ? <> (<strong>open now</strong>, until block {s.pq.unlocked_until_block})</> : <> (<strong>locked</strong>)</>}. Unlocks used: {s.pq.nonce}.</p>
