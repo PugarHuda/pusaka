@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [shade/agent-contract/**, shade/agent.mjs, shade/package*.json, shade/Dockerfile, shared/btc.mjs, api/_relayer.mjs]
+    paths: [shade/agent-contract/**, shade/agent.mjs, shade/package*.json, shade/Dockerfile, shared/btc.mjs, shared/ckd.mjs, shared/intents.mjs, deployments/testnet.json, deployments/testnet-v2.json, api/_relayer.mjs, .github/workflows/shade-image.yml]
 permissions:
   contents: read
 jobs:
@@ -18,6 +18,8 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         id: push
         with: { context: ., file: shade/Dockerfile, platforms: linux/amd64, push: true, tags: "ghcr.io/pugarhuda/pusaka-agent:${{ github.sha }}" }
+      # the agent's modules load inside the image (a missing file crash-looped a CVM on 13 Nov)
+      - run: docker run --rm --entrypoint node "ghcr.io/pugarhuda/pusaka-agent@${{ steps.push.outputs.digest }}" --input-type=module -e "await import('/app/api/_relayer.mjs'); console.log('modules load')"
       - run: echo "image ghcr.io/pugarhuda/pusaka-agent@${{ steps.push.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
   agent-contract:
     # ring needs clang for wasm; easier on Ubuntu than Windows. rust-toolchain.toml pins 1.86 (near-sdk 5.26).
