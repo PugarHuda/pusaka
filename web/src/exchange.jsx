@@ -213,6 +213,7 @@ function Verify() {
       {r && r !== "…" && (r.error ? <p className="error">{r.error}</p> : <>
         <p><strong>{r.valid ? "✓ Valid" : "✗ Not valid"}</strong>{r.token_id && <> · Pusaka #{r.token_id} on <code>{r.contract}</code>, held by {r.holder}{r.address && <> · <code>{r.address}</code></>}</>}</p>
         <ul>{r.checks.map((c) => <li key={c.what}>{c.ok ? "✓" : "✗"} {c.what} <span className="muted">({c.detail})</span></li>)}</ul>
+        {r.kind === "bip322" && r.address && <p className="muted">Proven on NEAR at this address now: <strong>{r.verified_sats.toLocaleString()} sats</strong>. {r.note}</p>}
       </>)}
     </section>
   );
