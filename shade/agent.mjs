@@ -30,7 +30,8 @@ createServer(async (req, res) => {
 }).listen(Number(process.env.PORT || 3000));
 console.log("agent", status.agent);
 
-if ((await agent.balance()) < 0.2) await agent.fund(0.3);
+// register() attaches more than 0.3 NEAR of prepaid gas: 0.3 alone failed with NotEnoughBalance (13 Nov)
+if ((await agent.balance()) < 0.4) await agent.fund(0.5);
 
 // Register before doing anything, so every proof on-chain comes from an attested agent.
 while (!status.registered_at) {
