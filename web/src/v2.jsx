@@ -9,6 +9,8 @@ import { base64, hex } from "@scure/base";
 import { callRaw, connector, near, provider, yocto } from "./near.js";
 
 export const V2 = "pusaka-v2.testnet";
+/** A Smart Pusaka's page in the full app (Bitcoin, sale, loans, heir, and its own features in one place). */
+const smartHref = (id) => `${location.pathname}${V2 === ORIGINAL ? "" : `?contract=${V2}`}#/pusaka/${id}`;
 const view = (method, args = {}, contractId = V2) => provider.callFunction({ contractId, method, args, blockQuery: { finality: "optimistic" } });
 // NEAR Intents on testnet: NEAR's unmodified `defuse` verifier, as Tidepool deploys it (README)
 const VERIFIER = "verifier.tidepool-sandbox.testnet", USDC = "usdc.tidepool-sandbox.testnet";
@@ -59,7 +61,7 @@ function V2List({ accountId }) {
       {!toks ? <p className="muted">Reading {V2}…</p> : toks.error ? <p className="error">Couldn't read {V2}: {toks.error}</p> : (
         <ul className="card-grid v2-grid">
           {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => (
-            <li key={t.token_id}><a href={`#/v2/${t.token_id}`}><span className="v2-num">#{t.token_id}</span><span className="v2-name">Smart Pusaka</span>
+            <li key={t.token_id}><a href={smartHref(t.token_id)}><span className="v2-num">#{t.token_id}</span><span className="v2-name">Smart Pusaka</span>
               <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></a></li>
           ))}
         </ul>
@@ -68,7 +70,8 @@ function V2List({ accountId }) {
   );
 }
 
-function V2Token({ id, accountId }) {
+/** A Smart Pusaka's own features. `embedded`: inside the main token page (#/pusaka/<id>), which already has the title and history. */
+export function V2Token({ id, accountId, embedded = false }) {
   const [s, setS] = useState(null);
   const [tick, setTick] = useState(0);
   const reload = () => setTick((t) => t + 1);
@@ -90,11 +93,13 @@ function V2Token({ id, accountId }) {
   const owner = s.info.token.owner_id, isOwner = accountId === owner;
   const bal = (x) => x ? `${near(x.amount)} NEAR` : "not created yet";
   return (
-    <section className="v2">
-      <p><a href="#/v2">← All Smart Pusakas</a></p>
-      <h1>Smart Pusaka #{id}</h1>
-      <p>Held by <strong>{owner}</strong>{isOwner && " (you)"}.</p>
-      <p><a className="pill pill-soft" href={`${location.pathname}?contract=${V2}#/pusaka/${id}`}>Open #{id} in the full app: Bitcoin, sale, loans, heir</a></p>
+    <section className={embedded ? "v2 v2-embedded" : "v2"}>
+      {!embedded && <>
+        <p><a href="#/v2">← All Smart Pusakas</a></p>
+        <h1>Smart Pusaka #{id}</h1>
+        <p>Held by <strong>{owner}</strong>{isOwner && " (you)"}.</p>
+        <p><a className="pill pill-soft" href={smartHref(id)}>Open #{id} in the full app: Bitcoin, sale, loans, heir</a></p>
+      </>}
       <h2>Its own account</h2>
       <dl className="v2-accounts">
         <dt>Account (NEP-616)</dt><dd>{acctLink(s.acct)}: {bal(s.a)}{s.a && <span className="muted"> · no access keys · code: the token-account global contract</span>}</dd>
@@ -131,8 +136,8 @@ function V2Token({ id, accountId }) {
       <Call id={id} s={s} accountId={accountId} isOwner={isOwner} reload={reload} />
       {isOwner && <Owner id={id} s={s} owner={owner} reload={reload} />}
       {!isOwner && s.ag && accountId === s.ag.agent && <AgentSend id={id} s={s} reload={reload} />}
-      <h2>History</h2>
-      <ol className="v2-history">{s.info.history.map((e, i) => <li key={i}>{e.event.kind}</li>)}</ol>
+      {!embedded && <><h2>History</h2>
+      <ol className="v2-history">{s.info.history.map((e, i) => <li key={i}>{e.event.kind}</li>)}</ol></>}
     </section>
   );
 }
