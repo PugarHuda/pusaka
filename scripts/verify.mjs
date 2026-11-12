@@ -37,8 +37,11 @@ console.log(`Pusaka on NEAR ${NETWORK}: ${CONTRACT}\n`);
 const acct = await rpc("query", { request_type: "view_account", finality: "final", account_id: CONTRACT });
 const codeSha = hex(base58.decode(acct.code_hash));
 const meta = await view("contract_source_metadata");
-const readmeSha = README.match(/sha256 `([0-9a-f]{64})`/)?.[1];
-ok(codeSha === readmeSha, "deployed code = the README's reproducible build", `sha256 ${codeSha.slice(0, 16)}…, commit ${meta.build_info?.source_code_snapshot?.split("?rev=")[1]?.slice(0, 7) ?? "?"}`);
+// the build recorded for whichever contract this is (deployments/<network>*.json), else the README's
+const record = fs.readdirSync(path.join(import.meta.dirname, "..", "deployments")).filter((f) => f.startsWith(NETWORK) && f.endsWith(".json"))
+  .map((f) => JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "..", "deployments", f), "utf8"))).find((d) => d.contract === CONTRACT);
+const readmeSha = record?.code?.wasm_sha256 ?? README.match(/sha256 `([0-9a-f]{64})`/)?.[1];
+ok(codeSha === readmeSha, "deployed code = the recorded build", `sha256 ${codeSha.slice(0, 16)}…, commit ${meta.build_info?.source_code_snapshot?.split("?rev=")[1]?.slice(0, 7) ?? "?"}`);
 ok(meta.build_info?.build_environment?.startsWith("sourcescan/cargo-near"), "NEP-330 build info names the reproducible image", meta.build_info?.build_environment?.split("@")[0]);
 
 // 2. Nobody holds a key to the contract account: code changes only through the public timelock.
@@ -178,7 +181,17 @@ step = "replaying every contract event from FastNear's archival index";
 // 7. Pusaka v2 (testnet): the code is the recorded build, changes only via the DAO + timelock, and every NFT's own
 //    account is keyless and runs the token-account global contract published by hash.
 const V2 = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}-v2.json`);
-if (fs.existsSync(V2)) {
+// one contract (this branch): v2 is CONTRACT and was checked above; the classic contract must stay frozen and keyless
+const CLASSIC = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}.json`);
+if (fs.existsSync(CLASSIC) && JSON.parse(fs.readFileSync(CLASSIC, "utf8")).contract !== CONTRACT) {
+  const v1 = JSON.parse(fs.readFileSync(CLASSIC, "utf8")).contract;
+  console.log(`
+Classic Pusaka (frozen): ${v1}`);
+  const k1 = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: v1 })).keys.filter((k) => !linkKey({ ...k, access_key: { permission: k.access_key.permission?.FunctionCall ? { FunctionCall: { ...k.access_key.permission.FunctionCall, receiver_id: CONTRACT } } : k.access_key.permission } }));
+  const u1 = await view("upgrade_status", {}, v1).catch(() => ({}));
+  ok(!k1.length && u1.renounced, "the classic contract stays frozen: no key, upgrades renounced", `${k1.length} other key(s), renounced: ${!!u1.renounced}`);
+}
+if (fs.existsSync(V2) && JSON.parse(fs.readFileSync(V2, "utf8")).contract !== CONTRACT) {
   const d = JSON.parse(fs.readFileSync(V2, "utf8")), v2 = d.contract;
   console.log(`\nPusaka v2: ${v2}`);
   const a2 = await rpc("query", { request_type: "view_account", finality: "final", account_id: v2 });

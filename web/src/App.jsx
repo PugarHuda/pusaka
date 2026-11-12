@@ -482,6 +482,10 @@ async function insideOf(tokenId) {
   const out = { sats: 0, ids: [] };
   for (const c of SIBLINGS) for (const t of await provider.callFunction({ contractId: c, method: "nft_tokens_for_owner", args: { account_id: acct, from_index: "0", limit: 20 }, blockQuery: { finality: "optimistic" } })) {
     const i = await provider.callFunction({ contractId: c, method: "token_info", args: { token_id: t.token_id }, blockQuery: { finality: "optimistic" } });
+    // only what can't leave on its own: a wrapped Pusaka with a listing, loan, approval or signature in flight isn't counted.
+    // (The outer NFT's account can't create those, and moving one out bumps the outer sign_epoch, so a buy priced on
+    // what was inside fails if it changed: StateChanged.)
+    if (i.listing || i.loan || i.pending || Object.keys(i.token.approved_account_ids ?? {}).length) continue;
     out.sats += Number(i.verified_sats); out.ids.push(t.token_id);
   }
   return out;
