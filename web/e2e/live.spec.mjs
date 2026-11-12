@@ -16,6 +16,8 @@ const contractView = async (method, args) => {
   if (!r.result) throw new Error(`RPC: ${JSON.stringify(r.error ?? r).slice(0, 200)}`);
   return JSON.parse(Buffer.from(r.result.result).toString());
 };
+/** The classic (first, frozen) contract's pages: the main contract is Smart Pusaka (pusaka-v2.testnet) since the merge. */
+const CL = "/?contract=pusaka-btc.testnet";
 const errorsOf = (page) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -55,7 +57,7 @@ test("every Pusaka for sale says how its price compares with the verified BTC in
 test("'Check it yourself' re-checks a Pusaka in the browser against NEAR, its MPC, its light client and Bitcoin", async ({ page }) => {
   test.setTimeout(150_000);
   const errors = errorsOf(page);
-  await page.goto("/#/pusaka/11");
+  await page.goto(CL + "#/pusaka/11");
   await page.getByRole("button", { name: "Check it yourself" }).click({ timeout: 30_000 });
   const summary = page.locator(".self-check p.stats, .self-check p.error").first();
   await expect(summary).toBeVisible({ timeout: 120_000 });
@@ -69,7 +71,7 @@ test("'Check it yourself' re-checks a Pusaka in the browser against NEAR, its MP
 test("the private AI appraisal comes from an attested NEAR AI TEE and says so check by check", async ({ page, request }) => {
   test.setTimeout(240_000);
   test.skip(!(await (await request.get("/api/appraise?status=1")).json()).configured, "no NEAR AI key on this deployment");
-  await page.goto("/#/pusaka/15");
+  await page.goto(CL + "#/pusaka/15");
   await page.getByRole("button", { name: "Appraise this Pusaka" }).click({ timeout: 30_000 });
   await expect(page.locator(".appraisal p.stats")).toContainText(/^Verified: (\d+) of \1 checks passed/, { timeout: 200_000 });
   await expect(page.locator(".appraisal-text p").first()).toContainText(/BTC|sats/);
@@ -150,7 +152,7 @@ test("a Pusaka on sale through an outside market shows it, and that its BTC is l
   const tokens = await contractView("nft_tokens", {});
   const onMarket = tokens.find((t) => Object.keys(t.approved_account_ids ?? {}).length > 0);
   test.skip(!onMarket, "no Pusaka is approved on an outside market right now");
-  await page.goto(`/#/pusaka/${onMarket.token_id}`);
+  await page.goto(`${CL}#/pusaka/${onMarket.token_id}`);
   await expect(page.locator(".actions")).toContainText(/On sale through .*mintspace2\.testnet/, { timeout: 30_000 });
   await expect(page.locator(".actions")).toContainText(/Bitcoin is locked/);
 });
@@ -191,7 +193,8 @@ test("the holder room stays closed without the holder's signature", async ({ pag
 
 test("proof of reserves and embeddable badges come straight from the contract", async ({ request }) => {
   const r = await (await request.get("/api/reserves")).json();
-  expect(r.contract).toBe("pusaka-btc.testnet");
+  expect(r.contract).toBe("pusaka-v2.testnet"); // the main contract; the frozen classic one is counted too
+  expect(Object.keys(r.by_contract)).toEqual(["pusaka-v2.testnet", "pusaka-btc.testnet"]);
   expect(r.tokens.length).toBeGreaterThanOrEqual(5);
   expect(r.total_verified_sats).toBe(r.tokens.reduce((s, t) => s + t.verified_sats, 0));
   const b = await request.get("/api/badge?id=1");
@@ -222,7 +225,7 @@ test("a ledger built from the capped on-chain history says so instead of 'in tot
       args_base64: Buffer.from('{"token_id":"1"}').toString("base64") } } });
   const info = JSON.parse(Buffer.from((await rpc.json()).result.result).toString());
   test.skip(info.history[0].event.kind === "Mint", "#1's full history still fits");
-  await page.goto("/#/pusaka/1");
+  await page.goto(CL + "#/pusaka/1");
   await expect(page.locator(".ledger")).toContainText(/in its last \d+ events|no sale in its last/, { timeout: 30_000 });
   await expect(page.locator(".ledger")).toContainText("NEP-297 logs");
 });
@@ -266,7 +269,7 @@ test("the remote MCP endpoint works from a browser (CORS) and returns JSON-RPC p
 });
 
 test("a Pusaka shows the nBTC in its own NEAR account and its Omni Bridge deposit address", async ({ page }) => {
-  await page.goto("/#/pusaka/5");
+  await page.goto(CL + "#/pusaka/5");
   const sec = page.locator("section").filter({ has: page.getByRole("heading", { name: "nBTC on NEAR" }) });
   await expect(sec).toBeVisible({ timeout: 40_000 });
   await expect(sec).toContainText(/[1-9][\d,]* nBTC sats/); // #5's account holds nBTC minted by the Omni connector
@@ -286,7 +289,7 @@ test("a will's guardians and quorum on the page are the contract's guardians_of"
     params: { request_type: "call_function", finality: "final", account_id: "pusaka-btc.testnet", method_name: "guardians_of", args_base64: args } }) })).json();
   if (!r.result) throw new Error(`RPC: ${JSON.stringify(r.error ?? r).slice(0, 200)}`);
   const g = JSON.parse(Buffer.from(r.result.result).toString());
-  await page.goto("/#/pusaka/2");
+  await page.goto(CL + "#/pusaka/2");
   const s = page.locator("section", { has: page.getByRole("heading", { name: "Heir" }) });
   await expect(s).toBeVisible({ timeout: 30_000 });
   if (!g) return expect(s.locator(".guardians")).toHaveCount(0);
@@ -304,7 +307,7 @@ test("a Pusaka's staked NEAR is listed per validator, from the pools the contrac
   const pools = JSON.parse(Buffer.from(r.result.result).toString());
   expect(pools.length, "#2 stakes (scripts/stake.mjs)").toBeGreaterThan(0);
   expect(pools.every((p) => p.endsWith(".pool.f863973.m0"))).toBe(true);
-  await page.goto("/#/pusaka/2");
+  await page.goto(CL + "#/pusaka/2");
   const s = page.getByRole("region", { name: "Staking" });
   await expect(s).toContainText(/[\d.]+ NEAR at validators/, { timeout: 30_000 });
   for (const p of pools) await expect(s.getByRole("link", { name: p })).toBeVisible();
@@ -333,7 +336,7 @@ test("a Pusaka's BTC has a live NEAR Intents exit quote, and a loan says how oft
   const up = await fetch("https://1click.chaindefuser.com/v0/quote", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(exitQuoteRequest(101_446, "0x50d7d5e7a9d8b12b0a0b0e6e4c4c1e8f2e9de795")), signal: AbortSignal.timeout(35_000) })
     .then((r) => r.ok, () => false);
-  await page.goto("/#/pusaka/12");
+  await page.goto(CL + "#/pusaka/12");
   if (!up) {
     test.info().annotations.push({ type: "1Click down", description: "NEAR Intents quote service unavailable during this run; checked the honest fallback" });
     await expect(page.locator(".exit-quote")).toContainText(/No NEAR Intents quote right now/, { timeout: 45_000 });
@@ -441,12 +444,12 @@ test("Pusaka v2 shows a token's own keyless account, its name and its post-quant
   expect(errors).toEqual([]);
 });
 
-test("?contract=pusaka-v2.testnet opens the whole app on Pusaka v2, and only that allowlisted sibling", async ({ page }) => {
+test("?contract=pusaka-btc.testnet opens the whole app on the classic contract, and only that allowlisted sibling", async ({ page }) => {
   const errors = errorsOf(page);
-  await page.goto("/?contract=pusaka-v2.testnet#/pusaka/5");
-  await expect(page.getByRole("note")).toContainText("Smart Pusakas");
+  await page.goto(`${CL}#/pusaka/5`);
+  await expect(page.getByRole("note")).toContainText("classic Pusakas");
   await expect(page.getByRole("heading", { name: "Pusaka #5" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("footer")).toContainText("pusaka-v2.testnet");
+  await expect(page.locator("footer")).toContainText("pusaka-btc.testnet");
   await expect(page.getByText(/^tb1[a-z0-9]{20,}/).first()).toBeVisible({ timeout: 30_000 }); // its own MPC-derived Bitcoin address
   await page.goto("/?contract=evil.testnet#/");
   await expect(page.getByRole("note")).toHaveCount(0); // not allowlisted: the original contract

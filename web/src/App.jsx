@@ -723,7 +723,9 @@ function OfferBook({ infos, accountId, mineOnly }) {
   const [offers, setOffers] = useState(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
-  const load = () => allOffers().then(setOffers, () => setOffers([]));
+  // every deployment's offers (classic offers lend against classic Pusakas), each tagged with its contract
+  const load = () => Promise.all(ALL_CONTRACTS.map((c) => allOffers(c).then((xs) => xs.map((x) => ({ ...x, c })), () => [])))
+    .then((xs) => setOffers(xs.flat()), () => setOffers([]));
   useEffect(() => { load(); }, []);
   const shown = (offers ?? []).filter(({ offer: o }) => !mineOnly || o.lender === accountId);
   if (!mineOnly && !shown.length) return null;
@@ -731,7 +733,7 @@ function OfferBook({ infos, accountId, mineOnly }) {
   // a listed one can take it once bought (the demo path: buy, then borrow); one with a loan request can't
   // a Pusaka held by a Smart Pusaka's own account (0s…/t<id>.) can't take a loan offer: that account only moves assets
   const wrapped = (i) => /^0s[0-9a-f]{40}$/.test(i.token.owner_id) || i.token.owner_id.endsWith(`.${SMART}`);
-  const takers = (o) => (infos ?? []).filter((i) => !i.loan && !wrapped(i) && Number(i.verified_sats) >= Number(o.min_verified_sats));
+  const takers = (o, c) => (infos ?? []).filter((i) => (i._c ?? CONTRACT) === c && !i.loan && !wrapped(i) && Number(i.verified_sats) >= Number(o.min_verified_sats));
   const cancel = async (oid) => {
     setBusy(oid); setMsg("");
     try { await call("cancel_loan_offer", { offer_id: oid }); setMsg("Offer cancelled. Your NEAR is on its way back."); await load(); }
@@ -743,14 +745,15 @@ function OfferBook({ infos, accountId, mineOnly }) {
       {!mineOnly && <p className="muted">Lenders' NEAR, already escrowed in the contract. A holder takes one in a single transaction, gas-free.</p>}
       {offers === null ? <p className="muted">Reading offers…</p> : !shown.length
         ? <p className="muted">No standing offers from you. Offer one from any Pusaka's page; the NEAR stays in the contract until it's taken or you cancel.</p>
-        : <ul>{shown.map(({ id, offer: o }) => {
-          const t = o.token_id ? [] : takers(o);
-          return <li key={id}>
+        : <ul>{shown.map(({ id, offer: o, c }) => {
+          const t = o.token_id ? [] : takers(o, c);
+          return <li key={`${c}:${id}`}>
             {o.lender} lends <strong>{near(o.principal)} NEAR</strong>, repay {near(o.repay)} within {days(o.duration_ms)} ({(apr(o) * 100).toFixed(1)}% a year){" "}
-            {o.token_id ? <>for <a href={`#/pusaka/${o.token_id}`}>Pusaka #{o.token_id}</a></>
+            {o.token_id ? <>for <a href={pageOf(c, o.token_id)}>Pusaka #{o.token_id}</a></>
               : <>to any Pusaka with {btc(Number(o.min_verified_sats))} BTC verified{t.length > 0 && <>: {t.slice(0, 6).map((i, k) =>
-                <span key={i.token.token_id}>{k ? ", " : ""}<a href={`#/pusaka/${i.token.token_id}`}>#{i.token.token_id}</a>{i.listing && " (for sale)"}</span>)}{t.length > 6 && ` and ${t.length - 6} more`} qualify</>}</>}.
-            {o.lender === accountId && <> <button className="ghost" disabled={!!busy} onClick={() => cancel(id)}>{busy === id ? "Cancelling…" : "Cancel"}</button></>}
+                <span key={i.token.token_id}>{k ? ", " : ""}<a href={pageOf(c, i.token.token_id)}>#{i.token.token_id}</a>{i.listing && " (for sale)"}</span>)}{t.length > 6 && ` and ${t.length - 6} more`} qualify</>}</>}.
+            {c !== CONTRACT && <span className="muted"> (classic)</span>}
+            {o.lender === accountId && c === CONTRACT && <> <button className="ghost" disabled={!!busy} onClick={() => cancel(id)}>{busy === id ? "Cancelling…" : "Cancel"}</button></>}
           </li>;
         })}</ul>}
       {msg && <p role="status">{msg}</p>}
@@ -1817,7 +1820,7 @@ function Refused() {
   const shown = REFUSED_HERE.filter((r) => only === "all" || (only === "v2") === !!r.v2);
   const count = (k) => REFUSED_HERE.filter((r) => k === "all" || (k === "v2") === !!r.v2).length;
   useEffect(() => {
-    refusals(REFUSED_HERE.map((r) => r.hash), [ORIGINAL, V2_CONTRACT]).then(setSeen, (e) => setSeen({ error: e.message }));
+    refusals(REFUSED_HERE.map((r) => r.hash), [...new Set([ORIGINAL, ...SIBLINGS, V2_CONTRACT])]).then(setSeen, (e) => setSeen({ error: e.message }));
   }, [attempt]);
   return (
     <section className="mine wide">
@@ -2295,11 +2298,11 @@ function IntentsSwap({ t, busy, run }) {
 
 const OFFER_STORAGE = 10n ** 22n; // 0.01 NEAR; the contract refunds what the entry doesn't use
 
-async function allOffers() {
+async function allOffers(c = CONTRACT) {
   const out = [];
   // one retry per page: a single rate-limited RPC answer used to hide the whole offer book
-  const page = (from) => view("loan_offers", { from: String(from), limit: "100" })
-    .catch(() => new Promise((r) => setTimeout(r, 2000)).then(() => view("loan_offers", { from: String(from), limit: "100" })));
+  const get = (from) => (c === CONTRACT ? view("loan_offers", { from: String(from), limit: "100" }) : viewAt(c, "loan_offers", { from: String(from), limit: "100" }));
+  const page = (from) => get(from).catch(() => new Promise((r) => setTimeout(r, 2000)).then(() => get(from)));
   for (let from = 0, next = 1; from < next; from += 100) {
     const r = await page(from);
     next = Number(r.next_id);
