@@ -67,9 +67,11 @@ export default async function handler(req, res) {
     // a Bitcoin explorer we couldn't reach is not a result: don't settle, the payer can retry with a fresh signature
     if (checks.some((c) => c.ok === null)) return res.status(503).json({ error: "a source was unreachable; not charged, retry", checks });
     const settled = await s.processSettlement(r.paymentPayload, r.paymentRequirements, r.declaredExtensions, { request: ctx });
-    // the signed transfer was never executed, so nothing was paid: say why instead of an empty 402
-    if (!settled.success) return send(res, { ...settled.response, body: { error: `payment not settled (${settled.errorReason}): nothing was charged; retry`,
-      detail: String(settled.errorMessage ?? "").slice(0, 200) } });
+    // say why instead of an empty 402: the client gets only the fixed reason code; the raw message (RPC details) stays in the log
+    if (!settled.success) {
+      console.error("x402 settlement failed:", settled.errorReason, String(settled.errorMessage ?? "").slice(0, 300));
+      return send(res, { ...settled.response, body: { error: `payment not settled (${settled.errorReason}); check your wNEAR balance before retrying` } });
+    }
     for (const [k, v] of Object.entries(settled.headers)) res.setHeader(k, v);
     res.status(200).json({ token_id: tokenId, verdict: checks.every((c) => c.ok) ? "reserves verified" : "FAILED: do not rely on this Pusaka",
       checks, paid: { tx: settled.transaction, network: settled.network, payer: settled.payer } });
