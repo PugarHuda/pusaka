@@ -7,7 +7,7 @@
 import { createServer } from "node:http";
 import { Account, FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
 import { ShadeClient, sanitize } from "@neardefi/shade-agent-js";
-import { CONTRACT, nearProvider } from "@pusaka/shared";
+import { CONTRACT, SIBLINGS, nearProvider } from "@pusaka/shared";
 import { proveToken } from "../api/_relayer.mjs";
 
 const need = (k) => process.env[k] || (() => { throw new Error(`missing ${k}`); })();
@@ -18,7 +18,7 @@ const agent = await ShadeClient.create({
   agentContractId: need("AGENT_CONTRACT_ID"),
   sponsor: { accountId: need("SPONSOR_ACCOUNT_ID"), privateKey: need("SPONSOR_PRIVATE_KEY") },
 });
-const status = { agent: agent.accountId(), agent_contract: process.env.AGENT_CONTRACT_ID, pusaka_contract: CONTRACT,
+const status = { agent: agent.accountId(), agent_contract: process.env.AGENT_CONTRACT_ID, pusaka_contracts: [CONTRACT, ...SIBLINGS],
   registered_at: null, runs: 0, last_run: null, proofs: [], errors: [] };
 const fail = (where, e) => { status.errors = [...status.errors.slice(-9), { where, at: new Date().toISOString(), error: String(sanitize(e)?.message ?? sanitize(e)) }]; console.error(where, sanitize(e)); };
 
@@ -50,12 +50,15 @@ const prover = new Account(status.agent, nearProvider({ FailoverRpcProvider, Jso
 async function round() {
   status.runs++; status.last_run = new Date().toISOString();
   try {
-    const tokens = await prover.provider.callFunction({ contractId: CONTRACT, method: "nft_tokens", args: { from_index: "0", limit: 100 } });
-    for (const t of tokens) {
-      try {
-        const { results } = await proveToken(t.token_id, prover);
-        for (const r of results) status.proofs = [...status.proofs.slice(-49), { token_id: t.token_id, ...r, at: new Date().toISOString() }];
-      } catch (e) { fail(`prove #${t.token_id}`, e); }
+    // the main contract (Smart Pusakas) and its frozen classic sibling
+    for (const c of [CONTRACT, ...SIBLINGS]) {
+      const tokens = await prover.provider.callFunction({ contractId: c, method: "nft_tokens", args: { from_index: "0", limit: 100 } });
+      for (const t of tokens) {
+        try {
+          const { results } = await proveToken(t.token_id, prover, c);
+          for (const r of results) status.proofs = [...status.proofs.slice(-49), { contract: c, token_id: t.token_id, ...r, at: new Date().toISOString() }];
+        } catch (e) { if (e.status !== 429) fail(`prove ${c} #${t.token_id}`, e); }
+      }
     }
   } catch (e) { fail("round", e); }
 }
