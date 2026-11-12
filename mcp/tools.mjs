@@ -19,7 +19,8 @@ import {
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
-import { createNearPaymentFetch } from "@fastnear/x402";
+import { createNearX402Client } from "@fastnear/x402";
+import { wrapFetchWithPayment } from "@x402/fetch";
 import { createLocalNearSigner } from "@fastnear/x402/node";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
 
@@ -873,14 +874,17 @@ reg("pusaka_paid_audit", {
   // the client pays whatever the server's next 402 asks: pin it to the requirement checked and confirmed above
   const pinned = async (input, init) => {
     const r = await fetch(input, { ...init, redirect: "error" });
-    if (r.status === 402) {
+    if (r.status === 402 && r.headers.get("payment-required")) { // a refused payment may answer 402 without one
       const again = decodePaymentRequiredHeader(r.headers.get("payment-required")).accepts;
       const same = again.length === 1 && ["network", "asset", "amount", "payTo"].every((k) => again[0][k] === req[k]);
       if (!same) throw new Error("the server changed the price or payee after it was checked; nothing paid");
     }
     return r;
   };
-  const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}`, fetch: pinned })(target);
+  // x402's own spend controls as a second fence: only wNEAR, at most the amount checked and confirmed above
+  const client = createNearX402Client({ signer, network: `near:${NETWORK}` });
+  client.setSpendControls({ allowedAssets: [{ network: req.network, asset: req.asset, maxAmountPerPayment: String(amount) }], maxAmountPerPayment: false });
+  const res = await wrapFetchWithPayment(pinned, client)(target);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(`paid call failed ${res.status}: ${JSON.stringify(body).slice(0, 300)}`);
   const { transaction } = decodePaymentResponseHeader(res.headers.get("payment-response"));

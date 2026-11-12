@@ -4,7 +4,8 @@
 // Without --url it serves api/audit.mjs locally, with pusaka-relayer.testnet (from .keys/) as the settling relayer.
 import http from "node:http";
 import fs from "node:fs";
-import { createNearPaymentFetch } from "@fastnear/x402";
+import { createNearX402Client } from "@fastnear/x402";
+import { wrapFetchWithPayment } from "@x402/fetch";
 import { createLocalNearSigner } from "@fastnear/x402/node";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
 import { NETWORK, RPC, account, call, keyFile, view } from "./lib.mjs";
@@ -55,11 +56,15 @@ const signer = createLocalNearSigner({ accountId: from, secretKey: key(from), rp
 // pinned: the client pays whatever the next 402 asks, so it must be the requirement checked above
 const pinned = async (input, init) => {
   const r = await fetch(input, init);
-  const again = r.status === 402 ? decodePaymentRequiredHeader(r.headers.get("payment-required")).accepts : null;
+  const h = r.status === 402 ? r.headers.get("payment-required") : null; // a refused payment may answer 402 without one
+  const again = h ? decodePaymentRequiredHeader(h).accepts : null;
   if (again && !(again.length === 1 && ["network", "asset", "amount", "payTo"].every((k) => again[0][k] === req[k]))) throw new Error("the server changed the price or payee after it was checked; nothing paid");
   return r;
 };
-const res = await createNearPaymentFetch({ signer, network: `near:${NETWORK}`, fetch: pinned })(target);
+// x402's own spend controls as a second fence: only this asset, at most the price checked above, per payment
+const client = createNearX402Client({ signer, network: `near:${NETWORK}` });
+client.setSpendControls({ allowedAssets: [{ network: req.network, asset: req.asset, maxAmountPerPayment: String(req.amount) }], maxAmountPerPayment: false });
+const res = await wrapFetchWithPayment(pinned, client)(target);
 const body = await res.json();
 server?.close();
 if (!res.ok) throw new Error(`paid call failed ${res.status}: ${JSON.stringify(body).slice(0, 300)} ${res.headers.get("payment-required") ? decodePaymentRequiredHeader(res.headers.get("payment-required")).error : ""}`);

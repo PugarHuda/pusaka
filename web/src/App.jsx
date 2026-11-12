@@ -373,7 +373,7 @@ function MainnetReady() {
     try { setR(await (await import("@pusaka/shared/lcproof")).mainnetProofCheck()); } catch (e) { setR({ error: e.message }); }
   };
   return (
-    <p className="moves mainnet-ready">
+    <p className="mainnet-ready">
       Testnet today, mainnet-ready: NEAR's <strong>mainnet</strong> Bitcoin light client checks the very proof Pusaka sends.{" "}
       {!r && <button type="button" className="ghost" onClick={run}>Ask it now, from your browser</button>}
       {r?.busy && <span className="muted">Building a proof for the latest Bitcoin block and asking btc-client.bridge.near…</span>}

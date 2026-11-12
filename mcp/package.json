@@ -16,11 +16,12 @@
   },
   "dependencies": {
     "@fastnear/x402": "^2.5.0",
-    "@x402/core": "~2.18.0",
+    "@x402/core": "~2.30.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@pusaka/shared": "*",
     "near-api-js": "^7.4.0",
     "zod": "^4.6.7",
-    "viem": "^2.57.14"
+    "viem": "^2.57.14",
+    "@x402/fetch": "~2.30.0"
   }
 }

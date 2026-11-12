@@ -61,7 +61,7 @@ function V2List({ accountId }) {
       {!toks ? <p className="muted">Reading {V2}…</p> : toks.error ? <p className="error">Couldn't read {V2}: {toks.error}</p> : (
         <ul className="card-grid v2-grid">
           {[...toks].sort((a, b) => (b.owner_id === accountId) - (a.owner_id === accountId)).map((t) => (
-            <li key={t.token_id}><a href={smartHref(t.token_id)}><span className="v2-num">#{t.token_id}</span><span className="v2-name">Smart Pusaka</span>
+            <li key={t.token_id}><a href={smartHref(t.token_id)} aria-label={`Smart Pusaka #${t.token_id}, held by ${t.owner_id === accountId ? "you" : t.owner_id}`}><span className="v2-num">#{t.token_id}</span><span className="v2-name">Smart Pusaka</span>
               <span className="muted">held by {t.owner_id === accountId ? <strong>you</strong> : t.owner_id}</span></a></li>
           ))}
         </ul>

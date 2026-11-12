@@ -18,8 +18,16 @@
   },
   "dependencies": {
     "@fastnear/x402": "^2.5.0",
-    "@x402/core": "~2.18.0",
+    "@x402/core": "~2.30.0",
     "@phala/dcap-qvl": "^0.7.1",
-    "@resvg/resvg-js": "^2.6.2"
+    "@resvg/resvg-js": "^2.6.2",
+    "@x402/fetch": "~2.30.0"
+  },
+  "overrides": {
+    "@fastnear/x402": {
+      "@x402/core": "~2.30.0",
+      "@x402/near": "~2.30.0",
+      "@x402/fetch": "~2.30.0"
+    }
   }
 }
