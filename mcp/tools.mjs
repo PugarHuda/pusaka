@@ -9,7 +9,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { z } from "zod";
 import { Account, FailoverRpcProvider, JsonRpcProvider, baseDecode, getTransactionLastResult, teraToGas } from "near-api-js";
 import {
-  CONTRACT, IS_SIBLING, SIBLINGS, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
+  CONTRACT, ORIGINAL, IS_SIBLING, SIBLINGS, NETWORK, EXPLORER, EVM_CHAINS, MINT_DEPOSIT, solAddress, solBalances, nearAccount, nearBalances, WITHDRAW_DEPOSIT, PROVE_DEPOSIT,
   balances, btcAddress, depositProof, evmAddress, evmBalances, finalize, broadcast, loanStats,
   prices, scriptHex, lightClientHeight, mintedTokenId,
   evmTx, evmTxParams, finalizeEth, broadcastEth, isSolAddress, solBlockhash, finalizeSol, broadcastSol, SOL,
@@ -613,13 +613,20 @@ reg("pusaka_withdraw_sol", {
 const V2C = IS_SIBLING ? CONTRACT : SIBLINGS[0];
 const v2view = (method, args) => { if (!V2C) throw new Error(`No Pusaka v2 on ${NETWORK}.`); return provider.callFunction({ contractId: V2C, method, args, blockQuery: { finality: "optimistic" } }); };
 reg("pusaka_token_account", {
-  description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, whether the post-quantum (ML-DSA-65) lock is on and open, and any agent's on-chain daily budget.",
+  description: "Pusaka v2: the NFT's own NEAR account (NEP-616, keyless, answers only to the current holder), its named alias, their balances, what's inside (other Pusakas it holds, with their verified sats, and its USDC: a buyer of this NFT gets all of it), whether the post-quantum (ML-DSA-65) lock is on and open, and any agent's on-chain daily budget.",
   inputSchema: { token_id: z.string() },
 }, tool(async ({ token_id }) => {
   const [acct, alias, pq, info, agent] = await Promise.all([v2view("account_of", { token_id }), v2view("alias_of", { token_id }), v2view("pq_key_of", { token_id }), v2view("token_info", { token_id }), v2view("agent_of", { token_id })]);
   const bal = (id) => provider.viewAccount({ accountId: id, blockQuery: { finality: "final" } }).then((a) => toNear(a.amount), () => null);
   const [a, b] = await Promise.all([bal(acct), bal(alias)]);
+  // what a buyer of this NFT also gets: Pusakas (v1 or v2) held by its account, each with the Bitcoin proven inside
+  const nested = [];
+  for (const c of new Set([ORIGINAL, ...SIBLINGS]))
+    for (const t of await view("nft_tokens_for_owner", { account_id: acct, from_index: "0", limit: 20 }, c).catch(() => []))
+      nested.push({ contract: c, token_id: t.token_id, verified_sats: Number((await view("token_info", { token_id: t.token_id }, c)).verified_sats) });
+  const usdc = NETWORK === "testnet" ? Number(await view("ft_balance_of", { account_id: acct }, TIDEPOOL_USDC.slice(7)).catch(() => 0)) / 1e6 : null;
   return { token_id, holder: info.token.owner_id, account: { id: acct, near: a, exists: a !== null }, alias: { id: alias, near: b, exists: b !== null },
+    inside: { pusakas: nested, usdc, note: "sold with this NFT; leaves only through the holder's account_call" },
     pq_lock: pq ? { on: true, open: pq.open, unlocks_used: pq.nonce, open_until_block: pq.unlocked_until_block } : { on: false },
     agent_budget: agent ? { agent: agent.agent, daily_near: toNear(agent.daily), left_today_near: toNear(agent.left_today), only_to: agent.to.length ? agent.to : "anyone" } : null,
     can_move_now: !info.pending && !info.price_now && !info.loan && (!pq || pq.open) };
