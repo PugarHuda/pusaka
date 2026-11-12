@@ -2,7 +2,7 @@
 // (Blur-style collection bids) and perpetual callable loans (Paradigm/Blur's Blend). #/reserves: proof of reserves,
 // every Pusaka's light-client-proven Bitcoin, each re-checkable in the browser. Loaded on demand.
 import { useEffect, useState } from "react";
-import { CONTRACT, NEAR_EXPLORER, EXPLORER, btcAddress } from "@pusaka/shared";
+import { CONTRACT, SIBLINGS, NEAR_EXPLORER, EXPLORER, btcAddress } from "@pusaka/shared";
 import { callRaw, provider, view, near, yocto } from "./near.js";
 import { SelfCheck } from "./extras.jsx";
 
@@ -142,19 +142,22 @@ function Reserves() {
     const { auditToken } = await import("@pusaka/shared/audit");
     const res = {};
     for (const r of s.filter((x) => x.sats > 0)) {
-      setAll({ ...res, [r.id]: "…" });
+      setAll({ ...res, [r.key]: "…" });
       try {
-        const checks = await auditToken(r.id);
-        res[r.id] = { ok: checks.every((c) => c.ok), failed: checks.filter((c) => !c.ok).map((c) => c.what) };
-      } catch (e) { res[r.id] = { ok: false, failed: [e.message] }; }
+        const checks = await auditToken(r.id, { contract: r.c });
+        res[r.key] = { ok: checks.every((c) => c.ok), failed: checks.filter((c) => !c.ok).map((c) => c.what) };
+      } catch (e) { res[r.key] = { ok: false, failed: [e.message] }; }
       setAll({ ...res });
     }
   }
   useEffect(() => {
     (async () => {
-      const toks = await view("nft_tokens", { from_index: "0", limit: 100 });
-      const rows = await Promise.all(toks.map((t) => view("token_info", { token_id: t.token_id })));
-      return rows.filter((i) => i.btc_pubkey).map((i) => ({ id: i.token.token_id, owner: i.token.owner_id, sats: Number(i.verified_sats), addr: btcAddress(i.btc_pubkey), deposits: i.proven_utxos.length }))
+      // the main contract and its frozen classic sibling: a classic Pusaka wrapped in a Smart one is counted once, here
+      const rows = (await Promise.all([CONTRACT, ...SIBLINGS].map(async (c) => {
+        const toks = await provider.callFunction({ contractId: c, method: "nft_tokens", args: { from_index: "0", limit: 100 } });
+        return Promise.all(toks.map(async (t) => ({ c, i: await provider.callFunction({ contractId: c, method: "token_info", args: { token_id: t.token_id } }) })));
+      }))).flat();
+      return rows.filter(({ i }) => i.btc_pubkey).map(({ c, i }) => ({ c, key: `${c}:${i.token.token_id}`, id: i.token.token_id, owner: i.token.owner_id, sats: Number(i.verified_sats), addr: btcAddress(i.btc_pubkey), deposits: i.proven_utxos.length }))
         .sort((a, b) => b.sats - a.sats);
     })().catch((e) => ({ error: e.message })).then(setS);
   }, []);
@@ -164,15 +167,15 @@ function Reserves() {
   return (
     <section className="por">
       <h1>Proof of reserves</h1>
-      <p><strong>{(total / 1e8).toFixed(8)} BTC</strong> verified across {s.length} Pusakas on <code>{CONTRACT}</code>.</p>
+      <p><strong>{(total / 1e8).toFixed(8)} BTC</strong> verified across {s.length} Pusakas on <code>{CONTRACT}</code>{SIBLINGS.length ? <> and the classic <code>{SIBLINGS.join(", ")}</code></> : null}.</p>
       <p><button onClick={checkAll} disabled={all && Object.values(all).includes("…")}>Re-check every Pusaka from this browser</button></p>
       <p className="muted">Each check asks NEAR, its MPC signer, its Bitcoin light client and Bitcoin itself, not our server. Also as JSON: <a href="/api/reserves">/api/reserves</a>. <a href="#/docs">How it works</a></p>
       <table className="ladder"><thead><tr><th>Pusaka</th><th>Verified</th><th>Bitcoin address</th><th>Holder</th><th>Checked</th><th /></tr></thead>
-        <tbody>{s.map((r) => <tr key={r.id}>
-          <td><a href={`#/pusaka/${r.id}`}>#{r.id}</a></td><td>{r.sats.toLocaleString()} sats ({r.deposits} deposit{r.deposits === 1 ? "" : "s"})</td>
+        <tbody>{s.map((r) => <tr key={r.key}>
+          <td><a href={r.c === CONTRACT ? `#/pusaka/${r.id}` : `${location.pathname}?contract=${r.c}#/pusaka/${r.id}`}>{r.c === CONTRACT ? "Smart " : ""}#{r.id}</a></td><td>{r.sats.toLocaleString()} sats ({r.deposits} deposit{r.deposits === 1 ? "" : "s"})</td>
           <td><a href={`${EXPLORER}/address/${r.addr}`} target="_blank" rel="noreferrer"><code>{r.addr.slice(0, 14)}…</code></a></td>
           <td>{r.owner}</td>
-          <td>{!all?.[r.id] ? "" : all[r.id] === "…" ? "checking…" : all[r.id].ok ? "✓ all checks" : <span className="error" title={all[r.id].failed.join("; ")}>✗ {all[r.id].failed.length} failed</span>}</td>
+          <td>{!all?.[r.key] ? "" : all[r.key] === "…" ? "checking…" : all[r.key].ok ? "✓ all checks" : <span className="error" title={all[r.key].failed.join("; ")}>✗ {all[r.key].failed.length} failed</span>}</td>
           <td><button className="ghost" onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? "Close" : "Check"}</button></td>
         </tr>)}</tbody></table>
       {open && <><h2>Pusaka #{open}</h2><SelfCheck id={open} explorer={EXPLORER} /></>}

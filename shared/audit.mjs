@@ -21,8 +21,8 @@ export async function viewFinal(method, args = {}, account_id = CONTRACT) {
 }
 
 /** The compressed secp256k1 key NEAR's MPC derives for `path` when this contract asks. */
-export async function mpcKeyFor(path) {
-  const raw = base58.decode((await viewFinal("derived_public_key", { path, predecessor: CONTRACT, domain_id: 0 }, MPC)).split(":")[1]);
+export async function mpcKeyFor(path, contract = CONTRACT) {
+  const raw = base58.decode((await viewFinal("derived_public_key", { path, predecessor: contract, domain_id: 0 }, MPC)).split(":")[1]);
   return (raw[63] % 2 ? "03" : "02") + hex(raw.slice(0, 32));
 }
 
@@ -40,15 +40,15 @@ async function btcTx(txid) {
  * Every check for one token, in order. Each is { ok, what, detail }; `ok` is null when a source couldn't be
  * reached (not the same as wrong). `lc` (light-client height) can be passed in when auditing many tokens.
  */
-export async function auditToken(tokenId, { lc, info } = {}) {
-  info ??= await viewFinal("token_info", { token_id: String(tokenId) });
+export async function auditToken(tokenId, { lc, info, contract = CONTRACT } = {}) {
+  info ??= await viewFinal("token_info", { token_id: String(tokenId) }, contract);
   if (!info?.btc_pubkey) return [{ ok: false, what: "this Pusaka has a Bitcoin key", detail: "no key recorded yet" }];
   lc ??= await lightClientHeight();
   const checks = [];
-  const mpcKey = await mpcKeyFor(info.btc_path);
+  const mpcKey = await mpcKeyFor(info.btc_path, contract);
   const addr = btcAddress(info.btc_pubkey);
   checks.push({ ok: mpcKey === info.btc_pubkey, what: "its Bitcoin key is the one NEAR's MPC derives for this contract",
-    detail: `${MPC} derived_public_key("${info.btc_path}", ${CONTRACT}) → ${addr}` });
+    detail: `${MPC} derived_public_key("${info.btc_path}", ${contract}) → ${addr}` });
 
   const signed = new Set(info.signed_outpoints.map((o) => `${o.txid}:${o.vout}`));
   const sum = info.proven_utxos.filter((u) => !signed.has(`${u.txid}:${u.vout}`)).reduce((a, u) => a + Number(u.value), 0);

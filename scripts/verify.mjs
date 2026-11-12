@@ -94,7 +94,7 @@ if (unreachable.length) { inconclusive++; console.log(`⚠ not checked on Bitcoi
 
 // 5. The public reserves API says the same as the contract.
 const res = await fetch(`${APP}/api/reserves`).then((r) => r.json()).catch(() => null);
-ok(res?.total_verified_sats === total, "the app's /api/reserves matches the contract", `${total} sats verified in total`);
+ok((res?.by_contract?.[CONTRACT] ?? res?.total_verified_sats) === total, "the app's /api/reserves matches the contract", `${total} sats verified in total`);
 
 // 6. Every NEAR transaction the README cites as evidence exists on chain.
 const hashes = [...new Set([...README.matchAll(/near\.rocks\/tx\/([1-9A-HJ-NP-Za-km-z]{43,44})/g)].map((m) => m[1]))];
