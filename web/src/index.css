@@ -379,8 +379,14 @@ footer p { max-width: var(--measure); margin: 0; }
 .piece.is-empty:hover .emblem { opacity: 1; filter: none; }
 .piece-badge { position: absolute; top: 0.85rem; left: 0.85rem; z-index: 1; padding: 0.28em 0.7em; border-radius: 999px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.01em; background: var(--paper); color: var(--ink); }
 .piece-badge.is-sale { background: var(--leaf-pale); color: var(--leaf-ink); }
+.deal-bundle { margin-top: .6rem; padding: .6rem .75rem; border-radius: 12px; background: var(--lav-pale); color: var(--lav-ink); font-size: .9rem; }
+.deal-bundle a { color: inherit; }
+.piece-inside { font-size: .78rem; color: var(--ink-soft); line-height: 1.35; }
+.piece-inside b { color: var(--lav-ink); font-weight: 600; margin-right: .25em; }
+.piece.is-smart .piece-name::after { content: "Smart"; margin-left: .4em; padding: .05em .45em; border-radius: 999px; font-size: .68rem; font-weight: 600; vertical-align: .15em; background: var(--lav-pale); color: var(--lav-ink); }
+.piece-badge.is-auction { background: var(--leaf-pale); color: var(--leaf-ink); outline: 1px dashed var(--leaf-ink); outline-offset: -3px; }
 .piece-badge.is-borrow { background: var(--lav-pale); color: var(--lav-ink); }
-.piece-badge.is-lent { background: var(--brass-pale); color: var(--brass-ink); }
+.piece-badge.is-lent { background: var(--brass-pale); color: #5a4612; } /* brass-ink is 4:1 on brass-pale; this is ~6.5:1 (WCAG AA) */
 .piece .piece-btc { display: flex; flex-direction: column; align-items: center; gap: 0.05rem; }
 .piece-btc strong { color: var(--ink); font-weight: 600; }
 .piece-btc small { font-size: 0.74rem; color: var(--ink-soft); }
