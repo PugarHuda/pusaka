@@ -3,7 +3,7 @@ const V2Page = lazy(() => import("./v2.jsx")); // #/v2: Smart Pusakas, loaded on
 const DocsPage = lazy(() => import("./docs.jsx")); // #/docs: how everything works, loaded on demand
 const ExchangePage = lazy(() => import("./exchange.jsx")); // #/bids and #/reserves, loaded on demand
 import {
-  CONTRACT, IS_SIBLING, ORIGINAL, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
+  CONTRACT, IS_SIBLING, ORIGINAL, SIBLINGS, EXPLORER, MARKET, BTC_LIGHT_CLIENT, MINT_DEPOSIT, WITHDRAW_DEPOSIT, MPC, NEAR_EXPLORER, NETWORK, NET,
   balances, broadcast, btcAddress, finalize, scriptHex, depositProof, PROVE_DEPOSIT, prices, loanStats, mintedTokenId, recentActivity, refusals,
   EVM_CHAINS, evmAddress, evmBalances, evmTxParams, evmTx, finalizeEth, broadcastEth,
   SOL, solAddress, solBalances, solBlockhash, finalizeSol, broadcastSol, isSolAddress,
@@ -354,6 +354,9 @@ function useTokens() {
           id: info.token.token_id, info, address: info.btc_pubkey ? btcAddress(info.btc_pubkey) : null, bal: null,
         })).sort((a, b) => Number(b.id) - Number(a.id)); // nft_tokens is in string order ("10" < "2")
         setTokens(ts);
+        // a Smart Pusaka's account can hold classic ones (wrapped): their Bitcoin goes with it
+        if (!IS_SIBLING && SIBLINGS.length) ts.forEach((t) => insideOf(t.id).then((inside) => inside.ids.length &&
+          setTokens((cur) => cur.map((x) => (x.id === t.id ? { ...x, info: { ...x.info, inside } } : x)))).catch(() => {}));
         ts.forEach((t) => t.address && balances(t.address, t.info.signed_outpoints).then((bal) =>
           setTokens((cur) => cur.map((x) => (x.id === t.id ? { ...x, bal } : x)))).catch(() => {}));
       })
@@ -367,7 +370,7 @@ function Home() {
   const { tokens, error, retry } = useTokens();
   const px = usePrices();
   const now = useNow(60_000);
-  const sats = tokens?.reduce((a, t) => a + Number(t.info.verified_sats), 0);
+  const sats = tokens?.reduce((a, t) => a + satsOf(t.info), 0);
   // ownership changes recorded on-chain: each moved the Bitcoin inside with no Bitcoin transaction at all
   // (a token keeps its last 32 history entries, so this is a floor)
   const moves = tokens?.flatMap((t) => t.info.history.filter((h) => ["Sale", "Transfer", "Inherited"].includes(h.event.kind)));
@@ -436,7 +439,7 @@ function Home() {
           <div className="shelf" aria-label="Every Pusaka, as the vessel it is">
             {[...tokens].sort((a, b) => Number(a.id) - Number(b.id)).map((t) => (
               <a key={t.id} href={`#/pusaka/${t.id}`} title={`Pusaka #${t.id}: ${stateOf(t.info, now)}`}>
-                <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} size={72} label={`Pusaka #${t.id}`} />
+                <Emblem pubkey={t.info.btc_pubkey} sats={satsOf(t.info)} letter={hasLetter(t.info)} size={72} label={`Pusaka #${t.id}`} />
               </a>
             ))}
           </div>
@@ -471,19 +474,32 @@ function Vessel({ id, info, locked }) {
 }
 
 /** The market: every Pusaka with its state, standing loan offers, and the latest on-chain activity. */
+/** Bitcoin a Pusaka carries: its own proven sats plus those of the Pusakas wrapped inside its account. */
+const satsOf = (i) => Number(i.verified_sats) + (i.inside?.sats ?? 0);
+/** Classic Pusakas held by a Smart Pusaka's own account: they're sold with it. */
+async function insideOf(tokenId) {
+  const acct = await view("account_of", { token_id: tokenId });
+  const out = { sats: 0, ids: [] };
+  for (const c of SIBLINGS) for (const t of await provider.callFunction({ contractId: c, method: "nft_tokens_for_owner", args: { account_id: acct, from_index: "0", limit: 20 }, blockQuery: { finality: "optimistic" } })) {
+    const i = await provider.callFunction({ contractId: c, method: "token_info", args: { token_id: t.token_id }, blockQuery: { finality: "optimistic" } });
+    out.sats += Number(i.verified_sats); out.ids.push(t.token_id);
+  }
+  return out;
+}
+
 const FILTERS = {
   all: ["All", () => true],
   sale: ["For sale", (i) => !!i.listing || Object.keys(i.token.approved_account_ids ?? {}).length > 0],
   borrow: ["Asking to borrow", (i) => !!i.loan && !i.loan.lender],
   lent: ["Lent against", (i) => !!i.loan?.lender],
-  btc: ["Holds Bitcoin", (i) => Number(i.verified_sats) > 0],
-  empty: ["Empty", (i) => !Number(i.verified_sats)],
+  btc: ["Holds Bitcoin", (i) => satsOf(i) > 0],
+  empty: ["Empty", (i) => !satsOf(i)],
   watch: ["Watching", (i) => watched().has(i.token.token_id)],
 };
 const SORTS = {
   new: ["Newest", (a, b) => Number(b.id) - Number(a.id)],
   // ties (most are empty): something you can act on first, then newest
-  btc: ["Most Bitcoin", (a, b) => Number(b.info.verified_sats) - Number(a.info.verified_sats) || !!dealOf(b.info) - !!dealOf(a.info) || Number(b.id) - Number(a.id)],
+  btc: ["Most Bitcoin", (a, b) => satsOf(b.info) - satsOf(a.info) || !!dealOf(b.info) - !!dealOf(a.info) || Number(b.id) - Number(a.id)],
   cheap: ["Cheapest for sale", (a, b) => (a.info.price_now ? Number(BigInt(a.info.price_now) / 10n ** 18n) : Infinity) - (b.info.price_now ? Number(BigInt(b.info.price_now) / 10n ** 18n) : Infinity)],
 };
 
@@ -540,12 +556,12 @@ function Market({ accountId }) {
         {shown?.map((t) => (
           <div key={t.id} className="piece-wrap">
           <WatchStar id={t.id} />
-          <a href={`#/pusaka/${t.id}`} className={`piece${Number(t.info.verified_sats) ? "" : " is-empty"}`}>
+          <a href={`#/pusaka/${t.id}`} className={`piece${satsOf(t.info) ? "" : " is-empty"}`}>
             {dealOf(t.info) && <span className={`piece-badge is-${dealOf(t.info)[0]}`}>{dealOf(t.info)[1]}</span>}
             <Emblem pubkey={t.info.btc_pubkey} sats={Number(t.info.verified_sats)} letter={hasLetter(t.info)} locked={!!t.info.listing || !!t.info.loan || t.info.pending || Object.keys(t.info.token.approved_account_ids ?? {}).length > 0} size={168} />
             <span className="piece-name">Pusaka #{t.id}</span>
-            <span className="piece-btc">{Number(t.info.verified_sats)
-              ? <><strong>{Number(t.info.verified_sats).toLocaleString()} sats</strong>{px && <> · {usd(Number(t.info.verified_sats) / 1e8 * px.btcUsd)}</>}<small>BTC verified</small></>
+            <span className="piece-btc">{satsOf(t.info)
+              ? <><strong>{satsOf(t.info).toLocaleString()} sats</strong>{px && <> · {usd(satsOf(t.info) / 1e8 * px.btcUsd)}</>}<small>{t.info.inside ? <>BTC verified, {t.info.inside.sats.toLocaleString()} of it inside classic Pusaka {t.info.inside.ids.map((x) => `#${x}`).join(", ")}</> : "BTC verified"}</small></>
               : <><strong>Empty</strong><small>no BTC verified yet</small></>}</span>
             {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{(t.bal.safe + t.bal.pending - Number(t.info.verified_sats)).toLocaleString()} sats not proven yet</span>}
             {t.info.listing && <span className="piece-price">For sale at <strong>{near(t.info.price_now ?? t.info.listing.price)} NEAR</strong></span>}
