@@ -3,6 +3,6 @@ import { body, handle, proveToken } from "./_relayer.mjs";
 
 export default function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST a token_id" });
-  const b = body(req);
-  return handle(res, () => proveToken(b.token_id, undefined, b.contract ?? undefined));
+  // body() throws 400 on bad JSON: it must run inside handle()
+  return handle(res, () => { const b = body(req); return proveToken(b.token_id, undefined, b.contract ?? undefined); });
 }
