@@ -155,6 +155,7 @@ function useRoute() {
   if (/^#\/market\/?$/.test(hash)) return "market";
   if (/^#\/bids\/?$/.test(hash)) return "bids";
   if (/^#\/reserves\/?$/.test(hash)) return "reserves";
+  if (/^#\/verify\/?$/.test(hash)) return "verify";
   if (/^#\/docs\/?$/.test(hash)) return "docs";
   const v2 = hash.match(/^#\/v2(?:\/(\d{1,30}))?\/?$/);
   if (v2) return v2[1] ? `v2:${BigInt(v2[1])}` : "v2:";
@@ -170,7 +171,7 @@ export default function App() {
   const accountId = useAccount();
   const tokenId = useRoute();
   useEffect(() => {
-    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId === "bids" ? "Bids and loans — Pusaka" : tokenId === "reserves" ? "Proof of reserves — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId === "docs" ? "How it works — Pusaka" : tokenId?.startsWith("v2:") ? "Smart Pusakas — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
+    document.title = tokenId === "mine" ? "Your Pusakas — Pusaka" : tokenId === "agents" ? "For AI agents — Pusaka" : tokenId === "refused" ? "What the contract refused — Pusaka" : tokenId === "market" ? "Market — Pusaka" : tokenId === "bids" ? "Bids and loans — Pusaka" : tokenId === "reserves" ? "Proof of reserves — Pusaka" : tokenId === "verify" ? "Verify a Pusaka's signature — Pusaka" : tokenId?.startsWith("gift:") ? "A Pusaka for you — Pusaka" : tokenId === "docs" ? "How it works — Pusaka" : tokenId?.startsWith("v2:") ? "Smart Pusakas — Pusaka" : tokenId && tokenId !== "bad" ? `Pusaka #${tokenId} — an NFT that holds real Bitcoin` : "Pusaka — NFTs that hold real Bitcoin";
   }, [tokenId]);
   const [minting, setMinting] = useState("");
 
@@ -233,7 +234,7 @@ export default function App() {
         : tokenId === "agents" ? <Agents />
         : tokenId === "refused" ? <Refused />
         : tokenId === "market" ? <Market accountId={accountId} />
-        : tokenId === "bids" || tokenId === "reserves" ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><ExchangePage page={tokenId} accountId={accountId} /></Suspense>
+        : tokenId === "bids" || tokenId === "reserves" || tokenId === "verify" ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><ExchangePage page={tokenId} accountId={accountId} /></Suspense>
         : tokenId?.startsWith("v2:") ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><V2Page id={tokenId.slice(3)} accountId={accountId} /></Suspense>
         : tokenId === "docs" ? <Suspense fallback={<section><p className="muted">Loading…</p></section>}><DocsPage /></Suspense>
         : tokenId?.startsWith("gift:") ? <GiftClaim secret={tokenId.slice(5)} accountId={accountId} />
@@ -586,7 +587,7 @@ function Market({ accountId }) {
       <header className="market-head">
         <h1>Market</h1>
         <p className="muted">Every Pusaka, the Bitcoin proven inside it, and what you can do with it now: buy one for sale, lend against one asking for a loan, or take a standing offer.</p>
-        {NETWORK === "testnet" && <p className="muted"><a href="#/bids">Bids per verified sat and loans with no due date</a> (a second market contract) · <a href="#/reserves">Proof of reserves</a></p>}
+        {NETWORK === "testnet" && <p className="muted"><a href="#/bids">Bids per verified sat and loans with no due date</a> (a second market contract) · <a href="#/reserves">Proof of reserves</a> · <a href="#/verify">Verify a Pusaka's sign-in or Bitcoin proof</a></p>}
         {tokens?.length > 0 && (
           <dl className="market-stats">
             <div><dt>Pusaka</dt><dd>{tokens.length}</dd></div>
@@ -1866,7 +1867,7 @@ function Agents() {
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
-      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 55 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 56 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
       {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>

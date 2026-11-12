@@ -245,7 +245,7 @@ test("the appraisal endpoint refuses bad ids before spending anything", async ({
 });
 
 test("APIs answer bad input with 4xx, never 500 or internals", async ({ request }) => {
-  for (const path of ["/api/prove", "/api/relay", "/api/holder"]) {
+  for (const path of ["/api/prove", "/api/relay", "/api/holder", "/api/verify"]) {
     const r = await request.post(path, { headers: { "content-type": "application/json" }, data: "{bad json" });
     expect(r.status(), path).toBe(400);
     expect((await r.json()).error).toBe("the body must be JSON");

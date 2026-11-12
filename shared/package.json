@@ -8,7 +8,8 @@
     "./audit": "./audit.mjs",
     "./pq": "./pq.mjs",
     "./bip322": "./bip322.mjs",
-    "./lcproof": "./lcproof.mjs"
+    "./lcproof": "./lcproof.mjs",
+    "./holderproof": "./holderproof.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

@@ -201,7 +201,7 @@ The web app shows this verified amount first, offers *Prove deposit* for confirm
   "env": { "PUSAKA_ACCOUNT_ID": "agent.testnet", "PUSAKA_PRIVATE_KEY": "ed25519:…", "PUSAKA_MAX_SPEND_NEAR": "5" } } } }
 ```
 
-**55 tools** (14 read-only, 17 marked destructive): buy, lend, borrow, list, give, withdraw BTC/ETH/USDC/SOL/NEAR, inherit, seal and read the holder's letter, due diligence (`pusaka_contract_trust`, `pusaka_audit`, `pusaka_credit_record`), deal scanning against a live NEAR Intents quote, and Pusaka v2 (the NFT's account, an agent budget, post-quantum unlock, sign-in). Every spend and outflow is put to the person first (MCP elicitation) when the host supports it. The full list, with live runs and tx hashes: **[docs/AGENTS.md](AGENTS.md)**.
+**56 tools** (15 read-only, 17 marked destructive): buy, lend, borrow, list, give, withdraw BTC/ETH/USDC/SOL/NEAR, inherit, seal and read the holder's letter, due diligence (`pusaka_contract_trust`, `pusaka_audit`, `pusaka_credit_record`), deal scanning against a live NEAR Intents quote, and Pusaka v2 (the NFT's account, an agent budget, post-quantum unlock, sign-in). Every spend and outflow is put to the person first (MCP elicitation) when the host supports it. The full list, with live runs and tx hashes: **[docs/AGENTS.md](AGENTS.md)**.
 **Paid per call over x402 on NEAR:** `GET /api/audit?token_id=N` answers HTTP 402 until it is paid 0.001 wNEAR as a gasless
 NEP-366 `ft_transfer` (FastNear's `@fastnear/x402`, settled by our relayer only after the audit ran); the MCP tool
 `pusaka_paid_audit` and `scripts/x402-pay.mjs` pay it under the spend cap, pinned to the price and payee they checked.

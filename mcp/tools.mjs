@@ -19,6 +19,7 @@ import {
 } from "@pusaka/shared";
 import { isAddress, parseEther, parseUnits } from "viem";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
+import { verifySignIn, verifyBtcProof } from "@pusaka/shared/holderproof";
 import { createNearX402Client } from "@fastnear/x402";
 import { wrapFetchWithPayment } from "@x402/fetch";
 import { createLocalNearSigner } from "@fastnear/x402/node";
@@ -147,7 +148,7 @@ export async function inspect(token_id) {
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
-  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account", "pusaka_market_book"]);
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account", "pusaka_market_book", "pusaka_verify_signature"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
 const OUTFLOW_TOOLS = new Set(["pusaka_sell_into_bid", "pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send"]);
@@ -811,6 +812,15 @@ reg("pusaka_stake_near", {
 }));
 
 // ---------- due diligence an agent can run before trusting Pusaka with money: all read live, nothing signed ----------
+
+reg("pusaka_verify_signature", {
+  description: "Check a signature someone says comes from a Pusaka, the way a website or exchange would: a 'Sign in as Pusaka #N' message (EIP-4361; pass signature 0x…, and domain = your site) or a BIP-322 proof of its Bitcoin address (pass witness, base64). Checks the signature, that the address is the Pusaka's own NEAR MPC key, that the holder it names still holds it, and (sign-ins) expiry and site. Returns valid plus each check.",
+  inputSchema: { message: z.string().max(2000), signature: z.string().optional(), witness: z.string().optional(), domain: z.string().optional() },
+}, tool(async ({ message, signature, witness, domain }) => {
+  if (signature) return verifySignIn({ message, signature, expectedDomain: domain });
+  if (witness) return verifyBtcProof({ message, witness });
+  throw new Error("pass signature (a sign-in) or witness (a BIP-322 proof)");
+}));
 
 reg("pusaka_audit", {
   description: "Independent proof-of-reserves audit of one Pusaka, without trusting the contract's own numbers: asks NEAR's MPC signer which Bitcoin key it derives for this contract and token (must equal the token's key), recomputes verified_sats from the proven deposits minus everything ever signed away, and looks every proven deposit up on Bitcoin itself (confirmed, paying this address, the right amount, and whether it is still unspent). Returns a verdict and each check.",

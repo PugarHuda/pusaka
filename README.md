@@ -42,7 +42,7 @@ The original contract stays frozen for good; the Market shows both as one list.
 > - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 
-**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (55 tools,
+**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (56 tools,
 spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
 
 *Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
@@ -143,13 +143,13 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 
 **Smart Pusakas (contract `pusaka-v2.testnet`: the same, plus)** — [docs/V2.md](docs/V2.md)
 - The NFT owns a keyless NEAR account and a NEAR Intents balance; a post-quantum (ML-DSA-65) lock; an AI agent's daily budget enforced on-chain.
-- Sign in to websites as the NFT (SIWE), prove its Bitcoin address (BIP-322), rent its use (ERC-4907).
+- Sign in to websites as the NFT (SIWE), prove its Bitcoin address (BIP-322), rent its use (ERC-4907); a site or exchange checks either one at [#/verify](https://pusaka-two.vercel.app/#/verify), `POST /api/verify` or the MCP tool `pusaka_verify_signature`: signature, the Pusaka's own MPC address, and that the holder it names still holds it (`node scripts/holderproof-live.mjs`).
 - **Buy it with native Bitcoin**, the payment proven by the light client (bought live with real testnet BTC).
 - **A vault** (Bitcoin covenant vaults' delay and clawback, enforced by the contract) and **covered call options**, whose strike can be paid in native Bitcoin, proven by the light client (exercised live: [2tzxAe31…](https://testnet.near.rocks/tx/2tzxAe31dPPanqq7YVxzz4kCYq8o6YWrC5DFEDGWexDV)).
 
 **Markets and agents**
 - A market contract: bids and buy pools priced per verified sat, perpetual loans with rate auctions. [How](docs/FEATURES.md#bids-per-verified-sat-and-loans-with-no-due-date-a-second-market-contract)
-- An MCP server with 55 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
+- An MCP server with 56 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
 
 **Why it holds**: the seller can't keep a way back into the Bitcoin. Every attack in the [threat model](docs/THREAT-MODEL.md) has a test named after it, and the [Refused](https://pusaka-two.vercel.app/#/refused) page shows 39 real attempts the contracts turned down. [Measured on testnet](docs/EVIDENCE.md) · [every NEAR primitive used](docs/EVIDENCE.md#every-near-primitive-pusaka-uses-and-where-to-see-it-live).
 

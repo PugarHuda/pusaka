@@ -16,7 +16,7 @@ const marketLog = (o, event) => o.receipts_outcome.flatMap((r) => r.outcome.logs
   .map((l) => JSON.parse(l.slice(11))).find((e) => e.event === event);
 
 export default function ExchangePage({ page, accountId }) {
-  return page === "reserves" ? <Reserves /> : <Bids accountId={accountId} />;
+  return page === "reserves" ? <Reserves /> : page === "verify" ? <Verify /> : <Bids accountId={accountId} />;
 }
 
 function useRun(reload) {
@@ -179,6 +179,41 @@ function Reserves() {
           <td><button className="ghost" onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? "Close" : "Check"}</button></td>
         </tr>)}</tbody></table>
       {open && <><h2>Pusaka #{open}</h2><SelfCheck id={open} explorer={EXPLORER} /></>}
+    </section>
+  );
+}
+
+// For a website or exchange handed a Pusaka's signature: checked from this browser against NEAR (shared/holderproof.mjs).
+function Verify() {
+  const [f, setF] = useState({ message: "", sig: "", domain: "" });
+  const [r, setR] = useState(null);
+  async function check(e) {
+    e.preventDefault();
+    setR("…");
+    try {
+      const { verifySignIn, verifyBtcProof } = await import("@pusaka/shared/holderproof");
+      const sig = f.sig.trim(), message = f.message.replace(/\r\n/g, "\n").trim();
+      setR(/^0x[0-9a-f]+$/i.test(sig) ? await verifySignIn({ message, signature: sig, expectedDomain: f.domain.trim() || undefined })
+        : await verifyBtcProof({ message, witness: sig }));
+    } catch (err) { setR({ error: err.message }); }
+  }
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  return (
+    <section>
+      <h1>Verify a Pusaka's signature</h1>
+      <p className="muted">A holder can sign in to a website as their Pusaka (Sign-In with Ethereum) or prove its Bitcoin address (BIP-322).
+        Paste what they gave you: this page checks the signature, that the address is the Pusaka's own NEAR MPC key, and that the holder it names
+        still holds it, straight from NEAR in your browser. Servers can POST the same to <code>/api/verify</code>.</p>
+      <form onSubmit={check} className="stack">
+        <label>Signed message<textarea rows={8} value={f.message} onChange={set("message")} required /></label>
+        <label>Signature (0x… for a sign-in) or BIP-322 witness (base64)<input value={f.sig} onChange={set("sig")} required /></label>
+        <label>Your site's domain (sign-ins only, optional)<input value={f.domain} onChange={set("domain")} placeholder="example.com" /></label>
+        <button disabled={r === "…"}>{r === "…" ? "Checking…" : "Verify"}</button>
+      </form>
+      {r && r !== "…" && (r.error ? <p className="error">{r.error}</p> : <>
+        <p><strong>{r.valid ? "✓ Valid" : "✗ Not valid"}</strong>{r.token_id && <> · Pusaka #{r.token_id} on <code>{r.contract}</code>, held by {r.holder}{r.address && <> · <code>{r.address}</code></>}</>}</p>
+        <ul>{r.checks.map((c) => <li key={c.what}>{c.ok ? "✓" : "✗"} {c.what} <span className="muted">({c.detail})</span></li>)}</ul>
+      </>)}
     </section>
   );
 }
