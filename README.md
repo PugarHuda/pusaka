@@ -2,7 +2,20 @@
 
 [![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
 
-**An NFT that holds real Bitcoin, and NEAR itself knows how much. Sell, lend or bequeath the NFT, and the Bitcoin goes with it.**
+**Bitcoin you can sell, borrow against and leave to your heirs, as a NEAR NFT, and NEAR itself proves what's inside.**
+
+Three things to check, in this order:
+
+1. **Proven, not claimed.** Every satoshi inside is checked by NEAR's own Bitcoin light client, net of everything ever
+   signed away. See the [proof of reserves](https://pusaka-two.vercel.app/#/reserves), or run
+   `node scripts/mainnet-proof.mjs` to watch NEAR's *mainnet* light client accept the same proof.
+2. **Clean to buy.** Before paying, a buyer sees whether anything the seller already signed could still move what's
+   inside, on Bitcoin, every EVM chain, Solana and the NFT's NEAR account. The badges below are redrawn from the chains
+   on every view; the same answer as JSON is an open format any NFT-wallet can adopt:
+   [proof of clean](docs/PROOF-OF-CLEAN.md) (`/api/badge?id=4&contract=pusaka-btc.testnet&format=json`).
+3. **It passes on, with no custodian.** If the holder goes silent, the named heir claims the NFT and every Bitcoin in
+   it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn), and an
+   heir's AI agent can claim it for them the moment the silence runs out.
 
 Each Pusaka is a NEAR NFT (NEP-171) with its own native Bitcoin address, signed for by the NEAR MPC network through
 [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) only when the **current NFT owner** asks.
@@ -238,3 +251,20 @@ All code in this repository was written during the hackathon window (2 Nov 2026 
 ## License
 
 [MIT](LICENSE)
+## What it does
+
+The three things above are the product. Everything else is built on the same proven balance, live on testnet with
+transaction hashes, and listed in full in [docs/FEATURES.md](docs/FEATURES.md#everything-it-does):
+
+- **Markets:** sell in one transaction (a buy fails if anything was signed since the buyer looked), Dutch auctions,
+  Mintbase (NEP-178/199), per-sat bids, buy with native Bitcoin, NEAR Intents exit.
+- **Credit:** NEAR loans from a person (offer book, refinance, no oracle) or Circle USDC from a pool with a 2-of-3
+  reporter price and liquidation.
+- **One NFT, many wallets:** ETH and USDC on three EVM chains, SOL, its own NEAR account (staking, nBTC), all moving
+  with the NFT.
+- **Smart Pusakas** (`pusaka-v2.testnet`, [docs/V2.md](docs/V2.md)): a keyless account per NFT, bundles, vault with
+  clawback, covered calls, post-quantum lock, SIWE and BIP-322 proofs for exchanges.
+- **For agents:** `npx -y pusaka-mcp` (61 tools, spend caps), x402 audits. [docs/AGENTS.md](docs/AGENTS.md)
+- **Why it holds:** every attack in the [threat model](docs/THREAT-MODEL.md) has a test named after it, and
+  [#/refused](https://pusaka-two.vercel.app/#/refused) shows 39 real attempts the contracts turned down.
+

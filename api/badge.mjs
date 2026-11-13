@@ -27,6 +27,16 @@ export function badge(id, sats, verdict, at) {
 <text x="6" y="15">${esc(left)}</text><text x="${lw + 6}" y="15">${esc(right)}</text>${third ? `<text x="${lw + rw + 6}" y="15">${esc(third)}</text>` : ""}</g></svg>`;
 }
 
+/** The same answer as JSON (docs/PROOF-OF-CLEAN.md, "pusaka-clean/1"): anything but a full clean check is not clean. */
+export function attestation(id, contract, sats, clean, at) {
+  const verdict = ["clean", "risk"].includes(clean?.verdict) ? clean.verdict : "unknown";
+  return {
+    standard: "pusaka-clean", version: "1", chain: "near", contract, token_id: id,
+    verified_sats: String(sats), verdict, checked_at: new Date(at).toISOString(), valid_for_s: 60,
+    checks: (clean?.checks ?? []).map(({ ok, what, detail }) => ({ ok, what, detail })),
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") return res.status(405).json({ error: "GET only" });
   const id = String(req.query?.id ?? "").replace(/^0+(?=\d)/, ""); // "01" is token 1
@@ -37,7 +47,13 @@ export default async function handler(req, res) {
     const t = await tokenReserve(id, c);
     if (!t) return res.status(404).json({ error: `no Pusaka #${id}` });
     // a chain that doesn't answer makes it "unchecked", never clean (fail closed)
-    const clean = req.query?.clean === "1" ? await cleanOf(id, c, viewFinal).catch(() => ({ verdict: "unknown" })) : null;
+    const json = req.query?.format === "json";
+    const clean = req.query?.clean === "1" || json ? await cleanOf(id, c, viewFinal).catch(() => ({ verdict: "unknown" })) : null;
+    if (json) {
+      res.setHeader("cache-control", "public, s-maxage=60, max-age=0, must-revalidate");
+      res.setHeader("access-control-allow-origin", "*");
+      return res.status(200).json(attestation(id, c, t.verified_sats, clean, Date.now()));
+    }
     res.setHeader("content-type", "image/svg+xml");
     // a clean verdict goes stale the moment something is signed: a minute at most, never served stale
     res.setHeader("cache-control", clean ? "public, s-maxage=60, max-age=0, must-revalidate" : "public, s-maxage=300, stale-while-revalidate=3600");
