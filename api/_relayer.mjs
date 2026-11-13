@@ -6,12 +6,13 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { base58 } from "@scure/base";
 import {
-  CONTRACT, SIBLINGS, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, btcFetch, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch, usdcToProve, PROVE_USDC_DEPOSIT,
+  CONTRACT, ORIGINAL, SIBLINGS, PROVE_DEPOSIT, BTC_MIN_CONFIRMATIONS, balances, btcAddress, btcFetch, depositProof, lightClientHeight, preflightProof, nearProvider, nearFetch, usdcToProve, PROVE_USDC_DEPOSIT,
 } from "@pusaka/shared";
 
 /** Methods a user may run gas-free through NEP-366: none of them move money. */
 /** The original contract and its allowlisted siblings (Smart Pusakas): same methods, same preflight, read from the delegate's own receiver. */
-export const RELAY_CONTRACTS = [CONTRACT, ...SIBLINGS];
+// ponytail: unique, and both deployments even when PUSAKA_CONTRACT points at the classic one (local runs, the Shade agent)
+export const RELAY_CONTRACTS = [...new Set([CONTRACT, ORIGINAL, ...SIBLINGS])];
 export const RELAY_METHODS = ["list", "cancel_listing", "request_loan", "cancel_loan_request", "claim_collateral", "still_here", "claim_inheritance", "accept_loan_offer", "approve_release"];
 const MAX_TGAS = 100n;
 /** list/cancel/loan-request ping-pong is free for the attacker; one relayed state change per token per minute caps it. */

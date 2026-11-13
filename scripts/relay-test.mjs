@@ -20,7 +20,8 @@ const before = (await owner.getState()).balance.available;
 // 1. allowed: list, relayed gas-free
 console.log("relay list:", await relay(await sign("list", { token_id: tokenId, price: "700000000000000000000000" })));
 console.log("listing now:", (await view("token_info", { token_id: tokenId })).listing?.price);
-// 2. allowed: cancel_listing
+// 2. allowed: cancel_listing, after the relayer's one-minute pause per token (anti-spam: one free action a minute)
+await new Promise((r) => setTimeout(r, 62_000));
 console.log("relay cancel:", await relay(await sign("cancel_listing", { token_id: tokenId })));
 // 3. refused: a money-moving call
 try { checkDelegate(await sign("buy", { token_id: tokenId, expected_sign_epoch: 0 }, 1n)); console.log("UNEXPECTED: buy accepted"); }

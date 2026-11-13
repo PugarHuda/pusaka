@@ -11,6 +11,8 @@ const acct = await nearAccount(tokenId);
 if (fund) {
   const r = await owner.transfer({ receiverId: acct, amount: BigInt(parseNearAmount(fund)) });
   console.log(`funded ${acct} with ${fund} NEAR: ${NEAR_EXPLORER}/tx/${r.transaction.hash}`);
+  // an RPC node can answer before it has the new account: wait until it does
+  for (let i = 0; i < 15 && !(await nearBalances(acct, 0).then((x) => x.exists, () => false)); i++) await new Promise((ok) => setTimeout(ok, 2000));
 }
 const floor = await view("near_nonce_floor", { token_id: tokenId });
 const b = await nearBalances(acct, floor);
