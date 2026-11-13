@@ -76,7 +76,8 @@ if (cmd === "deploy") {
     out[who] = kp.toString();
     console.log(`${who}: report-only key ${kp.getPublicKey().toString()} ${link(o)}`);
   }
-  fs.writeFileSync(path.join(import.meta.dirname, "..", ".keys", "lend-reporters.json"), JSON.stringify(out));
+  const file = path.join(import.meta.dirname, "..", ".keys", "lend-reporters.json");
+  fs.writeFileSync(file, JSON.stringify(out), { mode: 0o600 }); fs.chmodSync(file, 0o600); // owner-only, like every .keys file should be
   console.log("saved .keys/lend-reporters.json (set it as the LEND_REPORTER_KEYS repository secret)");
 } else if (cmd === "supply") {
   const [who, amount] = a, n = BigInt(Math.round(Number(amount) * 1e6));
