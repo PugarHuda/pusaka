@@ -10,9 +10,15 @@ export function cleanChecks({ info, bal, eth, sol, nearAcct }) {
   // a signed Bitcoin tx not yet on Bitcoin can only spend coins already left out of verified_sats: shown, not a risk
   const unspent = bal?.atRisk > 0 ? `; ${bal.atRisk.toLocaleString()} sats at its address have a signature out and aren't counted` : "";
   out.push({ ok: true, what: "Every coin it ever signed for is left out of the BTC shown", detail: `${signed} signed so far, recorded on NEAR${unspent}; a purchase fails if that record changes after you looked` });
+  // a chain this Pusaka has a key on but that wasn't read yet is "unknown", never clean (fail closed)
+  const unread = (what) => out.push({ ok: null, what, detail: "not read yet" });
+  if (bal?.loading || bal?.error) out.push({ ok: null, what: "Its Bitcoin address read", detail: bal.loading ? "still reading Bitcoin" : "the Bitcoin explorers didn't answer" });
+  if (info.btc_pubkey && !eth) unread("No signed EVM transaction still unused (ETH, USDC)");
+  if (info.btc_pubkey && !sol) unread("No SOL transfer signed in the last few minutes");
+  if (info.btc_pubkey && !nearAcct) unread("No signed transaction from its NEAR account still unused (NEAR, nBTC)");
   if (eth) {
-    const bad = eth.chains.filter((b) => b.atRisk > 0n || b.usdcAtRisk > 0n).map((b) => b.c.chain.name);
-    const unknown = eth.chains.some((b) => b.error);
+    const bad = (eth.chains ?? []).filter((b) => b.atRisk > 0n || b.usdcAtRisk > 0n).map((b) => b.c.chain.name);
+    const unknown = !eth.chains?.length || eth.chains.some((b) => b.error);
     out.push({ ok: bad.length ? false : unknown ? null : true, what: "No signed EVM transaction still unused (ETH, USDC)", detail: bad.length ? `pending on ${bad.join(", ")}` : unknown ? "some chains didn't answer" : `${eth.chains.length} chains checked` });
   }
   if (sol) out.push({ ok: sol.error ? null : !(sol.atRisk > 0n), what: "No SOL transfer signed in the last few minutes", detail: sol.error ? "Solana didn't answer" : sol.atRisk > 0n ? "one is still valid" : "none" });
