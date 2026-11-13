@@ -80,6 +80,10 @@ maps each attack to its tests (`t1_…` to `t5_…`, loans `l…`/`o…`, heir `
 Open https://pusaka-two.vercel.app, connect any NEAR testnet wallet, and follow the README's
 [try it](README.md#try-it-in-two-minutes-testnet-wallet-only) steps: buy a Pusaka (its BTC moves to you), lend against one, or take the
 standing loan offer on the home page gas-free. `#/mine` shows what you hold.
+Any token page also offers **pUSD from the pool** (a test stablecoin from a faucet, `pusaka-lend.testnet`): borrow up to
+50% of the proven BTC's value at a 2-of-3 reporter price, repay any time, and see **Clean to buy**: whether anything
+the seller signed could still move what's inside, on every chain. `cd lend && cargo test` runs its 20 attack tests
+(Linux/macOS; on Windows the test dependency aws-lc needs NASM).
 
 ## Where the core claims live
 

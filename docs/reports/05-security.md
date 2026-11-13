@@ -81,6 +81,21 @@ Scanner dijalankan ulang di semua komponen.
 
 PoC exploit: setiap baris threat model punya tes yang mencoba serangannya dan memastikan gagal (375 tes, termasuk fuzz dan invariant).
 
+## Putaran 4 (13 Nov): pool pUSD (`lend/`, `pusaka-lend.testnet`)
+| Ancaman | Penangkal | Tes |
+|---|---|---|
+| Satu reporter berbohong untuk melikuidasi semua orang | median 3 laporan; kuorum 2 | `a_lying_reporter_is_outvoted_by_the_median` |
+| Dengan 2 laporan, satu sumber menggeser harga (temuan review otomatis) | pinjam memakai nilai tengah bawah, likuidasi nilai tengah atas; selisih > 5% berarti tidak ada harga | `with_two_reports_one_source_cannot_move_the_price_either_way` |
+| Likuidasi pada harga basi | laporan > 1 jam tidak dihitung; tanpa kuorum `StalePrice` | `nobody_is_liquidated_on_a_stale_price`, `a_stale_price_blocks_borrowing` |
+| Likuidator mengambil BTC terlalu murah | bayar minimal max(utang, 95% nilai BTC); sisanya ke peminjam (`owed` bila tak terdaftar) | `a_liquidator_cannot_take_the_bitcoin_for_less_than_the_floor`, `liquidation_repays_the_pool_and_pays_the_borrower_the_rest` |
+| Akun ber-approval menggadaikan Pusaka orang lain | `sender_id == previous_owner_id` | `an_approved_account_cannot_borrow_against_someone_elses_pusaka` |
+| NFT palsu / token palsu | daftar kontrak NFT dan stablecoin dikunci saat init | `an_nft_from_another_contract_is_returned`, `another_token_cannot_be_passed_off_as_the_stablecoin` |
+| BTC jaminan ditarik saat dipinjam | pool memegang NFT; tak ada yang bisa meminta tanda tangan; `verified_sats` hanya bisa naik. `pending` tidak dicek karena selalu true selama `nft_transfer_call` kita sendiri, dan kontrak Pusaka menolak transfer saat penandatanganan berjalan (temuan review otomatis dinilai tidak berlaku) | `verify.mjs`: "every pledged Pusaka is held by the pool" |
+| Callback gagal meninggalkan state setengah jadi | `busy` + pemulihan di setiap callback; peminjam tak terdaftar: pinjaman dibatalkan, NFT kembali | `a_failed_nft_transfer_refunds_the_liquidator_and_keeps_the_loan`, `a_borrower_who_cannot_receive_the_stablecoin_gets_the_nft_back` |
+| Kunci reporter di CI bocor | key function-call: hanya `report_price` di `pusaka-lend.testnet`, allowance 0,25 NEAR; kuorum tetap menahan satu sumber | file key ditulis 0600 |
+
+Batas yang diakui: ketiga reporter dijalankan oleh kita di testnet; kuorum menahan satu sumber yang salah, bukan operatornya.
+
 ## Frontend / backend
 | Pemeriksaan | Hasil |
 |---|---|

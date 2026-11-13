@@ -62,6 +62,51 @@ NEAR: nonce floor; SOL: blockhash expiry). Any signature requested after a buyer
 `DeleteKey` or a function call, so no second key can be planted. The holder room checks ownership on every request,
 so a seller's signed-in session stops working the moment the NFT moves. The full list is in the threat model below.
 
+## pUSD from a pool: stablecoin loans priced by reporters, liquidated at a price (`lend/`)
+
+A second way to borrow, next to the NEAR loans above, so the holder picks the risk. **NEAR from a person**: fixed term,
+no oracle, so a price dip can never cost the borrower the Bitcoin; the lender prices that risk into the rate.
+**pUSD from a pool** (`pusaka-lend.testnet`): any amount up to 50% of the BTC's value, repay any time, 8% a year;
+from 80% loan-to-value anyone may liquidate. Every token page shows both.
+
+- **Collateral is the NFT itself.** `nft_transfer_call(pusaka-lend.testnet, token, {"borrow": "<pUSD>"})`: the pool
+  reads `token_info` on-chain and values `verified_sats` (light-client proven, never signed away). While the pool holds
+  the NFT nobody can ask NEAR's MPC to sign its Bitcoin, so the collateral can only grow. Classic and Smart Pusakas both work.
+- **Price**: three reporters, each posting one independent source: `pusaka-relayer.testnet` (mempool.space),
+  `pusaka-admin.testnet` (CoinGecko), `pusaka-seller.testnet` (Rhea's nBTC pool on NEAR). The contract needs 2 of 3
+  fresh (at most 1 hour old) reports; **borrowing values collateral at the lower middle report and liquidation decides
+  on the higher one**, and two middles more than 5% apart mean no price at all, so one bad source can't move the price
+  used against the pool or against a borrower. A stale price pauses borrowing and liquidation; nobody is liquidated on
+  an old price. Reports go out every 20 min from GitHub Actions (`lend-price.yml`) with keys that can call only
+  `report_price` on this contract. On testnet all three reporters are ours: the quorum guards against a bad source,
+  not against us.
+- **Liquidation pays the borrower**: the liquidator pays max(debt, 95% of the BTC's value); the pool takes the debt,
+  the borrower the rest (claimable if they can't receive pUSD), the liquidator the NFT and with it the Bitcoin key.
+- **Lenders** hold shares; interest repaid raises every share's value; `withdraw` while the cash is there.
+- **pUSD** (`pusaka-usd.testnet`) is a test stablecoin with a faucet (1,000 per call) and no value, like Unwrapped's
+  test USDC; the pool works with any NEP-141 set at init.
+
+Live 13 Nov (`scripts/lend.mjs`, `deployments/testnet-lend.json`): reports from all three sources (69,139 / 69,072 /
+69,146 -> 69,139 USD), 200 pUSD supplied, 1 pUSD borrowed against classic #11 at 42.5% LTV
+([9vDbh8MN…](https://testnet.near.rocks/tx/9vDbh8MNhdGggZUyLhVVhfqxAeqGK8H1Bi1V9iDNKNT8)) and repaid
+([95nnpFVb…](https://testnet.near.rocks/tx/95nnpFVb1ztDTczCYrAG2X7XjQNeBrEoM9n5EvUEzowA): the NFT went back, the pool
+earned the interest), then a request over 50% refused with the NFT sent straight back
+([H1oUW2Tp…](https://testnet.near.rocks/tx/H1oUW2TpMczMMyCYraHHJvFpJbXsVNCrc6ZqqJ9WrHvM)). 20 contract tests, each named
+after the attack it stops (a lying reporter outvoted, one source can't move either side, a stale price blocks
+liquidation, a liquidator can't pay under the floor, an approved account can't pledge someone else's Pusaka…).
+MCP: `pusaka_lend_pool`, `pusaka_lend_borrow`, `pusaka_lend_repay`, `pusaka_lend_liquidate`. `verify.mjs` checks the
+pool's code and rules against the record, that it holds its cash, and that every pledged Pusaka is held by it.
+
+## Clean to buy (and clean to inherit)
+
+Every token page answers, for a buyer: could anything the seller already signed still move what's inside? It reads
+each chain itself (`shared/clean.mjs`): no Bitcoin signature in progress, every signed coin left out of the BTC shown,
+no signed EVM transaction still unused on any chain (ETH, USDC), no SOL transfer still valid, no unused signed
+transaction from its NEAR account (NEAR, nBTC), not collateral for a funded loan. A chain that hasn't answered makes
+it "unknown", never clean. An heir sees the same check as **Clean to inherit** before claiming. The same answer comes
+from `verify.mjs` for every Pusaka for sale on both contracts (13 Nov: 5 of 5 clean) and, for an exchange, with a
+BIP-322 proof from `POST /api/verify` as `clean` plus `exchange_ready` in one JSON.
+
 ## Pusaka v2: the NFT owns an account, has a name, and can be locked with a post-quantum key
 
 The contract above is final. New features run in a second deployment, **[`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet)**:
