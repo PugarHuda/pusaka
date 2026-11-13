@@ -641,7 +641,7 @@ PAYMENT-REQUIRED (base64 JSON, decoded):
 ${JSON.stringify(terms, null, 2)}`;
       pre.style.cssText = "font:20px/1.45 Consolas,monospace;padding:36px 48px;margin:0;white-space:pre-wrap;background:#0f1115;color:#e6e6e6;min-height:100vh";
       document.body.replaceChildren(pre); scrollTo(0, 0);
-    }, `${URL}/api/audit?token_id=${TOKEN}`);
+    }, `${URL}/api/audit?token_id=${TOKEN}${Q ? `&${Q.slice(1)}` : ""}`);
     await h.pause(1500);
     await h.mark("x402", p.locator("pre")); await h.pause(6000);
   },

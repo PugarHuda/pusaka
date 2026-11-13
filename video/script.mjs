@@ -42,7 +42,7 @@ export const scenes = {
     start: "@amount-1",
     caption: "Deposit proven on NEAR by a Bitcoin light client",
     vo: [
-      { at: "@amount-0.5", text: "Pusaka eleven holds ten thousand sats, proven on NEAR." },
+      { at: "@amount-0.5", text: "Pusaka twenty-seven holds eleven thousand sats, proven on NEAR." },
       { at: "@address", text: "Its Bitcoin key is derived by NEAR's MPC network for this contract. No person holds it." },
       { at: "@proof", text: "Below, the Bitcoin transaction and the merkle proof the light client checked." },
     ],
@@ -50,8 +50,8 @@ export const scenes = {
     box: [{ at: "@amount", for: 3 }, { at: "@address", for: 4.5, label: "its own tb1 address" }, { at: "@proof", for: 5 }],
     x: {
       vo: [
-        { at: "@amount-1", text: "Pusaka eleven has its own Bitcoin address, with a key held by NEAR's MPC network." },
-        { at: "@proof", text: "The ten thousand sats inside are proven on NEAR by its Bitcoin light client, not claimed." },
+        { at: "@amount-1", text: "Pusaka twenty-seven has its own Bitcoin address, with a key held by NEAR's MPC network." },
+        { at: "@proof", text: "The eleven thousand sats inside are proven on NEAR by its Bitcoin light client, not claimed." },
       ],
     },
   },
@@ -62,7 +62,7 @@ export const scenes = {
     end: "@explorer+4",
     caption: "One transaction: the NFT and its Bitcoin change hands",
     vo: [
-      { at: "@price", text: "I buy it for half a NEAR, in one transaction from a real wallet." },
+      { at: "@price", text: "I buy it for a third of a NEAR, in one transaction from a real wallet." },
       { at: "@buy-wallet", text: "The wallet shows a call to buy, on the Pusaka contract." },
       { at: "@owned", text: "It's mine now, with the Bitcoin inside. No bridge, no custodian." },
       { at: "@explorer", text: "The transaction on the NEAR explorer." },
@@ -72,7 +72,7 @@ export const scenes = {
       { from: "@owned+3.5", to: "@explorer-1", label: "⏩ {s} s cut: explorer indexing" },
     ],
     zoom: [{ at: "@price", for: 3 }, { at: "@explorer+0.5", region: [240, 120, 1440, 420], for: 3.5, scale: 1.3 }],
-    callout: [{ at: "@buy-approve-2", region: "@buy-approve", for: 2.5, text: "The real wallet: call buy on pusaka-btc.testnet, deposit 0.5 NEAR" }],
+    callout: [{ at: "@buy-approve-2", region: "@buy-approve", for: 2.5, text: "The real wallet: call buy on pusaka-btc.testnet, deposit 0.35 NEAR" }],
     box: [{ at: "@price", for: 3 }, { at: "@buy-approve-1", region: "@buy-approve", for: 2.5 }],
     x: {
       vo: [
@@ -91,7 +91,7 @@ export const scenes = {
       { at: "@form", text: "Only the holder can move that Bitcoin. I send three thousand sats to another address." },
       { at: "@withdraw-wallet", text: "One NEAR call: the contract builds the Bitcoin transaction and NEAR's MPC network signs it." },
       { at: "@sent", text: "Signed and broadcast." },
-      { at: "@mempool", text: "Here it is on Bitcoin testnet, spent from Pusaka eleven's address, change back to it." },
+      { at: "@mempool", text: "Here it is on Bitcoin testnet, spent from Pusaka twenty-seven's address, change back to it." },
     ],
     cuts: [
       { from: "@withdraw+0.5", to: "@withdraw-wallet-1.5", label: "⏩ {s} s cut: wallet opening" },
@@ -199,6 +199,46 @@ export const scenes = {
     box: [{ at: "@checks", for: 5 }, { at: "@price", for: 3.5 }],
     zoom: [{ at: "@checks", for: 5, scale: 1.4 }],
     x: { vo: [{ at: "@clean-1.5", text: "Before you buy, it checks every chain: nothing the seller signed can still move what's inside. And it borrows Circle's USDC from a pool, priced by three sources." }] },
+  },
+
+  "lend-borrow": {
+    clip: "lend-borrow",
+    start: "@pool-1",
+    caption: "Borrow Circle USDC against the Bitcoin, from the page",
+    cuts: [{ from: "@borrow-approve+1.5", to: "@borrowed-1", label: "⏩ {s} s cut: approve + confirm" }],
+    vo: [
+      { at: "@pool-0.5", text: "The pool lends Circle's testnet USDC. Its price is the middle of three independent sources, refreshed when the page opens." },
+      { at: "@amount", text: "I borrow one USDC against this Pusaka." },
+      { at: "@borrow-wallet", text: "The NFT goes to the pool; nobody can sign its Bitcoin away while it's there." },
+      { at: "@collateral", text: "The USDC is in my wallet; the page shows the debt and the loan-to-value." },
+    ],
+    box: [{ at: "@price", for: 2.5 }, { at: "@collateral", for: 4 }],
+    x: { vo: [{ at: "@amount-1", text: "Borrowing Circle USDC against the Bitcoin takes one click and one signature." }] },
+  },
+
+  "lend-repay": {
+    clip: "lend-repay",
+    start: "@loan-1",
+    caption: "Repay, and the NFT comes back",
+    cuts: [{ from: "@repay-approve+1.5", to: "@repaid-1", label: "⏩ {s} s cut: approve + confirm" }],
+    vo: [
+      { at: "@loan-0.5", text: "I repay it, with the interest, and the pool sends the Pusaka straight back." },
+      { at: "@owner", text: "Mine again, with its Bitcoin." },
+    ],
+    box: [{ at: "@loan", for: 3 }, { at: "@owner", for: 3 }],
+  },
+
+  liquidate: {
+    clip: "liquidate",
+    start: "@loan-1",
+    caption: "A real liquidation, at the reporters' real price",
+    cuts: [{ from: "@liquidate-approve+1.5", to: "@liquidated-1", label: "⏩ {s} s cut: approve + confirm" }],
+    vo: [
+      { at: "@loan-0.5", text: "This loan sat at the limit. Bitcoin fell, the reporters' real price pushed it to eighty percent, and now anyone can liquidate it." },
+      { at: "@liquidate-wallet", text: "The liquidator pays at least ninety-five percent of the Bitcoin's value: the pool gets its debt, the borrower gets the rest." },
+      { at: "@owner", text: "And the liquidator holds the NFT, and with it the Bitcoin key." },
+    ],
+    box: [{ at: "@loan", for: 4 }, { at: "@owner", for: 3 }],
   },
 
   heir: {
@@ -405,7 +445,7 @@ export const scenes = {
     cuts: [{ from: "@check+1", to: "@valid-0.5", label: "" }],
     vo: [
       { at: "@message-1", text: "An exchange wants proof that a withdrawal address belongs to this Pusaka. The holder has NEAR's MPC sign a BIP-322 message." },
-      { at: "@valid", text: "Valid: the signature is by Pusaka one's own Bitcoin address, the holder still holds it, and ten thousand sats are proven there. If the NFT is sold, that Bitcoin goes with it." },
+      { at: "@valid", text: "Valid: the signature is by this Smart Pusaka's own Bitcoin address, and the holder still holds it. The answer also says how many sats are proven there, and that if the NFT is sold, that Bitcoin goes with it." },
     ],
     box: [{ at: "@message", for: 2.5 }, { at: "@valid", for: 6 }],
     x: { vo: [{ at: "@message-1", text: "Exchanges can whitelist it: a BIP-322 proof, checked against NEAR, says who controls the Bitcoin right now." }] },
@@ -452,7 +492,7 @@ export const scenes = {
 
 export const compositions = {
   Preview: ["title", "landing", "token", "buy"],
-  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "lend", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "nbtc", "tee", "reserves", "end"],
+  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "lend", "lend-borrow", "lend-repay", "liquidate", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "nbtc", "tee", "reserves", "end"],
   X: ["title", "token", "buy", "withdraw", "refused", "check", "lend", "tee", "verify", "rest", "end"],
 };
 export const limits = { X: 135, Full: 360 }; // seconds: X allows 2:20 without Premium; the walkthrough aims for 6 min
