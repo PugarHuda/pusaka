@@ -255,7 +255,11 @@ test("APIs answer bad input with 4xx, never 500 or internals", async ({ request 
   }
   const arr = await request.post("/api/prove", { data: { token_id: ["1"] } });
   expect(arr.status()).toBe(400);
-  for (const path of ["/api/badge?id=1", "/api/reserves", "/api/prices"]) expect((await request.post(path, { data: {} })).status(), path).toBe(405);
+  for (const path of ["/api/badge?id=1", "/api/reserves"]) expect((await request.post(path, { data: {} })).status(), path).toBe(405);
+  // POST /api/prices asks the pool's reporters to refresh: it answers what it did, never a 500 or a key
+  const rep = await request.post("/api/prices", { data: {} });
+  expect([200, 429, 503]).toContain(rep.status());
+  expect(await rep.text()).not.toMatch(/ed25519:/);
   expect((await request.get("/api/badge?id=01")).status()).toBe(200);
 });
 
@@ -364,7 +368,7 @@ test("a Pusaka's BTC has a live NEAR Intents exit quote, and a loan says how oft
   const up = await fetch("https://1click.chaindefuser.com/v0/quote", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(exitQuoteRequest(101_446, "0x50d7d5e7a9d8b12b0a0b0e6e4c4c1e8f2e9de795")), signal: AbortSignal.timeout(35_000) })
     .then((r) => r.ok, () => false);
-  await page.goto(CL + "#/pusaka/12");
+  await page.goto(CL + "#/pusaka/13"); // #13 has a funded loan (demo data, 13 Nov)
   if (!up) {
     test.info().annotations.push({ type: "1Click down", description: "NEAR Intents quote service unavailable during this run; checked the honest fallback" });
     await expect(page.locator(".exit-quote")).toContainText(/No NEAR Intents quote right now/, { timeout: 45_000 });
