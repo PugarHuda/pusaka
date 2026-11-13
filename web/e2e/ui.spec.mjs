@@ -144,6 +144,9 @@ for (const [name, path, ready] of [
   ["for AI agents", "/#/agents", "h1, h2"],
   ["refused", "/#/refused", ".refused li, [role=alert]"],
   ["not found", "/#/nope", "text=nothing at"],
+  ["a classic Pusaka with Clean to buy and the USDC pool", "/?contract=pusaka-btc.testnet#/pusaka/4", "details.clean"],
+  ["verify", "/#/verify", "h1"],
+  ["reserves", "/#/reserves", "h1"],
 ]) {
   test(`axe: no serious or critical accessibility violations on ${name}`, async ({ page }) => {
     await page.goto(path);
@@ -158,7 +161,7 @@ for (const [name, path, ready] of [
 
 test("axe: dark mode has no serious or critical violations either (contrast included)", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
-  for (const [path, ready] of [["/#/", "h1"], ["/#/market", "a[href^='#/pusaka/']"], ["/#/pusaka/2", ".ledger"]]) {
+  for (const [path, ready] of [["/#/", "h1"], ["/#/market", "a[href^='#/pusaka/']"], ["/#/pusaka/2", ".ledger"], ["/?contract=pusaka-btc.testnet#/pusaka/4", "details.clean"]]) {
     await page.goto(path);
     await page.locator(ready).first().waitFor({ timeout: 30_000 });
     await page.waitForTimeout(1500);
