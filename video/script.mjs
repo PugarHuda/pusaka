@@ -519,4 +519,4 @@ export const compositions = {
   Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "lend", "lend-borrow", "lend-repay", "liquidate", "heir", "claim", "heir-agent", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "badge", "nbtc", "tee", "reserves", "end"],
   X: ["title", "token", "buy", "withdraw", "refused", "check", "lend", "tee", "verify", "rest", "end"],
 };
-export const limits = { X: 135, Full: 360 }; // seconds: X allows 2:20 without Premium; the walkthrough aims for 6 min
+export const limits = { X: 135, Full: 420 }; // seconds: X allows 2:20 without Premium (the demo account has Premium); the walkthrough is ~6 min
