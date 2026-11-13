@@ -17,6 +17,23 @@ node scripts/mainnet-proof.mjs                # the same proof, accepted by NEAR
 ```
 Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin proven inside it, and what you can do now.
 
+## What it looks like (live app, 13 Nov)
+
+| | |
+|---|---|
+| ![The market: every Pusaka with the Bitcoin proven inside it](docs/screenshots/market.png) | ![A Pusaka for sale by Dutch auction: 10,000 sats verified on NEAR, its price against the BTC inside, a live NEAR Intents exit quote](docs/screenshots/token.png) |
+| **Market**: every Pusaka, the BTC proven inside, what you can do now | **A Pusaka**: BTC verified on NEAR, price vs. the BTC inside, live exit quote |
+| ![Clean to buy: nothing the seller signed can still move what's inside, checked on every chain](docs/screenshots/clean-to-buy.png) | ![Borrow Circle USDC from the pool, priced by three reporters](docs/screenshots/lend-pool.png) |
+| **Clean to buy**: Bitcoin, every EVM chain, Solana, its NEAR account | **Two ways to borrow**: NEAR from a person, or Circle USDC from the pool |
+| ![Proof trail: each deposit's Bitcoin tx, the light client's merkle check, and the attested TEE agent that proved it](docs/screenshots/proof-trail-tee.png) | ![An exchange checks a Pusaka's BIP-322 proof: valid, exchange-ready, clean](docs/screenshots/verify-exchange.png) |
+| **Proof trail**, with deposits proven by the attested Shade Agent | **For exchanges**: BIP-322 proof, sats proven, clean, `exchange_ready` |
+| ![A Smart Pusaka: its own keyless NEAR account, nBTC inside, its Omni deposit address](docs/screenshots/smart-pusaka-nbtc.png) | ![Proof of reserves across both contracts, each row re-checkable in the browser](docs/screenshots/reserves.png) |
+| **Smart Pusaka**: its own account, nBTC in and out | **Proof of reserves**, re-checkable from your browser |
+| ![Real attacks the contracts refused, each confirmed failed on NEAR](docs/screenshots/refused.png) | ![For AI agents: the live MCP endpoint's tools, prompts and resources](docs/screenshots/agents.png) |
+| **Refused**: real attacks, failed on-chain | **For AI agents**: 61 MCP tools, x402 audits |
+
+Regenerate: `node web/e2e/readme-shots.mjs [bip322-proof.json]`.
+
 ## Why it's different
 
 | | NFT = a Chain Signatures wallet (Satchel, Handover, Incorpr) | BTC vault NFT for loans (Unwrapped) | BTC escrow with light-client proofs (Trueque) | **Pusaka** |
