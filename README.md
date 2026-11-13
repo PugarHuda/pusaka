@@ -10,6 +10,12 @@ Every deposit is **proven on NEAR** against Bitcoin's own headers by NEAR's Bitc
 subtracts every output it ever signed away: `verified_sats` is a number a buyer, lender, heir or AI agent can rely on
 with no indexer, no oracle, no wrapped BTC and no trust in us.
 
+Live badges, redrawn from the chains on every view (BTC proven on NEAR, and whether anything the holder already signed
+could still move it, with the time of the check):
+
+[![Pusaka #4: proof of clean](https://pusaka-two.vercel.app/api/badge?id=4&contract=pusaka-btc.testnet&clean=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/4)
+[![Pusaka #27: proof of clean](https://pusaka-two.vercel.app/api/badge?id=27&contract=pusaka-btc.testnet&clean=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/27)
+
 **60 seconds, no wallet:**
 ```
 npm install && node scripts/verify.mjs        # every claim below, checked against NEAR, its MPC, its light client and Bitcoin
