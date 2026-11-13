@@ -261,5 +261,28 @@ Market: ${d.contract}`);
   console.log(`${k.length ? "ℹ" : "✓"} market account keys: ${k.length ? `${k.length} (deleted at the final deploy, 13 Nov)` : "none: the code can never change"}`);
 }
 
+// 9. The pUSD pool (testnet): recorded code and config, solvent, and every pledged Pusaka really held by the pool.
+const LD = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}-lend.json`);
+if (fs.existsSync(LD)) {
+  step = "checking the pUSD lending pool";
+  const d = JSON.parse(fs.readFileSync(LD, "utf8"));
+  console.log(`
+Lend: ${d.contract} (pUSD: ${d.stable})`);
+  const a = await rpc("query", { request_type: "view_account", finality: "final", account_id: d.contract });
+  ok(hex(base58.decode(a.code_hash)) === d.wasm_sha256, "lend code = the build recorded in deployments", `${d.wasm_sha256.slice(0, 16)}…`);
+  const [cfg, pool, loans] = await Promise.all([viewFinal("config", {}, d.contract), viewFinal("pool", {}, d.contract), viewFinal("loans", { limit: 100 }, d.contract)]);
+  const want = d.config;
+  ok(cfg.quorum === want.quorum && cfg.max_ltv_bps === want.max_ltv_bps && cfg.liq_ltv_bps === want.liq_ltv_bps && cfg.liq_price_bps === want.liq_price_bps
+    && Number(cfg.max_age_ms) === want.max_age_ms && cfg.reporters.length === want.reporters.length && cfg.nfts.join() === want.nfts.join(),
+    "lend rules = the recorded config", `${cfg.reporters.length} reporters, quorum ${cfg.quorum}, max LTV ${cfg.max_ltv_bps / 100}%, liquidation from ${cfg.liq_ltv_bps / 100}% at ≥${cfg.liq_price_bps / 100}% of the BTC's value`);
+  const held = BigInt(await viewFinal("ft_balance_of", { account_id: d.contract }, d.stable));
+  ok(held >= BigInt(pool.cash), "the pool holds at least its cash in pUSD", `${Number(held) / 1e6} pUSD held, ${Number(pool.cash) / 1e6} cash, ${Number(pool.borrowed) / 1e6} lent out`);
+  const owners = await Promise.all(loans.map((l) => viewFinal("nft_token", { token_id: l.loan.token_id }, l.loan.nft).then((t) => t?.owner_id)));
+  ok(owners.every((o) => o === d.contract), "every pledged Pusaka is held by the pool (so nobody can sign its Bitcoin away)", `${loans.length} open loan(s)`);
+  console.log(`${pool.price ? "✓" : "ℹ"} price: ${pool.price ? `${Number(pool.price.low) / 1e6}–${Number(pool.price.high) / 1e6} USD/BTC from ≥${cfg.quorum} fresh reports` : "stale (borrowing and liquidation paused until reporters post)"}`);
+  const k = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: d.contract })).keys;
+  console.log(`${k.length ? "ℹ" : "✓"} lend account keys: ${k.length ? `${k.length} (deleted with the others at the final step)` : "none: the rules can never change"}`);
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : inconclusive ? "\nall checks passed; some Bitcoin lookups couldn't be made from here (⚠ above)" : "\nall checks passed");
 process.exit(failed ? 1 : 0);

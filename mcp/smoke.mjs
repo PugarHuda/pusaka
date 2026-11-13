@@ -38,6 +38,9 @@ refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above
 // Guard: outflows (give, withdraw_*) are off unless the operator opts in.
 refused(await show("pusaka_give", { token_id: "4", to: "pusaka-seller.testnet" }), /Outflows are off/);
 await show("pusaka_loan_offers");
+// pUSD pool (lend/): the read view, and a liquidation the tool refuses before signing (no such loan / healthy)
+await show("pusaka_lend_pool", { token_id: "11", contract: "pusaka-btc.testnet" });
+refused(await show("pusaka_lend_liquidate", { loan_id: "999999" }), /No open loan/);
 // Guard: a token offer above the LTV cap is refused before anything is escrowed.
 refused(await show("pusaka_offer_loan", { token_id: "1", principal_near: 1, repay_near: 1.01, days: 1, max_ltv: 0.0001 }), LTV_REFUSED);
 if (fs.existsSync(keyFile)) {

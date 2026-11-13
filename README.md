@@ -26,7 +26,7 @@ Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin 
 | Borrowing | no | USDC from a pool, oracle price, liquidation | no | **both, and the holder picks the risk: NEAR from a person (standing offers, gas-free accept, refinance; fixed term, no oracle, so a price dip never costs the Bitcoin), or pUSD from a pool (`pusaka-lend.testnet`: 50% max LTV, liquidation from 80% at ≥95% of the BTC's value with the surplus paid to the borrower, 2-of-3 reporter price where one outlier can't move either side)** |
 | "Clean to buy" check | yes for EVM (Satchel) | n/a | n/a | **yes, on every token page: Bitcoin, every EVM chain, Solana and its NEAR account (NEAR, nBTC), loan status** |
 | Outside NEAR | no | no | no | **SIWE sign-in and BIP-322 proofs an exchange checks at `#/verify` or `POST /api/verify`, with the sats proven at that address** |
-| What else it does | transfer, sale | loan | one swap | **Dutch auctions, Mintbase, NEAR Intents exit, heir with guardians, gift link, staking, bundles, sealed letters, NEAR AI TEE appraisal, deposits proven by an attested Shade Agent, 57-tool MCP server, x402 audits** |
+| What else it does | transfer, sale | loan | one swap | **Dutch auctions, Mintbase, NEAR Intents exit, heir with guardians, gift link, staking, bundles, sealed letters, NEAR AI TEE appraisal, deposits proven by an attested Shade Agent, 61-tool MCP server, x402 audits** |
 | Code anyone can trust | Satchel: locked, 0 keys | upgradeable | varies | **classic contract keyless, upgrades renounced, reproducible build (NEP-330); every event replayed from genesis by `verify.mjs`** |
 
 Where others are ahead, said plainly: Unwrapped's pool lends real-world-shaped test USDC with a longer track record of
@@ -49,7 +49,7 @@ Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.t
 > - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 
-**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (57 tools,
+**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (61 tools,
 spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
 
 *Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
@@ -156,7 +156,7 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 
 **Markets and agents**
 - A market contract: bids and buy pools priced per verified sat, perpetual loans with rate auctions. [How](docs/FEATURES.md#bids-per-verified-sat-and-loans-with-no-due-date-a-second-market-contract)
-- An MCP server with 57 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
+- An MCP server with 61 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
 
 **Why it holds**: the seller can't keep a way back into the Bitcoin. Every attack in the [threat model](docs/THREAT-MODEL.md) has a test named after it, and the [Refused](https://pusaka-two.vercel.app/#/refused) page shows 39 real attempts the contracts turned down. [Measured on testnet](docs/EVIDENCE.md) · [every NEAR primitive used](docs/EVIDENCE.md#every-near-primitive-pusaka-uses-and-where-to-see-it-live).
 

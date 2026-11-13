@@ -61,6 +61,29 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: pusaka-wasm, path: contract/target/near/pusaka.wasm }
 
+  # NEP-330 builds of the pUSD pool and its test stablecoin: deployed from these artifacts, rebuildable by anyone.
+  lend-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          for i in 1 2 3; do
+            curl --proto '=https' --tlsv1.2 -LsSf --retry 3 --retry-all-errors https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh && break
+            sleep 20
+          done
+          cargo near --version
+      - run: cargo near build reproducible-wasm
+        working-directory: lend
+      - run: cargo near build reproducible-wasm
+        working-directory: lend/pusd
+      - run: sha256sum lend/target/near/pusaka_lend.wasm lend/pusd/target/near/pusd.wasm | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lend-wasm
+          path: |
+            lend/target/near/pusaka_lend.wasm
+            lend/pusd/target/near/pusd.wasm
+
   web:
     runs-on: ubuntu-latest
     steps:

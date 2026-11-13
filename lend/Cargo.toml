@@ -5,6 +5,12 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/PugarHuda/pusaka"
 
+[package.metadata.near.reproducible_build]
+image = "sourcescan/cargo-near:0.21.1-rust-1.96.1"
+image_digest = "sha256:86bd27dd489aeb2f5004a7507d3699c045ce2f59f5287e201002966040da4a7d"
+passed_env = []
+container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--no-abi"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

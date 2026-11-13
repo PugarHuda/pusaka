@@ -149,10 +149,10 @@ export async function inspect(token_id) {
 
 /** Read-only tools are safe to expose publicly (remote MCP); the rest need the agent's own key. */
 export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_loan_offers",
-  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account", "pusaka_market_book", "pusaka_verify_signature"]);
+  "pusaka_audit", "pusaka_contract_trust", "pusaka_history", "pusaka_credit_record", "pusaka_loan_watch", "pusaka_deals", "pusaka_portfolio", "pusaka_swap_status", "pusaka_token_account", "pusaka_market_book", "pusaka_verify_signature", "pusaka_lend_pool"]);
 
 /** Tools that can move a Pusaka or what it holds away from the agent: sold, pledged, given, inherited or withdrawn. */
-const OUTFLOW_TOOLS = new Set(["pusaka_sell_into_bid", "pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send"]);
+const OUTFLOW_TOOLS = new Set(["pusaka_sell_into_bid", "pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send", "pusaka_lend_borrow"]); // borrow pledges the NFT to the pool
 
 export function createServer({ readOnly = false } = {}) {
   const server = new McpServer({ name: "pusaka", version: "1.0.0" });
@@ -662,6 +662,70 @@ reg("pusaka_redeem_nbtc", {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   const o = await account.callFunctionRaw({ contractId: V2C, methodName: "account_call", gas: teraToGas(300), deposit: 1n, args: { token_id, alias: false, ...plan.call } });
   return { ...out, tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
+}));
+
+// Pusaka lend (lend/, pusaka-lend.testnet): pUSD from a lender pool against a Pusaka's proven Bitcoin, priced by the
+// median of 3 reporters, liquidated from 80% loan-to-value. pUSD is a test stablecoin (pusaka-usd.testnet, faucet).
+const LEND = NETWORK === "testnet" ? "pusaka-lend.testnet" : null, PUSD = "pusaka-usd.testnet";
+const lendView = (method, args = {}) => { if (!LEND) throw new Error(`No Pusaka lend on ${NETWORK}.`); return provider.callFunction({ contractId: LEND, method, args, blockQuery: { finality: "optimistic" } }); };
+const lendEvents = (o) => o.receipts_outcome.flatMap((r) => r.outcome.logs).filter((l) => l.includes('"pusaka-lend"')).map((l) => JSON.parse(l.slice(11)));
+async function pusdReady(need) {
+  if (!(await provider.callFunction({ contractId: PUSD, method: "storage_balance_of", args: { account_id: account.accountId } })))
+    await account.callFunctionRaw({ contractId: PUSD, methodName: "storage_deposit", args: { account_id: account.accountId }, deposit: 1_250_000_000_000_000_000_000n, gas: teraToGas(30) });
+  let short = BigInt(need) - BigInt(await provider.callFunction({ contractId: PUSD, method: "ft_balance_of", args: { account_id: account.accountId } }));
+  for (; short > 0n; short -= 1_000_000_000n) // testnet faucet, at most 1,000 pUSD a call
+    await account.callFunctionRaw({ contractId: PUSD, methodName: "faucet", args: { amount: String(short > 1_000_000_000n ? 1_000_000_000n : short) }, gas: teraToGas(30) });
+}
+
+reg("pusaka_lend_pool", {
+  description: "The pUSD lending pool: cash, lent, the BTC price it uses (low side for borrowing, high side for liquidation; null = stale, borrowing and liquidation paused) and every open loan with its debt, loan-to-value and whether it can be liquidated now. With `token_id` (and `contract`), only that Pusaka's loan and the most it could borrow.",
+  inputSchema: { token_id: z.string().optional(), contract: z.string().optional() },
+}, tool(async ({ token_id, contract = CONTRACT }) => {
+  const [pool, loans, cfg] = await Promise.all([lendView("pool"), lendView("loans", { limit: 100 }), lendView("config")]);
+  if (!token_id) return { pool, config: cfg, loans };
+  const info = await provider.callFunction({ contractId: contract, method: "token_info", args: { token_id } });
+  const loan = loans.find((l) => l.loan.nft === contract && l.loan.token_id === token_id) ?? null;
+  const max = pool.price ? Math.floor(Number(info.verified_sats) * Number(pool.price.low) / 1e8 * cfg.max_ltv_bps / 10_000) : null;
+  return { pool, loan, verified_sats: Number(info.verified_sats), max_borrow_pusd: max === null ? null : max / 1e6 };
+}));
+
+reg("pusaka_lend_borrow", {
+  description: "Holder: borrow pUSD from the pool against a Pusaka (up to 50% of its proven BTC's value at the pool's low price). The NFT goes to the pool, which holds it until repaid; nobody can ask for a Bitcoin signature meanwhile. If the pool refuses (stale price, over the limit, not enough cash) the NFT comes straight back and the refusal reason is returned.",
+  inputSchema: { token_id: z.string(), pusd: z.number().positive(), contract: z.string().optional() },
+}, tool(async ({ token_id, pusd, contract = CONTRACT }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  await pusdReady(0n);
+  const o = await account.callFunctionRaw({ contractId: contract, methodName: "nft_transfer_call", deposit: 1n, gas: teraToGas(300),
+    args: { receiver_id: LEND, token_id, msg: JSON.stringify({ borrow: String(Math.round(pusd * 1e6)) }) } });
+  const ev = lendEvents(o), no = ev.find((e) => e.event === "borrow_refused");
+  return { borrowed: !no, refused: no?.data[0] ?? null, loan: ev.find((e) => e.event === "borrowed")?.data[0]?.loan ?? null, tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
+}));
+
+reg("pusaka_lend_repay", {
+  description: "Anyone: repay a pUSD loan in full (debt now plus a cent; the rest is refunded). The NFT goes back to the borrower; the interest goes to the pool's lenders. On testnet the pUSD comes from the faucet if needed.",
+  inputSchema: { loan_id: z.string() },
+}, tool(async ({ loan_id }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const l = await lendView("loan", { loan_id });
+  if (!l) throw new Error(`No open loan ${loan_id}.`);
+  const pay = BigInt(l.debt) + 10_000n;
+  await pusdReady(pay);
+  const o = await account.callFunctionRaw({ contractId: PUSD, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(200), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ repay: Number(loan_id) }) } });
+  return { debt_pusd: Number(l.debt) / 1e6, events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
+}));
+
+reg("pusaka_lend_liquidate", {
+  description: "Anyone: liquidate a pUSD loan whose loan-to-value reached 80% at the pool's high price, paying max(debt, 95% of the BTC's value). The pool gets the debt, the borrower the rest, the caller the NFT and with it the Bitcoin key. Refused while the loan is healthy or the price is stale.",
+  inputSchema: { loan_id: z.string() },
+}, tool(async ({ loan_id }) => {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  const l = await lendView("loan", { loan_id });
+  if (!l) throw new Error(`No open loan ${loan_id}.`);
+  if (!l.liquidatable) throw new Error(`Loan ${loan_id} is healthy (loan-to-value ${l.ltv_bps === null ? "unknown: stale price" : l.ltv_bps / 100 + "%"}); it can't be liquidated.`);
+  const pay = BigInt(Math.max(Number(l.debt), Math.ceil(Number(l.value) * 0.95))) + 1_000_000n;
+  await pusdReady(pay);
+  const o = await account.callFunctionRaw({ contractId: PUSD, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(250), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ liquidate: Number(loan_id) }) } });
+  return { events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
 reg("pusaka_set_agent", {

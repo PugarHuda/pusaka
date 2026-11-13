@@ -1891,7 +1891,7 @@ function Agents() {
       <h1>For AI agents</h1>
       <p className="lede">Pusaka speaks the Model Context Protocol. Any MCP host (Claude, an IDE, your own agent) can check the contract, audit a Pusaka's Bitcoin, read a borrower's record and find Bitcoin selling under its exit value, live, with no key.</p>
       <p><code>{add}</code> <CopyButton text={add} label="Copy" what="command" /></p>
-      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 57 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
+      <p className="muted">Trading runs on your machine with your own key: <code>mcp/server.mjs</code> in the repo has all 61 tools (buy, lend, borrow, gift links, sealed letters, withdrawals to Bitcoin, EVM, Solana and NEAR), each NEAR spend capped and, in hosts that support it, approved by you before it is signed.</p>
       {!d ? <p className="muted">Asking the server…</p> : d.error ? <p className="error">The MCP endpoint didn't answer: {d.error}</p> : <>
         <h2>Asked just now: <code>pusaka_contract_trust</code></h2>
         <p>{d.trust.keys.verdict}. Code changes: {d.trust.upgrades.final ? "none, ever (renounced)" : `a ${d.trust.upgrades.governance.kind ?? "single admin"} vote, then a ${d.trust.upgrades.timelock_minutes}-minute timelock`}.</p>
