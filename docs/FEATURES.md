@@ -384,8 +384,11 @@ their own account as a function-call key limited to `claim_inheritance` and is l
 the claim is made from attested code the moment the holder's silence runs out, after checking every condition
 `claim_inheritance` enforces. Live 13 Nov: classic #2 claimed for pusaka-buyer.testnet, signed by the enclave's key
 `ed25519:FGjh6aby…`: [ECFUYRky…](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR). Classic #27
-names the same heir and becomes claimable on 16 Nov 02:00 UTC. Limits: the key is new on every boot (the heir re-adds
-it), at most 5 claims an hour per heir, and the contract doesn't need the agent (the heir can always claim directly).
+names the same heir and becomes claimable on 16 Nov 02:00 UTC; the [README badge](../README.md) counts down to it.
+Since image `0472cd99…` the key is derived by dstack's KMS for the app (`GetKey`), so a reboot keeps it: restarted live
+on 13 Nov, `ed25519:J2W4WSpa…` before and after; the heir added it once
+([E5qvkn42…](https://testnet.near.rocks/tx/E5qvkn428Z5j4aaGzQEZBa7hsmXFzGR1GvLgBSAec4yJ)). Limits: at most 5 claims an
+hour per heir, and the contract doesn't need the agent (the heir can always claim directly).
 
 ## Demo history added on 13 Nov (`scripts/demo-cases.mjs` and friends), every case a real transaction
 

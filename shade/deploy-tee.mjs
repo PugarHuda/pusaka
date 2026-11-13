@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let cvmId = process.argv[2];
 if (!cvmId) {
   const allowed = [...fs.readFileSync(cfg.compose, "utf8").matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]);
-  const r = await deployToPhala({ appName: "pusaka-agent", apiKey, composePath: cfg.compose, envFilePath: cfg.env,
+  const r = await deployToPhala({ appName: process.env.CVM_NAME ?? "pusaka-agent", apiKey, composePath: cfg.compose, envFilePath: cfg.env,
     allowedEnvKeys: allowed, dstackVersion: DSTACK, instanceType: cfg.instanceType, publicLogs: cfg.publicLogs, publicSysinfo: cfg.publicSysinfo });
   cvmId = r.vm_uuid;
   console.log("CVM", cvmId, r.dashboard_url ?? "");
