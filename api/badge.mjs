@@ -1,4 +1,5 @@
-// GET /api/badge?id=1 -> an SVG badge with the BTC verified inside that Pusaka; embed it anywhere.
+// GET /api/badge?id=1[&contract=pusaka-btc.testnet] -> an SVG badge with the BTC verified inside that Pusaka; embed it anywhere.
+import { CONTRACT, SIBLINGS } from "@pusaka/shared";
 import { tokenReserve } from "./_reserves.mjs";
 
 const esc = (s) => String(s).replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -17,8 +18,10 @@ export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") return res.status(405).json({ error: "GET only" });
   const id = String(req.query?.id ?? "").replace(/^0+(?=\d)/, ""); // "01" is token 1
   if (!/^\d{1,10}$/.test(id)) return res.status(400).json({ error: "?id=<token id>" });
+  const c = String(req.query?.contract ?? CONTRACT);
+  if (![CONTRACT, ...SIBLINGS].includes(c)) return res.status(400).json({ error: `contract must be one of ${[CONTRACT, ...SIBLINGS].join(", ")}` });
   try {
-    const t = await tokenReserve(id);
+    const t = await tokenReserve(id, c);
     if (!t) return res.status(404).json({ error: `no Pusaka #${id}` });
     res.setHeader("content-type", "image/svg+xml");
     res.setHeader("cache-control", "public, s-maxage=300, stale-while-revalidate=3600");

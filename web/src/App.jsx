@@ -895,10 +895,10 @@ function Detail({ id, accountId }) {
           </>) : (
             <p className="muted">The Bitcoin key is still being derived by the NEAR MPC network.</p>
           )}
-          {!IS_SIBLING && <p className="badge-line">
-            <img src={`/api/badge?id=${id}`} alt={`Pusaka #${id}: ${btc(Number(info.verified_sats))} BTC verified`} height="22" />
-            <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id})](${location.origin}/#/pusaka/${id})`} />
-          </p>}
+          {(() => { const q = IS_SIBLING ? `&contract=${CONTRACT}` : "", page = `${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/pusaka/${id}`; return <p className="badge-line">
+            <img src={`/api/badge?id=${id}${q}`} alt={`Pusaka #${id}: ${btc(Number(info.verified_sats))} BTC verified`} height="22" />
+            <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id}${q})](${page})`} />
+          </p>; })()}
           {info.btc_pubkey && <SelfCheck id={id} explorer={EXPLORER} />}
         </section>
 
