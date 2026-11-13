@@ -1,4 +1,4 @@
-// "Clean to buy": whether anything the seller already signed could still move what a buyer pays for, chain by chain.
+// "Clean to buy" (web token pages, verify.mjs, POST /api/verify): whether anything the seller already signed could still move what a buyer pays for, chain by chain.
 // Built from what the token page already read (token_info, the Bitcoin explorer, each chain's nonce against the
 // contract's signing floor). A check is { ok, what, detail }; ok === null means that chain couldn't be read.
 
@@ -25,9 +25,34 @@ export function cleanChecks({ info, bal, eth, sol, nearAcct }) {
   if (nearAcct) out.push({ ok: nearAcct.error ? null : !(nearAcct.atRisk > 0n), what: "No signed transaction from its NEAR account still unused (NEAR, nBTC)", detail: nearAcct.error ? "NEAR didn't answer" : nearAcct.atRisk > 0n ? `nonce ${nearAcct.floor} not used yet` : "none" });
   out.push({ ok: !info.loan?.lender, what: "Not collateral for a loan", detail: info.loan?.lender ? `the lender ${info.loan.lender} can claim it if it isn't repaid` : "no funded loan" });
   const approvals = Object.keys(info.token.approved_account_ids ?? {});
-  out.push({ ok: true, what: "Approvals, heir and agent end at the sale", detail: approvals.length ? `${approvals.join(", ")} approved now; the contract clears every approval and the heir on transfer` : "the contract clears them on every transfer" });
+  out.push({ ok: true, what: "Approvals and the heir end at the sale", detail: approvals.length ? `${approvals.join(", ")} approved now; the contract clears every approval and the heir on transfer` : "the contract clears them on every transfer" });
   return out;
 }
 
 /** "clean" | "risk" | "unknown" */
 export const verdict = (checks) => checks.some((c) => c.ok === false) ? "risk" : checks.some((c) => c.ok === null) ? "unknown" : "clean";
+
+/**
+ * The same checks, read straight from the chains (Node or browser): what an exchange, a CLI or a buyer's script gets.
+ * `view(method, args, contract)` reads NEAR. Returns { verdict, checks, verified_sats, listed }.
+ */
+export async function cleanOf(token_id, contract, view) {
+  const { balances, btcAddress, evmAddress, evmBalances, EVM_CHAINS, solAddress, solBalances, nearAccount, nearBalances } = await import("./btc.mjs");
+  const info = await view("token_info", { token_id }, contract);
+  if (!info) throw new Error(`no Pusaka #${token_id} on ${contract}`);
+  const ethAddr = info.btc_pubkey && evmAddress(info.btc_pubkey);
+  const [bal, chains, sol, nearAcct] = await Promise.all([
+    info.btc_pubkey ? balances(btcAddress(info.btc_pubkey), info.signed_outpoints).catch(() => ({ error: true })) : { atRisk: 0 },
+    ethAddr ? Promise.all(EVM_CHAINS.map(async (c) => {
+      const floor = await view("eth_nonce_floor", { token_id, chain_id: String(c.chain.id) }, contract);
+      return evmBalances(ethAddr, floor, c.chain.id).then((b) => ({ ...b, c })).catch(() => ({ c, error: true }));
+    })).catch(() => null) : null,
+    solAddress(token_id, contract).then((a) => solBalances(a, info.history)).catch(() => ({ error: true })),
+    nearAccount(token_id, contract).then(async (a) => {
+      const floor = await view("near_nonce_floor", { token_id }, contract);
+      return { ...(await nearBalances(a, floor)), floor };
+    }).catch(() => ({ error: true })),
+  ]);
+  const checks = cleanChecks({ info, bal, eth: chains && { chains }, sol, nearAcct });
+  return { verdict: verdict(checks), checks, verified_sats: Number(info.verified_sats), listed: !!info.listing };
+}

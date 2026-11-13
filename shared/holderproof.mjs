@@ -6,6 +6,7 @@ import { hex } from "@scure/base";
 import { ORIGINAL, SIBLINGS, btcAddress } from "./btc.mjs";
 import { hash160, verify as bip322Verify } from "./bip322.mjs";
 import { viewFinal } from "./audit.mjs";
+import { cleanOf } from "./clean.mjs";
 
 const CONTRACTS = [ORIGINAL, ...SIBLINGS];
 const result = (facts, checks) => ({ valid: checks.length > 0 && checks.every((c) => c.ok), ...facts, checks });
@@ -53,8 +54,11 @@ export async function verifyBtcProof({ message, witness }) {
   // what an exchange whitelisting this address needs to know: what's proven there, and that it follows the NFT
   const extra = { address, verified_sats: Number(info.verified_sats), holder_now: holderNow,
     note: `Bitcoin sent to ${address} is controlled by whoever holds Pusaka #${token_id} on ${contract} at the time, through NEAR MPC; if the NFT is sold, it goes with it.` };
-  return result({ ...facts, ...extra }, [
+  // exchange-ready: the proof, plus whether anything already signed could still move what's at the address (shared/clean.mjs)
+  const clean = await cleanOf(token_id, contract, viewFinal).then(({ verdict, checks }) => ({ verdict, checks }), (e) => ({ verdict: "unknown", checks: [{ ok: null, what: "clean check", detail: e.message }] }));
+  const r = result({ ...facts, ...extra, clean }, [
     { ok: bip322Verify(pkh, message, String(witness ?? "")), what: `the BIP-322 signature is by Pusaka #${token_id}'s Bitcoin address`, detail: address },
     { ok: holderNow === holder, what: "the holder it names still holds the Pusaka", detail: `holder now: ${holderNow ?? "nobody"}` },
   ]);
+  return { ...r, exchange_ready: r.valid && clean.verdict === "clean" };
 }

@@ -774,3 +774,5 @@ footer p { max-width: var(--measure); margin: 0; }
 .clean-risk summary strong { color: var(--seal); }
 .clean ul { margin: 0.6rem 0 0; padding-left: 1.1rem; list-style: none; }
 .clean li { margin: 0.2rem 0; }
+.piece-clean { color: var(--leaf-ink); font-size: 0.8rem; }
+.piece-clean.is-busy { color: var(--seal); }

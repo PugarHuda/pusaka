@@ -5,8 +5,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { base58 } from "@scure/base";
-import { CONTRACT, MPC, NETWORK, BTC_LIGHT_CLIENT, lightClientHeight, nearFetch } from "@pusaka/shared";
-import { auditToken } from "@pusaka/shared/audit";
+import { CONTRACT, ORIGINAL, SIBLINGS, MPC, NETWORK, BTC_LIGHT_CLIENT, lightClientHeight, nearFetch } from "@pusaka/shared";
+import { auditToken, viewFinal } from "@pusaka/shared/audit";
+import { cleanOf } from "@pusaka/shared/clean";
 import { mainnetProofCheck, MAINNET_LIGHT_CLIENT } from "@pusaka/shared/lcproof";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
@@ -189,6 +190,27 @@ try {
 } catch (e) {
   inconclusive++;
   console.log(`⚠ mainnet light-client check not run (${e.message}); try BTC_MAINNET_ESPLORA=https://mempool.emzy.de/api, or node scripts/mainnet-proof.mjs later`);
+}
+
+// 6d. Clean to buy: for every Pusaka for sale (both contracts), nothing the seller already signed can still move what's
+//     inside it, on Bitcoin, any EVM chain, Solana or its NEAR account (shared/clean.mjs, the check on each token page).
+step = "checking that every Pusaka for sale is clean to buy";
+try {
+  const listed = [];
+  for (const c of new Set([CONTRACT, ORIGINAL, ...SIBLINGS])) for (const t of await viewFinal("nft_tokens", { from_index: "0", limit: 100 }, c)) {
+    const i = await viewFinal("token_info", { token_id: t.token_id }, c);
+    if (i?.listing) listed.push([c, t.token_id]);
+  }
+  const res = [];
+  for (const [c, id] of listed) res.push({ c, id, ...(await cleanOf(id, c, viewFinal).catch((e) => ({ verdict: "unknown", checks: [{ what: e.message }] }))) });
+  const risky = res.filter((r) => r.verdict === "risk"), unknown = res.filter((r) => r.verdict === "unknown");
+  ok(!risky.length, `every Pusaka for sale is clean to buy: nothing its seller signed can still move what's inside, on Bitcoin, EVM, Solana or NEAR`,
+    risky.length ? risky.map((r) => `#${r.id} (${r.c}): ${r.checks.filter((k) => k.ok === false).map((k) => k.detail).join("; ")}`).join(" | ")
+      : `${res.length - unknown.length} of ${res.length} listed checked clean`);
+  if (unknown.length) { inconclusive++; console.log(`⚠ not fully checked (a chain didn't answer from here): ${unknown.map((r) => `#${r.id}`).join(", ")}`); }
+} catch (e) {
+  inconclusive++;
+  console.log(`⚠ clean-to-buy check not run (${e.message})`);
 }
 
 // 7. Pusaka v2 (testnet): the code is the recorded build, changes only via the DAO + timelock, and every NFT's own

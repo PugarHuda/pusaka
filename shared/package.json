@@ -11,7 +11,8 @@
     "./lcproof": "./lcproof.mjs",
     "./nbtc": "./nbtc.mjs",
     "./tee": "./tee.mjs",
-    "./holderproof": "./holderproof.mjs"
+    "./holderproof": "./holderproof.mjs",
+    "./clean": "./clean.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

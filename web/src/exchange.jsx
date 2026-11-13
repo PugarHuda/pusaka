@@ -214,6 +214,12 @@ function Verify() {
         <p><strong>{r.valid ? "✓ Valid" : "✗ Not valid"}</strong>{r.token_id && <> · Pusaka #{r.token_id} on <code>{r.contract}</code>, held by {r.holder}{r.address && <> · <code>{r.address}</code></>}</>}</p>
         <ul>{r.checks.map((c) => <li key={c.what}>{c.ok ? "✓" : "✗"} {c.what} <span className="muted">({c.detail})</span></li>)}</ul>
         {r.kind === "bip322" && r.address && <p className="muted">Proven on NEAR at this address now: <strong>{r.verified_sats.toLocaleString()} sats</strong>. {r.note}</p>}
+        {r.kind === "bip322" && r.clean && <>
+          <p><strong>{r.exchange_ready ? "✓ Exchange-ready" : r.clean.verdict === "risk" ? "⚠ Not exchange-ready" : "Exchange-ready? Some chains didn't answer"}</strong>
+            <span className="muted"> · clean check: {r.clean.verdict === "clean" ? "nothing already signed can still move what's at this Pusaka's addresses" : r.clean.verdict}</span></p>
+          <ul>{r.clean.checks.map((c) => <li key={c.what}>{c.ok === false ? "✗" : c.ok ? "✓" : "…"} {c.what} <span className="muted">({c.detail})</span></li>)}</ul>
+          <p className="muted">The same answer as one JSON for your backend: <code>POST /api/verify</code> with {"{ message, witness }"}.</p>
+        </>}
       </>)}
     </section>
   );

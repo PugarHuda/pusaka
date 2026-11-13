@@ -16,7 +16,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
-import { cleanChecks, verdict } from "./clean.js";
+import { cleanChecks, verdict } from "@pusaka/shared/clean";
 import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt, SelfCheck, Appraisal } from "./extras.jsx";
 import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
@@ -631,6 +631,7 @@ function Market({ accountId }) {
             {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{(t.bal.safe + t.bal.pending - Number(t.info.verified_sats)).toLocaleString()} sats not proven yet</span>}
             {t.info.listing && <span className="piece-price">{dealOf(t.info)[0] === "auction" ? "Now" : "For sale at"} <strong>{near(t.info.price_now ?? t.info.listing.price)} NEAR</strong>
               {dealOf(t.info)[0] === "auction" && <small> falls to {near(t.info.listing.floor)} by {new Date(Number(t.info.listing.end_ms)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small>}</span>}
+            {t.info.listing && <span className={`piece-clean${t.info.pending ? " is-busy" : ""}`}>{t.info.pending ? "Signing now: wait before buying" : "✓ Nothing signed in flight · full clean check inside"}</span>}
             {t.info.listing && px && satsOf(t.info) > 0 && <span className="piece-vs">{vsLabel(vsInside(t.info.price_now ?? t.info.listing.price, satsOf(t.info), px))} the BTC inside</span>}
             {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
             {t.info.loan && <span className="piece-price">{t.info.loan.lender ? "Collateral for a loan" : <>Asking to borrow <strong>{near(t.info.loan.principal)} NEAR</strong></>}</span>}
@@ -929,7 +930,7 @@ function Detail({ id, accountId }) {
           {t.nearAcct && <StakeSection t={t} canStake={isOwner && !locked} onDone={refresh} />}
         </div>
 
-        <div id="d-heir"><HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} />
+        <div id="d-heir"><HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} t={t} />
 
         {!IS_SIBLING && <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />}</div>
 
@@ -1287,12 +1288,13 @@ function StakeSection({ t, canStake, onDone }) {
 }
 
 /** For a buyer: could anything the seller already signed still move what's inside? (web/src/clean.js) */
-function CleanToBuy({ t }) {
+function CleanToBuy({ t, heir }) {
   const checks = cleanChecks(t), v = verdict(checks);
+  const word = heir ? "inherit" : "buy"; // an heir gets exactly what a buyer would: the same checks
   return (
     <details className={`clean clean-${v}`} open={v === "risk"}>
-      <summary><strong>{v === "clean" ? "✓ Clean to buy" : v === "risk" ? "⚠ Not clean right now" : "Clean to buy? Still checking"}</strong>
-        <span className="muted"> · {v === "clean" ? "nothing the seller signed can still move what's inside" : v === "risk" ? "see what could still move" : "some chains haven't answered yet"}</span></summary>
+      <summary><strong>{v === "clean" ? `✓ Clean to ${word}` : v === "risk" ? "⚠ Not clean right now" : `Clean to ${word}? Still checking`}</strong>
+        <span className="muted"> · {v === "clean" ? `nothing ${heir ? "the holder" : "the seller"} signed can still move what's inside${heir ? ": a Bitcoin inheritance with no seed phrase, proven clean" : ""}` : v === "risk" ? "see what could still move" : "some chains haven't answered yet"}</span></summary>
       <ul>{checks.map((c) => <li key={c.what} className={c.ok === false ? "bad" : c.ok ? "ok" : ""}>{c.ok === false ? "✗" : c.ok ? "✓" : "…"} {c.what} <span className="muted">({c.detail})</span></li>)}</ul>
     </details>
   );
@@ -1374,7 +1376,7 @@ function Reminder({ uid, title, at, details, alarmMin, label = "Remind me" }) {
     <a href={googleHref(ev)} target="_blank" rel="noreferrer">Google Calendar</a></p>;
 }
 
-function HeirSection({ id, owner, accountId, isOwner, onDone }) {
+function HeirSection({ id, owner, accountId, isOwner, onDone, t }) {
   const [h, setH] = useState(undefined);
   const [heir, setHeir] = useState("");
   const [after, setAfter] = useState("30");
@@ -1475,6 +1477,7 @@ function HeirSection({ id, owner, accountId, isOwner, onDone }) {
           </span>
         </form>
       )}
+      {isHeir && t && <CleanToBuy t={t} heir />}
       {isHeir && (claimable
         ? <button disabled={busy} onClick={() => run("It's yours now", () => callGasless("claim_inheritance", { token_id: id }))}>Claim inheritance</button>
         : due && g ? <p className="muted">You are the heir. {owner} has been silent long enough; now {g.threshold} of the guardians must approve ({g.approvals.length} so far), then a waiting period runs. Or claim alone from {when(g.backstop_from_ms)}.</p>

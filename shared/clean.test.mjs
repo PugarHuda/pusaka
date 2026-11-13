@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cleanChecks, verdict } from "./clean.js";
+import { cleanChecks, verdict } from "./clean.mjs";
 
 const info = { btc_pubkey: "02ab", pending: false, signed_outpoints: [{}], loan: null, token: { approved_account_ids: {} } };
 const chain = (atRisk = 0n) => ({ c: { chain: { name: "Base Sepolia" } }, atRisk, usdcAtRisk: 0n });

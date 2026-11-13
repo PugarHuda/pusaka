@@ -378,8 +378,8 @@ const solRpc = (method, params = []) => fetch(SOL.rpc, { method: "POST", headers
   .then((r) => r.json()).then((j) => { if (j.error) throw new Error(`Solana: ${j.error.message}`); return j.result; });
 
 /** Asks the MPC contract which Solana address belongs to this token. */
-export async function solAddress(tokenId) {
-  const args = { path: `pusaka-${tokenId}`, predecessor: CONTRACT, domain_id: 1 };
+export async function solAddress(tokenId, contract = CONTRACT) {
+  const args = { path: `pusaka-${tokenId}`, predecessor: contract, domain_id: 1 };
   const r = await nearFetch({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: {
     request_type: "call_function", finality: "optimistic", account_id: MPC, method_name: "derived_public_key",
     args_base64: base64.encode(new TextEncoder().encode(JSON.stringify(args))) } }) }).then((x) => x.json());
@@ -590,8 +590,8 @@ const nearRpc = (method, params) => nearFetch({ method: "POST", headers: { "cont
   .then((r) => r.json()).then((j) => { if (j.error) throw Object.assign(new Error(j.error.cause?.name ?? j.error.message), { rpc: j.error }); return j.result; });
 
 /** The Pusaka's NEAR account: hex of its Ed25519 MPC key. */
-export async function nearAccount(tokenId) {
-  return toHex(base58.decode(await solAddress(tokenId)));
+export async function nearAccount(tokenId, contract = CONTRACT) {
+  return toHex(base58.decode(await solAddress(tokenId, contract)));
 }
 
 /**
