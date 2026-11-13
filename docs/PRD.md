@@ -1,364 +1,364 @@
 # PRD — Pusaka
 
-> **NFT yang memegang Bitcoin asli. Wariskan NFT-nya, BTC-nya ikut.**
+> **NFTs that hold real Bitcoin. Pass the NFT on, and its BTC goes with it.**
 > *Pusaka: NFTs that hold real Bitcoin. Pass it on, and the BTC goes with it.*
 
 | | |
 |---|---|
 | Status | Draft v1 — 2 Nov 2026 |
 | Event | NEAR HACKATHON (nearhackathon.com), deadline **14 Nov 2026 23:59 UTC** |
-| Track submit | `nfts` (utama), `defi`, `open` |
-| Jaringan | NEAR testnet + Bitcoin testnet4 |
+| Submission tracks | `nfts` (main), `defi`, `open` |
+| Network | NEAR testnet + Bitcoin testnet4 |
 
 
-> **Catatan implementasi (2 Nov 2026, setelah spike):**
-> - Spike hari 1 **berhasil**: kontrak memanggil `sign` di `v1.signer-prod.testnet` lintas kontrak (deposit 1 yocto/panggilan) dan tx hasilnya diterima Bitcoin testnet4.
-> - Alamat diganti dari P2PKH ke **P2WPKH (BIP143)** — `omni-transaction` 0.5 mendukung sighash SegWit, dan nilai input ikut ditandatangani.
-> - Kunci BTC diambil kontrak sendiri via `derived_public_key` di kontrak MPC (callback `on_key`), bukan dari input user (T6).
-> - Tambahan dari review keamanan: txid dikanonisasi + outpoint duplikat ditolak (T3b); minter/penarik membayar storage; history dibatasi 32 entri.
-> - Hasil ukur: buy ≈ 3.0 s sampai final; tanda tangan MPC 6.8–13.7 s. Status terkini ada di README.
+> **Implementation note (2 Nov 2026, after the spike):**
+> - The day 1 spike **succeeded**: the contract calls `sign` on `v1.signer-prod.testnet` cross-contract (deposit of 1 yocto per call) and the resulting tx was accepted by Bitcoin testnet4.
+> - The address type changed from P2PKH to **P2WPKH (BIP143)**: `omni-transaction` 0.5 supports the SegWit sighash, and the input values are signed too.
+> - The contract fetches the BTC key itself via `derived_public_key` on the MPC contract (callback `on_key`), not from user input (T6).
+> - Added after the security review: txids are canonicalised and duplicate outpoints are rejected (T3b); minters and withdrawers pay for storage; history is capped at 32 entries.
+> - Measurements: buy ≈ 3.0 s to finality; MPC signature 6.8–13.7 s. The current status is in the README.
 
-> **Status 9 Nov 2026: semua P0 dan P1 selesai, sebagian besar P2 juga.** Dokumen di bawah tetap draf 2 Nov sebagai catatan
-> rencana awal. Yang berlaku sekarang ada di README; tabel ini merangkum perbedaannya.
+> **Status 9 Nov 2026: all P0 and P1 items are done, and most of P2 as well.** The document below stays as the 2 Nov draft, as a record
+> of the original plan. What applies now is in the README; this table summarises the differences.
 >
-> | Rencana PRD | Kenyataan | Bukti |
+> | PRD plan | Reality | Evidence |
 > |---|---|---|
-> | F1–F11 (P0): mint, alamat BTC, saldo, withdraw, listing, buy atomik, pending lock, outpoint registry, saldo aman, history, `npm run demo` | Selesai | `cargo test` (225), `live.spec` |
-> | F12 halaman terima hadiah · F13 hosted demo · F14 gambar berubah sesuai isi BTC | Selesai: Give + gift link NEP-452 · https://pusaka-two.vercel.app · SVG on-chain berisi "cairan" setinggi saldo (`contract/src/art.rs`) | README "Try it" |
-> | Bitcoin testnet4, P2PKH | **testnet3** (jaringan yang diikuti light client NEAR), **P2WPKH** (BIP143) | README "Measured on testnet" |
-> | Frontend Next.js + wallet-selector | Vite + React + `@hot-labs/near-connect` | `web/` |
-> | Non-goal: light client on-chain (UTXO dicek klien) | **Dibangun**: `prove_deposit` lewat `btc-client-v4.testnet`, `verified_sats` di kontrak | `verify.mjs` |
-> | Non-goal: NEP-178 / marketplace luar | **Dibangun**: NEP-178 + NEP-199, terjual di Mintbase testnet | tx `CCxgRJ7i…` |
-> | P2: multi-aset (ETH/SOL), kolateral lending | **Dibangun**: ETH + USDC di 3 EVM, SOL, akun NEAR sendiri, nBTC, staking; pinjaman dan pasar penawaran pinjaman | README |
-> | P2: SegWit/Taproot | SegWit ya; **Taproot tidak mungkin**: MPC NEAR belum punya Schnorr | — |
-> | P2: bayar via NEAR Intents | **Sebagian**: quote 1Click untuk keluar dari BTC (dry-run). Likuiditas 1Click hanya ada di mainnet | `shared/intents.mjs` |
-> | §8 threat model T1–T7 | Diperluas ke T1–T27, masing-masing dengan tes bernama | README "threat model" |
-> | §8.3 full access key tim di kontrak | **Dihapus**: kontrak tanpa key, upgrade di-renounce lewat DAO (8 Nov) | `verify.mjs` |
-> | §13 video ≤ 90 s | Naskah 2:15 (batas X 2:20) di `docs/reports/08-video.md`; perekaman oleh tim | — |
-> | Mainnet (non-goal) | Belum: menunggu keputusan dan dana tim (`docs/MAINNET.md`) | — |
+> | F1–F11 (P0): mint, BTC address, balance, withdraw, listing, atomic buy, pending lock, outpoint registry, safe balance, history, `npm run demo` | Done | `cargo test` (225), `live.spec` |
+> | F12 gift receiving page · F13 hosted demo · F14 image changes with the BTC inside | Done: Give + NEP-452 gift link · https://pusaka-two.vercel.app · on-chain SVG with "liquid" as high as the balance (`contract/src/art.rs`) | README "Try it" |
+> | Bitcoin testnet4, P2PKH | **testnet3** (the network the NEAR light client follows), **P2WPKH** (BIP143) | README "Measured on testnet" |
+> | Next.js frontend + wallet-selector | Vite + React + `@hot-labs/near-connect` | `web/` |
+> | Non-goal: on-chain light client (UTXOs checked by the client) | **Built**: `prove_deposit` through `btc-client-v4.testnet`, `verified_sats` in the contract | `verify.mjs` |
+> | Non-goal: NEP-178 / external marketplace | **Built**: NEP-178 + NEP-199, sold on Mintbase testnet | tx `CCxgRJ7i…` |
+> | P2: multi-asset (ETH/SOL), lending collateral | **Built**: ETH + USDC on 3 EVM chains, SOL, its own NEAR account, nBTC, staking; loans and a loan offer market | README |
+> | P2: SegWit/Taproot | SegWit yes; **Taproot is not possible**: NEAR's MPC does not have Schnorr yet | — |
+> | P2: pay via NEAR Intents | **Partial**: 1Click quote for exiting BTC (dry-run). 1Click liquidity only exists on mainnet | `shared/intents.mjs` |
+> | §8 threat model T1–T7 | Extended to T1–T27, each with a named test | README "threat model" |
+> | §8.3 team full access key on the contract | **Removed**: the contract has no key, upgrades renounced through the DAO (8 Nov) | `verify.mjs` |
+> | §13 video ≤ 90 s | Script of 2:15 (X limit 2:20) in `docs/reports/08-video.md`; recording by the team | — |
+> | Mainnet (non-goal) | Not yet: waiting for the team's decision and funds (`docs/MAINNET.md`) | — |
 
 ---
 
-## 1. Ringkasan
+## 1. Summary
 
-Pusaka adalah koleksi NFT (NEP-171) di NEAR di mana **setiap token memiliki alamat Bitcoin asli** yang diturunkan lewat **NEAR Chain Signatures**. Alamat itu dikendalikan oleh kontrak Pusaka, dan kontrak hanya mau meminta tanda tangan MPC atas perintah **pemilik NFT saat ini**. Akibatnya, kepemilikan BTC berpindah bersama NFT, dalam satu transaksi NEAR (~1 detik), tanpa bridge, tanpa wrapped token, tanpa kustodian, dan tanpa private key yang bisa disimpan diam-diam oleh pemilik lama.
+Pusaka is an NFT collection (NEP-171) on NEAR where **every token has a real Bitcoin address** derived through **NEAR Chain Signatures**. That address is controlled by the Pusaka contract, and the contract only requests an MPC signature on the order of the **current NFT owner**. As a result, ownership of the BTC moves together with the NFT, in one NEAR transaction (~1 second), with no bridge, no wrapped token, no custodian, and no private key that the previous owner could secretly keep.
 
 ---
 
-## 2. Latar belakang & masalah
+## 2. Background & problem
 
-Memindahkan kepemilikan BTC hari ini selalu mengorbankan sesuatu:
+Moving BTC ownership today always sacrifices something:
 
-| Cara | Masalah |
+| Method | Problem |
 |---|---|
-| Transaksi on-chain Bitcoin | 10–60 menit konfirmasi, fee, dan butuh saling percaya selama proses (siapa kirim duluan?) |
-| Wrapped BTC (WBTC, dll.) | Bergantung kustodian/bridge — titik retas dan sensor |
-| Serahkan private key / seed | Pemilik lama bisa menyimpan salinan; tidak ada jaminan |
-| NFT-wallet di Ethereum (ERC-6551) | Hanya bisa memegang aset di chain-nya sendiri, bukan BTC asli |
+| On-chain Bitcoin transaction | 10–60 minutes of confirmations, fees, and mutual trust needed during the process (who sends first?) |
+| Wrapped BTC (WBTC, etc.) | Depends on a custodian/bridge, a point of hacks and censorship |
+| Hand over the private key / seed | The previous owner can keep a copy; there is no guarantee |
+| NFT wallet on Ethereum (ERC-6551) | Can only hold assets on its own chain, not real BTC |
 
-**Insight:** Chain Signatures membuat sebuah *kontrak* NEAR bisa memiliki alamat Bitcoin asli. Jika kontrak itu juga kontrak NFT, maka "siapa pemilik BTC ini" cukup ditentukan oleh "siapa pemilik NFT ini" — state yang berpindah atomik di NEAR.
+**Insight:** Chain Signatures let a NEAR *contract* own a real Bitcoin address. If that contract is also the NFT contract, then "who owns this BTC" is simply decided by "who owns this NFT", which is state that moves atomically on NEAR.
 
 ---
 
-## 3. Tujuan & non-goals
+## 3. Goals & non-goals
 
-### Tujuan (hackathon)
-1. Membuktikan end-to-end di testnet: mint → isi BTC → jual atomik → pembeli tarik BTC.
-2. Menegakkan bahwa **pemilik lama tidak bisa mengambil BTC setelah NFT berpindah** (lihat §8), dengan test untuk tiap skenario.
-3. Dapat direproduksi juri (Claude Code / Codex + manusia) dalam **≤ 10 menit** tanpa mencari faucet BTC.
+### Goals (hackathon)
+1. Prove it end to end on testnet: mint → fund with BTC → atomic sale → buyer withdraws the BTC.
+2. Enforce that **the previous owner cannot take the BTC after the NFT moves** (see §8), with a test for each scenario.
+3. Reproducible by judges (Claude Code / Codex + humans) in **≤ 10 minutes** without looking for a BTC faucet.
 
 ### Non-goals (MVP)
-- Mainnet / dana sungguhan.
-- Light client Bitcoin on-chain (verifikasi UTXO dilakukan klien, lihat §8.3).
-- Integrasi marketplace eksternal (NEP-178 approvals sengaja tidak diimplementasi).
-- Alamat SegWit/Taproot (MVP memakai P2PKH, lihat §7.4).
-- Aset selain BTC (EVM/SOL bisa nanti dengan mekanisme yang sama).
+- Mainnet / real funds.
+- On-chain Bitcoin light client (UTXO verification is done by the client, see §8.3).
+- External marketplace integration (NEP-178 approvals are deliberately not implemented).
+- SegWit/Taproot addresses (the MVP uses P2PKH, see §7.4).
+- Assets other than BTC (EVM/SOL could come later with the same mechanism).
 
 ---
 
-## 4. Persona & use case
+## 4. Personas & use cases
 
-| Persona | Kebutuhan | Use case di Pusaka |
+| Persona | Need | Use case in Pusaka |
 |---|---|---|
-| **Trader OTC** | Jual posisi BTC besar tanpa saling percaya | Listing NFT berisi 0.5 BTC, pembeli bayar → NFT pindah atomik |
-| **Pemberi hadiah / warisan** | Memberi BTC yang bisa diwariskan tanpa membocorkan seed | Mint Pusaka, isi BTC, transfer NFT ke penerima |
-| **Peminjam (P2)** | Menjaminkan BTC asli tanpa bridge | Pusaka sebagai kolateral di protokol lending NEAR |
+| **OTC trader** | Sell a large BTC position without mutual trust | List an NFT holding 0.5 BTC, the buyer pays → the NFT moves atomically |
+| **Gift giver / inheritance** | Give BTC that can be inherited without leaking the seed | Mint a Pusaka, fund it with BTC, transfer the NFT to the recipient |
+| **Borrower (P2)** | Pledge real BTC without a bridge | Pusaka as collateral in a NEAR lending protocol |
 
-**Use case utama untuk demo:** OTC — penjual dan pembeli yang tidak saling kenal.
+**Main use case for the demo:** OTC, a seller and a buyer who do not know each other.
 
 ---
 
-## 5. Ruang lingkup fitur
+## 5. Feature scope
 
-### P0 — wajib ada untuk submit
-| ID | Fitur |
+### P0 — required for submission
+| ID | Feature |
 |---|---|
-| F1 | Mint NFT Pusaka (NEP-171 core + metadata) |
-| F2 | Derivasi alamat BTC per token (path = `pusaka-{token_id}`), ditampilkan di UI |
-| F3 | Baca saldo & UTXO alamat token dari Bitcoin testnet4 (mempool.space API) |
-| F4 | **Tarik (withdraw):** kontrak menyusun tx BTC, cek pemilik, minta tanda tangan MPC per UTXO, kembalikan tx siap broadcast |
-| F5 | **Listing** dengan harga NEAR; listing mengunci withdraw |
-| F6 | **Beli atomik:** bayar NEAR → penjual dibayar + NFT pindah dalam satu transaksi |
-| F7 | **Pending lock:** saat tanda tangan sedang diproses, transfer/listing ditolak |
-| F8 | **Signed-outpoint registry:** kontrak mencatat setiap UTXO yang pernah ditandatangani |
-| F9 | **Safe balance:** UI menghitung saldo aman = UTXO belum terpakai yang *tidak pernah* ditandatangani |
-| F10 | Riwayat per token: pemilik, penjualan, penarikan |
-| F11 | `npm run demo` + NFT demo yang sudah berisi BTC testnet |
+| F1 | Mint a Pusaka NFT (NEP-171 core + metadata) |
+| F2 | Derive a BTC address per token (path = `pusaka-{token_id}`), shown in the UI |
+| F3 | Read the balance & UTXOs of the token address from Bitcoin testnet4 (mempool.space API) |
+| F4 | **Withdraw:** the contract builds the BTC tx, checks the owner, requests an MPC signature per UTXO, and returns a tx ready to broadcast |
+| F5 | **Listing** with a NEAR price; a listing locks withdraw |
+| F6 | **Atomic buy:** pay NEAR → the seller is paid + the NFT moves in one transaction |
+| F7 | **Pending lock:** while a signature is being processed, transfer/listing is rejected |
+| F8 | **Signed-outpoint registry:** the contract records every UTXO it has ever signed |
+| F9 | **Safe balance:** the UI computes the safe balance = unspent UTXOs that have *never* been signed |
+| F10 | History per token: owners, sales, withdrawals |
+| F11 | `npm run demo` + a demo NFT already holding testnet BTC |
 
-### P1 — jika waktu cukup
-| ID | Fitur |
+### P1 — if time allows
+| ID | Feature |
 |---|---|
-| F12 | Transfer hadiah (`nft_transfer`) dengan halaman "terima Pusaka" yang menampilkan safe balance |
-| F13 | Hosted demo di Vercel (tetap online s.d. 25 Nov) |
-| F14 | Visual NFT dinamis: gambar berubah sesuai jumlah BTC di dalamnya |
+| F12 | Gift transfer (`nft_transfer`) with a "receive Pusaka" page that shows the safe balance |
+| F13 | Hosted demo on Vercel (stays online until 25 Nov) |
+| F14 | Dynamic NFT visual: the image changes with the amount of BTC inside |
 
-### P2 — roadmap (ditulis di README, tidak dibangun)
-- Bayar dengan aset dari chain mana pun via **NEAR Intents**
-- Light client Bitcoin on-chain untuk verifikasi UTXO trustless
-- SegWit/Taproot, multi-aset (ETH/SOL), Pusaka sebagai kolateral lending
+### P2 — roadmap (written in the README, not built)
+- Pay with assets from any chain via **NEAR Intents**
+- On-chain Bitcoin light client for trustless UTXO verification
+- SegWit/Taproot, multi-asset (ETH/SOL), Pusaka as lending collateral
 
 ---
 
 ## 6. User stories & acceptance criteria
 
 **US1 — Mint**
-Sebagai user, saya mint Pusaka dan langsung melihat alamat BTC-nya.
-- AC: `nft_mint` sukses → `btc_address(token_id)` mengembalikan alamat P2PKH testnet yang sama dengan hasil derivasi off-chain (chainsig.js).
-- AC: Dua token berbeda selalu punya alamat berbeda; token yang sama selalu alamat yang sama.
+As a user, I mint a Pusaka and immediately see its BTC address.
+- AC: `nft_mint` succeeds → `btc_address(token_id)` returns the same testnet P2PKH address as the off-chain derivation (chainsig.js).
+- AC: Two different tokens always have different addresses; the same token always has the same address.
 
-**US2 — Isi saldo**
-Sebagai pemilik, saya kirim BTC testnet ke alamat token dan saldo muncul di UI.
-- AC: Saldo dan daftar UTXO tampil ≤ 30 detik setelah tx masuk mempool.
+**US2 — Fund the balance**
+As the owner, I send testnet BTC to the token address and the balance appears in the UI.
+- AC: The balance and UTXO list show up ≤ 30 seconds after the tx enters the mempool.
 
-**US3 — Tarik**
-Sebagai pemilik, saya menarik BTC ke alamat mana pun.
-- AC: Hanya `owner_of(token)` yang bisa memanggil; akun lain → panic `NotOwner`.
-- AC: Tx hasil kontrak valid dan diterima jaringan testnet4 (txid bisa dicek di mempool.space).
-- AC: Setiap outpoint input tercatat di signed-outpoint registry.
+**US3 — Withdraw**
+As the owner, I withdraw BTC to any address.
+- AC: Only `owner_of(token)` can call it; any other account → panic `NotOwner`.
+- AC: The tx produced by the contract is valid and accepted by the testnet4 network (the txid can be checked on mempool.space).
+- AC: Every input outpoint is recorded in the signed-outpoint registry.
 
 **US4 — Listing**
-Sebagai pemilik, saya listing Pusaka dengan harga N NEAR.
-- AC: Saat listed, `withdraw` dan `nft_transfer` ditolak (`Listed`).
-- AC: `cancel_listing` membuka kembali withdraw.
-- AC: Listing ditolak jika token sedang `SignPending`.
+As the owner, I list a Pusaka for N NEAR.
+- AC: While listed, `withdraw` and `nft_transfer` are rejected (`Listed`).
+- AC: `cancel_listing` re-enables withdraw.
+- AC: Listing is rejected if the token is `SignPending`.
 
-**US5 — Beli**
-Sebagai pembeli, saya melihat safe balance lalu membeli.
-- AC: `buy` dengan deposit ≥ harga → penjual menerima NEAR, NFT pindah ke pembeli, listing terhapus — dalam satu transaksi.
-- AC: `buy` menerima parameter `expected_signed_count`; jika registry berubah sejak pembeli memeriksa → gagal (`StateChanged`).
-- AC: Setelah beli, penjual lama memanggil `withdraw` → `NotOwner`.
+**US5 — Buy**
+As a buyer, I see the safe balance and then buy.
+- AC: `buy` with deposit ≥ price → the seller receives NEAR, the NFT moves to the buyer, the listing is removed, all in one transaction.
+- AC: `buy` takes an `expected_signed_count` parameter; if the registry changed since the buyer checked → it fails (`StateChanged`).
+- AC: After the purchase, the previous seller calls `withdraw` → `NotOwner`.
 
-**US6 — Verifikasi pembeli**
-Sebagai pembeli, saya tahu berapa BTC yang benar-benar aman.
-- AC: UI menampilkan **Safe balance** dan **At-risk balance** (UTXO yang pernah ditandatangani tapi belum terpakai) secara terpisah, dengan penjelasan.
+**US6 — Buyer verification**
+As a buyer, I know how much BTC is truly safe.
+- AC: The UI shows the **Safe balance** and the **At-risk balance** (UTXOs that have been signed but are not yet spent) separately, with an explanation.
 
 ---
 
-## 7. Spesifikasi teknis
+## 7. Technical specification
 
-### 7.1 Arsitektur
+### 7.1 Architecture
 
 ```
 ┌──────────────┐      ┌────────────────────────────┐      ┌─────────────────────────┐
-│ Frontend     │─────▶│ Kontrak pusaka.testnet      │─────▶│ MPC signer              │
+│ Frontend     │─────▶│ Contract pusaka.testnet     │─────▶│ MPC signer              │
 │ Next.js      │      │ (Rust, near-sdk)            │◀─────│ v1.signer-prod.testnet  │
 │ wallet-      │      │ - NEP-171                   │ sig  │ (Chain Signatures)      │
-│ selector     │      │ - listing & buy atomik      │      └─────────────────────────┘
-│              │      │ - susun tx BTC (omni-tx)    │
+│ selector     │      │ - atomic listing & buy      │      └─────────────────────────┘
+│              │      │ - build BTC tx (omni-tx)    │
 │              │      │ - locks + outpoint registry │
 │              │      └────────────────────────────┘
-│              │── saldo/UTXO/broadcast ──▶ Bitcoin testnet4 (mempool.space/testnet4/api)
+│              │── balance/UTXO/broadcast ──▶ Bitcoin testnet4 (mempool.space/testnet4/api)
 └──────────────┘
 ```
 
-### 7.2 State kontrak
+### 7.2 Contract state
 
 ```rust
 struct Pusaka {
     tokens: NonFungibleToken,                    // near-contract-standards NEP-171
     listings: LookupMap<TokenId, Listing>,       // { price: NearToken, seller: AccountId }
-    pending: LookupSet<TokenId>,                 // token yang sedang menunggu tanda tangan MPC
+    pending: LookupSet<TokenId>,                 // tokens waiting for an MPC signature
     signed_outpoints: LookupMap<TokenId, Vector<OutPoint>>, // { txid: [u8;32], vout: u32 }
     history: LookupMap<TokenId, Vector<Event>>,  // Mint | Sale | Withdraw | Transfer
     mpc_contract: AccountId,                     // v1.signer-prod.testnet
 }
 ```
 
-### 7.3 Method
+### 7.3 Methods
 
-| Method | Akses | Deskripsi |
+| Method | Access | Description |
 |---|---|---|
-| `nft_mint(receiver_id)` | publik, deposit storage | Mint token baru |
+| `nft_mint(receiver_id)` | public, storage deposit | Mint a new token |
 | `btc_path(token_id) -> String` | view | `"pusaka-{token_id}"` |
-| `listing(token_id)` / `signed_outpoints(token_id)` / `history(token_id)` | view | Data untuk UI & verifikasi |
-| `withdraw(token_id, utxos: Vec<Utxo>, to: String, amount, fee)` | pemilik | Cek lock → susun tx → tandai `pending` → panggil MPC `sign` per input → callback |
-| `on_signed(token_id, ...)` | private callback | Hapus `pending`, catat outpoint, kembalikan signature/raw tx; jika MPC gagal → hapus `pending` saja |
-| `list(token_id, price)` | pemilik | Tolak jika `pending` |
-| `cancel_listing(token_id)` | pemilik | |
-| `buy(token_id, expected_signed_count)` | publik, deposit = harga | Bayar penjual + transfer NFT + hapus listing, atomik |
-| `nft_transfer(...)` | NEP-171 | Ditolak jika `pending` atau listed |
+| `listing(token_id)` / `signed_outpoints(token_id)` / `history(token_id)` | view | Data for the UI & verification |
+| `withdraw(token_id, utxos: Vec<Utxo>, to: String, amount, fee)` | owner | Check lock → build tx → mark `pending` → call MPC `sign` per input → callback |
+| `on_signed(token_id, ...)` | private callback | Remove `pending`, record outpoints, return the signature/raw tx; if MPC fails → only remove `pending` |
+| `list(token_id, price)` | owner | Reject if `pending` |
+| `cancel_listing(token_id)` | owner | |
+| `buy(token_id, expected_signed_count)` | public, deposit = price | Pay the seller + transfer the NFT + remove the listing, atomically |
+| `nft_transfer(...)` | NEP-171 | Rejected if `pending` or listed |
 
-**Aturan inti:** kontrak **tidak pernah** menandatangani hash yang diberikan user. Hash selalu dihitung kontrak dari tx yang ia susun sendiri, sehingga setiap tanda tangan terikat ke outpoint yang tercatat.
+**Core rule:** the contract **never** signs a hash supplied by the user. The hash is always computed by the contract from a tx it built itself, so every signature is bound to a recorded outpoint.
 
 ### 7.4 Bitcoin
 
-- **Jenis alamat:** P2PKH testnet (legacy). Alasan: `omni-transaction-rs` (v0.3) menyediakan `build_for_signing_legacy(EcdsaSighashType::All)` dengan contoh P2PKH; SegWit belum terdokumentasi jelas → ditunda ke P2.
-- **Kunci:** public key turunan dari MPC master key + (akun kontrak, path) → di-hash ke alamat P2PKH. Derivasi dicek silang dengan chainsig.js di test.
-- **Tanda tangan:** ECDSA secp256k1, **satu panggilan `sign` per UTXO input** (sesuai contoh resmi).
-- **Input UTXO:** disuplai frontend (dari mempool.space). Kontrak tidak bisa memverifikasi keberadaannya; jika user berbohong, tx sekadar tidak valid di Bitcoin dan yang rugi hanya pemanggil.
-- **Broadcast:** frontend merakit signature ke tx lalu `POST /tx` ke mempool.space testnet4.
+- **Address type:** testnet P2PKH (legacy). Reason: `omni-transaction-rs` (v0.3) provides `build_for_signing_legacy(EcdsaSighashType::All)` with a P2PKH example; SegWit is not clearly documented yet → postponed to P2.
+- **Key:** public key derived from the MPC master key + (contract account, path) → hashed into a P2PKH address. The derivation is cross-checked against chainsig.js in tests.
+- **Signature:** ECDSA secp256k1, **one `sign` call per input UTXO** (as in the official example).
+- **UTXO inputs:** supplied by the frontend (from mempool.space). The contract cannot verify that they exist; if the user lies, the tx is simply invalid on Bitcoin and only the caller loses.
+- **Broadcast:** the frontend assembles the signatures into the tx and then does `POST /tx` to mempool.space testnet4.
 
-### 7.5 State machine token
+### 7.5 Token state machine
 
 ```
           list()                    buy()
-  Idle ────────────▶ Listed ───────────────▶ Idle (pemilik baru)
+  Idle ────────────▶ Listed ───────────────▶ Idle (new owner)
    │  ▲              │
    │  │ on_signed()  │ cancel_listing()
    │  │              ▼
-   │  └──────── SignPending ◀── withdraw()  (hanya dari Idle)
-   └──── nft_transfer() ──▶ Idle (pemilik baru)   (hanya dari Idle)
+   │  └──────── SignPending ◀── withdraw()  (only from Idle)
+   └──── nft_transfer() ──▶ Idle (new owner)   (only from Idle)
 ```
 
 ---
 
 ## 8. Threat model
 
-Pertanyaan utama: **bagaimana pemilik lama bisa mencoba tetap mengambil BTC setelah NFT berpindah?**
+The main question: **how could the previous owner try to still take the BTC after the NFT moves?**
 
-| # | Serangan | Mitigasi | Ditegakkan oleh | Test |
+| # | Attack | Mitigation | Enforced by | Test |
 |---|---|---|---|---|
-| T1 | Tarik BTC tepat sebelum NFT terjual | Listing mengunci withdraw | Kontrak | `withdraw_while_listed_fails` |
-| T2 | Minta tanda tangan, langsung transfer/jual NFT sebelum MPC menjawab | Status `SignPending` memblokir transfer/listing/buy | Kontrak | `transfer_while_pending_fails` |
-| T3 | **Pre-signed tx:** minta tanda tangan, tidak broadcast, jual NFT, broadcast belakangan | Semua outpoint bertanda tangan dicatat on-chain; pembeli hanya menghitung UTXO yang **tidak pernah** ditandatangani sebagai *safe balance* | Kontrak (registry) + klien (perhitungan) | `outpoints_recorded_on_sign`, test UI safe balance |
-| T4 | Mengubah keadaan antara pembeli memeriksa dan membeli | `buy(expected_signed_count)` gagal jika registry berubah | Kontrak | `buy_with_stale_count_fails` |
-| T5 | Akun lain meminta tanda tangan untuk token orang | Cek `predecessor == owner_of(token)`; path hanya bisa dipakai oleh akun kontrak Pusaka | Kontrak + MPC | `non_owner_withdraw_fails` |
-| T6 | Menandatangani hash sembarang lewat kontrak | Kontrak hanya menandatangani sighash dari tx yang ia susun | Kontrak | review kode + `no_raw_hash_entrypoint` |
-| T7 | Pengirim BTC tak dikenal "mengotori" token | Tidak berbahaya: UTXO tambahan hanya menambah saldo | — | — |
+| T1 | Withdraw BTC right before the NFT is sold | A listing locks withdraw | Contract | `withdraw_while_listed_fails` |
+| T2 | Request a signature, then immediately transfer/sell the NFT before MPC answers | The `SignPending` status blocks transfer/listing/buy | Contract | `transfer_while_pending_fails` |
+| T3 | **Pre-signed tx:** request a signature, do not broadcast, sell the NFT, broadcast later | Every signed outpoint is recorded on-chain; the buyer only counts UTXOs that have **never** been signed as the *safe balance* | Contract (registry) + client (calculation) | `outpoints_recorded_on_sign`, safe balance UI test |
+| T4 | Changing the state between the buyer's check and the purchase | `buy(expected_signed_count)` fails if the registry changed | Contract | `buy_with_stale_count_fails` |
+| T5 | Another account requests a signature for someone else's token | Check `predecessor == owner_of(token)`; the path can only be used by the Pusaka contract account | Contract + MPC | `non_owner_withdraw_fails` |
+| T6 | Signing an arbitrary hash through the contract | The contract only signs the sighash of a tx it built | Contract | code review + `no_raw_hash_entrypoint` |
+| T7 | An unknown BTC sender "pollutes" the token | Harmless: extra UTXOs only add to the balance | — | — |
 
-### 8.3 Batasan yang ditulis jujur di README
-- Kontrak NEAR tidak bisa membaca state Bitcoin. Status "UTXO sudah terpakai" diverifikasi **klien** lewat indexer (siapa pun bisa memverifikasi ulang dengan node Bitcoin sendiri). Upgrade: light client Bitcoin on-chain (P2).
-- Keamanan bergantung pada jaringan MPC NEAR (asumsi threshold).
-- Kontrak di testnet dideploy dengan full access key milik tim; untuk produksi, key harus dihapus/di-lock agar kode tidak bisa diganti diam-diam.
+### 8.3 Limitations stated honestly in the README
+- A NEAR contract cannot read Bitcoin state. The "UTXO already spent" status is verified by the **client** through an indexer (anyone can re-verify with their own Bitcoin node). Upgrade: on-chain Bitcoin light client (P2).
+- Security depends on NEAR's MPC network (threshold assumption).
+- The contract on testnet is deployed with a full access key owned by the team; for production, the key must be deleted/locked so the code cannot be replaced secretly.
 
 ---
 
-## 9. Spesifikasi frontend
+## 9. Frontend specification
 
-| Halaman | Isi |
+| Page | Contents |
 |---|---|
-| `/` Galeri | Kartu tiap Pusaka: gambar, safe balance BTC, harga jika listed, badge `Listed` / `Pending` |
-| `/pusaka/[id]` Detail | Alamat BTC (+ QR), safe vs at-risk balance, daftar UTXO, riwayat; tombol sesuai peran: **Isi**, **Tarik**, **Listing/Batal** (pemilik) atau **Beli** (orang lain) |
-| `/mint` | Tombol mint + instruksi mengisi BTC testnet4 |
-| Modal Beli | Rincian safe balance, peringatan jika ada at-risk, konfirmasi harga |
+| `/` Gallery | A card for each Pusaka: image, BTC safe balance, price if listed, `Listed` / `Pending` badge |
+| `/pusaka/[id]` Detail | BTC address (+ QR), safe vs at-risk balance, UTXO list, history; buttons by role: **Fund**, **Withdraw**, **List/Cancel** (owner) or **Buy** (others) |
+| `/mint` | Mint button + instructions for funding with testnet4 BTC |
+| Buy modal | Safe balance breakdown, a warning if anything is at risk, price confirmation |
 
-Prinsip: satu momen jelas per layar; istilah teknis disembunyikan, penjelasan keamanan tersedia di tooltip "Kenapa aman?".
+Principle: one clear moment per screen; technical terms are hidden, and the security explanation is available in a "Why is it safe?" tooltip.
 
 ---
 
-## 10. Kebutuhan non-fungsional
+## 10. Non-functional requirements
 
 | Area | Target |
 |---|---|
-| Reproduksibilitas | Clone → `npm install` → `npm run demo` → melihat alur jual-beli lengkap, ≤ 10 menit, tanpa API key dan tanpa faucet BTC (memakai token demo yang sudah berisi) |
-| Test | `cargo test` / `npm test` satu perintah; semua skenario §8 tercakup |
-| Keamanan repo | Tidak ada secret di repo; key di `.env` (contoh di `.env.example`) |
-| Lisensi | MIT, file `LICENSE` |
-| Ketersediaan demo | Hosted demo online s.d. 25 Nov 2026 |
+| Reproducibility | Clone → `npm install` → `npm run demo` → see the full buy-sell flow, ≤ 10 minutes, with no API key and no BTC faucet (using the demo token that is already funded) |
+| Tests | `cargo test` / `npm test` as one command; all §8 scenarios covered |
+| Repo security | No secrets in the repo; keys in `.env` (example in `.env.example`) |
+| License | MIT, `LICENSE` file |
+| Demo availability | Hosted demo online until 25 Nov 2026 |
 
 ---
 
-## 11. Metrik keberhasilan (untuk README & demo)
+## 11. Success metrics (for the README & demo)
 
-Juri hackathon NEAR sebelumnya menuntut angka. Yang akan kita ukur dan laporkan:
+Judges at previous NEAR hackathons asked for numbers. What we will measure and report:
 
-| Metrik | Target |
+| Metric | Target |
 |---|---|
-| Waktu transfer kepemilikan BTC (buy → NFT pindah) | ≤ 2 detik (1 tx NEAR) vs ±10–60 menit on-chain Bitcoin |
-| Biaya transfer kepemilikan | < $0.01 gas NEAR, 0 fee Bitcoin |
-| Latensi tanda tangan MPC per UTXO | diukur & dilaporkan |
-| Cakupan threat model | 7/7 skenario punya test, semua lulus |
-| Waktu reproduksi juri | ≤ 10 menit |
+| BTC ownership transfer time (buy → NFT moves) | ≤ 2 seconds (1 NEAR tx) vs ±10–60 minutes on-chain on Bitcoin |
+| Ownership transfer cost | < $0.01 NEAR gas, 0 Bitcoin fee |
+| MPC signature latency per UTXO | measured & reported |
+| Threat model coverage | 7/7 scenarios have a test, all passing |
+| Judge reproduction time | ≤ 10 minutes |
 
 ---
 
-## 12. Pemetaan ke kriteria juri
+## 12. Mapping to the judging criteria
 
-| Kriteria | Bukti di Pusaka |
+| Criterion | Evidence in Pusaka |
 |---|---|
-| Screening AI (jalan & sesuai README) | `npm run demo`, test satu perintah, README format "do X → see Y" |
-| Implementasi teknis | Tx BTC disusun on-chain, locks, outpoint registry, test threat model |
-| Orisinalitas | NFT yang memegang BTC asli — tidak ada di 62 submission per 2 Nov |
-| Dampak | OTC BTC trustless, hadiah/warisan, kolateral |
-| NEAR leverage | Chain Signatures + kontrak sebagai penjaga + transfer atomik — mustahil tanpa kustodian di chain lain |
-| Desain / kejelasan | "Saya menjual 0.01 BTC asli dalam 1 detik dengan mentransfer sebuah NFT" |
-| Track NFT ("ownership with behavior", threat model transfer) | §8 dijawab lengkap dengan test |
+| AI screening (runs & matches the README) | `npm run demo`, one-command tests, README in "do X → see Y" format |
+| Technical implementation | BTC tx built on-chain, locks, outpoint registry, threat model tests |
+| Originality | An NFT that holds real BTC: not present in the 62 submissions as of 2 Nov |
+| Impact | Trustless BTC OTC, gifts/inheritance, collateral |
+| NEAR leverage | Chain Signatures + the contract as guardian + atomic transfer: impossible without a custodian on other chains |
+| Design / clarity | "I sold 0.01 real BTC in 1 second by transferring an NFT" |
+| NFT track ("ownership with behavior", transfer threat model) | §8 answered in full with tests |
 
 ---
 
-## 13. Rencana demo & submission
+## 13. Demo & submission plan
 
-### Video demo (≤ 90 detik)
-1. **(0–10s)** Masalah: "Memindahkan BTC = menunggu konfirmasi atau percaya kustodian."
-2. **(10–25s)** Pusaka #1 berisi 0.01 BTC testnet — tunjukkan alamatnya di mempool.space.
-3. **(25–45s)** Penjual listing → pembeli (browser kedua) lihat safe balance → klik Beli → NFT pindah ~1 detik.
-4. **(45–60s)** Penjual lama coba tarik → ditolak `NotOwner`.
-5. **(60–80s)** Pembeli tarik BTC → txid muncul di mempool.space.
-6. **(80–90s)** "Hanya mungkin di NEAR: Chain Signatures." + link repo.
+### Demo video (≤ 90 seconds)
+1. **(0–10s)** The problem: "Moving BTC = waiting for confirmations or trusting a custodian."
+2. **(10–25s)** Pusaka #1 holds 0.01 testnet BTC: show its address on mempool.space.
+3. **(25–45s)** The seller lists → the buyer (second browser) sees the safe balance → clicks Buy → the NFT moves in ~1 second.
+4. **(45–60s)** The previous seller tries to withdraw → rejected with `NotOwner`.
+5. **(60–80s)** The buyer withdraws the BTC → the txid appears on mempool.space.
+6. **(80–90s)** "Only possible on NEAR: Chain Signatures." + repo link.
 
-### Draft post X
+### Draft X post
 > Selling Bitcoin usually means waiting for confirmations or trusting a custodian.
 > Pusaka: NFTs that hold real BTC (not wrapped). Sell the NFT → the Bitcoin moves with it, in ~1 second.
 > Built at NEAR HACKATHON with Chain Signatures. Repo + demo 👇 What would you put inside one?
 > @NEARProtocol @NearBuilders @NearLegion #NEARHackathon
 
-### Kerangka README
-1. Apa itu Pusaka (2 kalimat) · 2. Coba dalam 5 menit (do X → see Y) · 3. Cara kerja + diagram · 4. Threat model & batasan · 5. Fitur NEAR yang dipakai · 6. Metrik · 7. Struktur repo & cara test · 8. Library & AI yang dipakai (aturan Q-005) · 9. Lisensi
+### README outline
+1. What Pusaka is (2 sentences) · 2. Try it in 5 minutes (do X → see Y) · 3. How it works + diagram · 4. Threat model & limitations · 5. NEAR features used · 6. Metrics · 7. Repo structure & how to test · 8. Libraries & AI used (rule Q-005) · 9. License
 
-### Payload submit
-`tracks: ["nfts","defi","open"]` — data pribadi (nama, email, alamat `.near`, link post X) diisi oleh tim, **tidak dikarang**.
+### Submission payload
+`tracks: ["nfts","defi","open"]`: personal data (name, email, `.near` address, X post link) is filled in by the team, **not made up**.
 
 ---
 
 ## 14. Timeline
 
-| Hari | Tanggal | Target | Exit criteria |
+| Day | Date | Target | Exit criteria |
 |---|---|---|---|
-| 1 | 3 Nov | **Spike kelayakan** | Kontrak testnet memanggil MPC `sign` dan tx BTC testnet4 hasilnya diterima jaringan. **Gagal → pivot** ke ide cadangan (DAO treasury lintas chain) |
-| 2–3 | 4–5 Nov | NEP-171, derivasi alamat, withdraw + cek pemilik | US1, US3 lulus |
-| 4–5 | 6–7 Nov | Listing, buy atomik, pending lock | US4, US5 lulus |
-| 6 | 8 Nov | Outpoint registry, `expected_signed_count` | T3, T4 lulus |
-| 7 | 9 Nov | Lengkapi test threat model | 7/7 test lulus |
-| 8–9 | 10–11 Nov | Frontend: galeri, detail, beli, tarik, safe balance | Alur demo jalan di browser |
-| 10 | 12 Nov | Deploy, token demo berisi BTC, `npm run demo`, hosted demo | Reproduksi dari clone bersih ≤ 10 menit |
-| 11 | 13 Nov | README, ukur metrik, rekam video, draft post X | Semua materi siap |
-| 12 | 14 Nov | Buffer → repo public → post X → submit (target **< 18:00 UTC**) | Respon 201 dari API submit |
+| 1 | 3 Nov | **Feasibility spike** | A testnet contract calls MPC `sign` and the resulting testnet4 BTC tx is accepted by the network. **Failure → pivot** to the backup idea (cross-chain DAO treasury) |
+| 2–3 | 4–5 Nov | NEP-171, address derivation, withdraw + owner check | US1, US3 pass |
+| 4–5 | 6–7 Nov | Listing, atomic buy, pending lock | US4, US5 pass |
+| 6 | 8 Nov | Outpoint registry, `expected_signed_count` | T3, T4 pass |
+| 7 | 9 Nov | Complete the threat model tests | 7/7 tests pass |
+| 8–9 | 10–11 Nov | Frontend: gallery, detail, buy, withdraw, safe balance | Demo flow runs in the browser |
+| 10 | 12 Nov | Deploy, demo token holding BTC, `npm run demo`, hosted demo | Reproduction from a clean clone ≤ 10 minutes |
+| 11 | 13 Nov | README, measure metrics, record video, draft X post | All materials ready |
+| 12 | 14 Nov | Buffer → repo public → X post → submit (target **< 18:00 UTC**) | 201 response from the submit API |
 
 ---
 
-## 15. Risiko & pertanyaan terbuka
+## 15. Risks & open questions
 
-| Risiko | Dampak | Mitigasi |
+| Risk | Impact | Mitigation |
 |---|---|---|
-| Format API `sign` kontrak MPC (argumen, deposit, gas) berbeda dari dugaan | Blokir F4 | Dicek di spike hari 1 dari repo `near-examples/near-multichain` & kontrak MPC |
-| `omni-transaction-rs` gagal compile ke WASM / sighash salah | Blokir F4 | Cadangan: frontend menyusun tx, kontrak memverifikasi & mencatat outpoint yang dideklarasikan (lebih lemah, ditulis di README) |
-| Kontrak memanggil MPC lintas kontrak (bukan dari wallet user) belum ada contoh resmi | Blokir F4 | Prioritas #1 spike; cari contoh di repo NEAR examples |
-| Latensi MPC lambat | Demo terasa lambat | Demo jual-beli tidak butuh MPC; MPC hanya di withdraw |
-| Faucet BTC testnet4 sulit | Juri tak bisa coba | Token demo yang sudah diisi tim |
-| Waktu habis | Tidak submit | P1/P2 dipotong duluan; submit hari 12 sebelum 18:00 UTC |
+| The MPC contract's `sign` API format (arguments, deposit, gas) differs from what we expect | Blocks F4 | Checked in the day 1 spike against the `near-examples/near-multichain` repo & the MPC contract |
+| `omni-transaction-rs` fails to compile to WASM / wrong sighash | Blocks F4 | Fallback: the frontend builds the tx, the contract verifies & records the declared outpoints (weaker, stated in the README) |
+| No official example yet of a contract calling MPC cross-contract (not from a user wallet) | Blocks F4 | Spike priority #1; look for examples in the NEAR examples repo |
+| Slow MPC latency | The demo feels slow | The buy-sell demo does not need MPC; MPC is only in withdraw |
+| Testnet4 BTC faucet is hard to use | Judges cannot try it | Demo token already funded by the team |
+| Running out of time | No submission | P1/P2 get cut first; submit on day 12 before 18:00 UTC |
 
-**Pertanyaan terbuka:**
-1. Tim solo atau lebih? (menentukan apakah F13/F14 realistis)
-2. Nama akun kontrak testnet (mis. `pusaka.testnet`) — perlu dibuat tim.
-3. Harga listing dalam NEAR saja, atau juga USDC testnet?
+**Open questions:**
+1. Solo team or more? (decides whether F13/F14 are realistic)
+2. Testnet contract account name (e.g. `pusaka.testnet`): the team needs to create it.
+3. Listing price in NEAR only, or also testnet USDC?
 
 ---
 
-## Lampiran A — Fakta teknis terverifikasi (2 Nov 2026)
+## Appendix A — Verified technical facts (2 Nov 2026)
 
 - MPC signer: testnet `v1.signer-prod.testnet`, mainnet `v1.signer`.
-- Alamat turunan = f(akun pemanggil, path, master key MPC); akun lain tidak bisa mengendalikan alamat yang sama.
-- Bitcoin memakai `Ecdsa` (secp256k1); contoh resmi memakai mempool.space **testnet4** dan **satu `sign` per UTXO**.
-- `omni-transaction = "0.3"`: `TransactionBuilder::new::<BITCOIN>()`, `build_for_signing_legacy(EcdsaSighashType::All)`, `build_with_signature(...)`. Catatan: contoh di README-nya memakai `hex.as_bytes()` untuk scriptPubKey (byte ASCII, bukan hasil decode) — jangan disalin mentah.
+- Derived address = f(calling account, path, MPC master key); other accounts cannot control the same address.
+- Bitcoin uses `Ecdsa` (secp256k1); the official example uses mempool.space **testnet4** and **one `sign` per UTXO**.
+- `omni-transaction = "0.3"`: `TransactionBuilder::new::<BITCOIN>()`, `build_for_signing_legacy(EcdsaSighashType::All)`, `build_with_signature(...)`. Note: the example in its README uses `hex.as_bytes()` for the scriptPubKey (ASCII bytes, not the decoded result), so do not copy it as is.
 
-Sumber: docs.near.org/chain-abstraction/chain-signatures/implementation · github.com/near/omni-transaction-rs · github.com/near-examples/near-multichain · github.com/NearDeFi/chainsig.js · nearhackathon.com/HACKATHON.md
+Sources: docs.near.org/chain-abstraction/chain-signatures/implementation · github.com/near/omni-transaction-rs · github.com/near-examples/near-multichain · github.com/NearDeFi/chainsig.js · nearhackathon.com/HACKATHON.md

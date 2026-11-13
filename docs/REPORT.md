@@ -1,49 +1,49 @@
-# Pusaka — laporan akhir (8 Nov 2026)
+# Pusaka — final report (8 Nov 2026)
 
-Rincian per fase: [`reports/01-tech-lead.md`](reports/01-tech-lead.md) · [`02-strategy`](reports/02-strategy.md) · [`03-contracts`](reports/03-contracts.md) · [`04-dapp`](reports/04-dapp.md) · [`05-security`](reports/05-security.md) · [`06-qa`](reports/06-qa.md) · [`07-submission`](reports/07-submission.md).
+Details per phase: [`reports/01-tech-lead.md`](reports/01-tech-lead.md) · [`02-strategy`](reports/02-strategy.md) · [`03-contracts`](reports/03-contracts.md) · [`04-dapp`](reports/04-dapp.md) · [`05-security`](reports/05-security.md) · [`06-qa`](reports/06-qa.md) · [`07-submission`](reports/07-submission.md).
 
 ## 1. Scorecard & checklist
-HACKATHON.md tidak memberi rubrik angka; kriteria diturunkan dari Q-012, Q-017 dan brief track (`02-strategy.md`).
+HACKATHON.md gives no numeric rubric; the criteria are derived from Q-012, Q-017 and the track brief (`02-strategy.md`).
 
-| Kriteria | 2 Nov | 8 Nov |
+| Criterion | 2 Nov | 8 Nov |
 |---|---|---|
-| Reproduksibilitas dari clone bersih | 5 | 9 |
-| Klaim terverifikasi on-chain | 6 | 10 |
-| Kedalaman integrasi NEAR | 6 | 9 |
-| Kesesuaian brief `nfts` | 7 | 9 |
-| Keamanan / threat model | 6 | 9 |
-| Demo & presentasi | 5 | 6 (video/X belum) |
-| Polish UI/a11y/perf | 6 | 9 |
+| Reproducibility from a clean clone | 5 | 9 |
+| Claims verified on-chain | 6 | 10 |
+| Depth of NEAR integration | 6 | 9 |
+| Fit with the `nfts` brief | 7 | 9 |
+| Security / threat model | 6 | 9 |
+| Demo & presentation | 5 | 6 (video/X not yet) |
+| UI/a11y/perf polish | 6 | 9 |
 
-Tidak ada bounty sponsor terpisah di hackathon ini; "sponsor" = NEAR. Checklist submission: `07-submission.md`.
+There is no separate sponsor bounty in this hackathon; "sponsor" = NEAR. Submission checklist: `07-submission.md`.
 
-## 2. Temuan audit & keamanan
-18 temuan putaran 7–8 Nov (A1–A18): 1 Kritis, 6 Tinggi, 8 Sedang, 3 Rendah. 16 fixed dan terverifikasi; A16 (typecheck) diputuskan tidak dipasang dengan alasan; A17 (source map) menunggu repo publik. Keamanan: `cargo audit` di CI (1 advisory dev-only, di-ignore dengan alasan), `npm audit` 0, git history & bundle bebas secret, header & CORS benar. Upgrade di-renounce 8 Nov; rate limit Firewall aktif (429). Known issue: coverage tak diukur.
+## 2. Audit & security findings
+18 findings from the 7–8 Nov round (A1–A18): 1 Critical, 6 High, 8 Medium, 3 Low. 16 fixed and verified; A16 (typecheck) was decided not to be added, with a stated reason; A17 (source map) is waiting for the repo to go public. Security: `cargo audit` in CI (1 dev-only advisory, ignored with a stated reason), `npm audit` 0, git history & bundle free of secrets, headers & CORS correct. Upgrades renounced 8 Nov; Firewall rate limit active (429). Known issue: coverage not measured.
 
-## 3. Integrasi (sebelum → sesudah putaran ini)
-Chain Signatures: Dalam → + FunctionCall staking · Light client: Sedang → Dalam (kembalian) · RPC: failover sederhana → per panggilan + cooldown + cache · 1Click: quote → + timeout benar & fallback teruji · Staking pool: — → Dalam · Error kontrak: kode mentah → kalimat. Lengkap: `04-dapp.md`, README "Every NEAR primitive".
+## 3. Integrations (before → after this round)
+Chain Signatures: Deep → + staking FunctionCall · Light client: Medium → Deep (change) · RPC: simple failover → per call + cooldown + cache · 1Click: quote → + correct timeout & tested fallback · Staking pool: — → Deep · Contract errors: raw code → sentence. Full list: `04-dapp.md`, README "Every NEAR primitive".
 
-## 4. Kompetitor & positioning
-19 proyek di `nfts` (dari 266). "NFT yang membawa dompet" kini paritas (Handover, Deed, Torch, Logen, Outlive). Hanya Pusaka yang memegang **Bitcoin asli yang dibuktikan on-chain** dan memindahkan BTC + EVM + SOL + NEAR sekaligus. Positioning dan tabel 8 kompetitor: `02-strategy.md`.
+## 4. Competitors & positioning
+19 projects in `nfts` (out of 266). "NFT that carries a wallet" is now at parity (Handover, Deed, Torch, Logen, Outlive). Only Pusaka holds **real Bitcoin proven on-chain** and moves BTC + EVM + SOL + NEAR at once. Positioning and the table of 8 competitors: `02-strategy.md`.
 
-## 5. Pembeda yang sulit ditiru (bukti on-chain)
-1. Light client Bitcoin di kontrak: `prove_deposit` `EYLPHJGX…`; kembalian terbukti #10 (proposal 5).
-2. Satu NFT banyak chain: Sepolia `0x85a7466d…`, Solana (finalized), akun NEAR `3npsdnYo…`, nBTC, stake `4yQWgGG4…`.
-3. Kontrak tanpa key dan kode final: DeleteKey `3mNiGWfH…`; dulu DAO + timelock (TooEarly `EHX5b1cp…`, deploy `67hUwJuA…`), di-renounce `GdASfxh5…`.
+## 5. Differentiators that are hard to copy (on-chain proof)
+1. Bitcoin light client in the contract: `prove_deposit` `EYLPHJGX…`; change proven on #10 (proposal 5).
+2. One NFT, many chains: Sepolia `0x85a7466d…`, Solana (finalized), NEAR account `3npsdnYo…`, nBTC, stake `4yQWgGG4…`.
+3. Contract with no key and final code: DeleteKey `3mNiGWfH…`; formerly DAO + timelock (TooEarly `EHX5b1cp…`, deploy `67hUwJuA…`), renounced `GdASfxh5…`.
 
-## 6. Fitur baru putaran ini
-Staking NEAR milik NFT (`#/pusaka/2`), bukti kembalian gratis (`#/pusaka/10`), judul halaman token sebelum JS (LCP 8,4 → 2,7 s), error kontrak manusiawi, `.env.example`, `cargo audit` di CI.
+## 6. New features this round
+NFT-owned NEAR staking (`#/pusaka/2`), free change proof (`#/pusaka/10`), token page title before JS (LCP 8.4 → 2.7 s), human-readable contract errors, `.env.example`, `cargo audit` in CI.
 
 ## 7. Testing
-Kontrak 375 × 2 (termasuk fuzz + invariant) · unit Node 12 file · Playwright `ui.spec` 95 (5 proyek) + `live.spec` 40 · `verify.mjs` 8 cek · MCP smoke. Bug yang ditemukan tes: 10 (`06-qa.md`). Lighthouse mobile produksi: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
+Contract 375 × 2 (including fuzz + invariant) · Node unit 12 files · Playwright `ui.spec` 95 (5 projects) + `live.spec` 40 · `verify.mjs` 8 checks · MCP smoke. Bugs found by tests: 10 (`06-qa.md`). Production mobile Lighthouse: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
 
-## 8. Tautan
-Demo: https://pusaka-two.vercel.app · Kontrak: https://testnet.near.rocks/account/pusaka-btc.testnet · Repo: https://github.com/PugarHuda/pusaka · Video & deck: belum ada (naskah + outline di `07-submission.md`).
+## 8. Links
+Demo: https://pusaka-two.vercel.app · Contract: https://testnet.near.rocks/account/pusaka-btc.testnet · Repo: https://github.com/PugarHuda/pusaka · Video & deck: not yet (script + outline in `07-submission.md`).
 
-## 9. Blocker (butuh user)
-1. **Video demo + post X** (syarat wajib; naskah siap).
-2. **Repo publik** sebelum 14 Nov 23:59 UTC (saran 13 Nov); lalu source map produksi (1 baris).
-3. ~~Renounce upgrade~~ — **selesai 8 Nov** (proposal 7, `GdASfxh5…`).
-4. **Akun payout mainnet** dan data form (nama, email, ukuran tim, persetujuan); submit setelah payload ditunjukkan.
-5. **Dana mainnet** (~$35 minimum / ~$47 penuh, terukur 8 Nov, `docs/MAINNET.md`; di `pugarhuda.near`) bila ingin deploy mainnet / nama TLA.
-6. ~~Firewall publish~~ — selesai 8 Nov (429 setelah 20 POST/menit/IP). Opsional: JWT 1Click dari partners.near-intents.org (tanpa fee 0,2 %).
+## 9. Blockers (need the user)
+1. **Demo video + X post** (mandatory requirement; script ready).
+2. **Public repo** before 14 Nov 23:59 UTC (suggested 13 Nov); then production source map (1 line).
+3. ~~Renounce upgrade~~: **done 8 Nov** (proposal 7, `GdASfxh5…`).
+4. **Mainnet payout account** and form data (name, email, team size, consent); submit after the payload is shown.
+5. **Mainnet funds** (~$35 minimum / ~$47 full, measured 8 Nov, `docs/MAINNET.md`; at `pugarhuda.near`) if a mainnet deploy / TLA name is wanted.
+6. ~~Firewall publish~~: done 8 Nov (429 after 20 POST/minute/IP). Optional: 1Click JWT from partners.near-intents.org (no 0.2 % fee).
