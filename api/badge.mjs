@@ -1,6 +1,6 @@
 // GET /api/badge?id=1[&contract=pusaka-btc.testnet][&clean=1] -> an SVG badge with the BTC verified inside that Pusaka;
 // embed it anywhere. With clean=1 it also says whether anything the holder already signed could still move what's
-// inside (shared/clean.mjs, every chain checked when the badge is drawn, cached 5 minutes): a seller can paste a
+// inside (shared/clean.mjs, every chain checked when the badge is drawn, cached at most a minute, its time on the badge): a seller can paste a
 // "proof of clean" next to a listing on any marketplace, and it stays honest because it is redrawn from the chains.
 import { CONTRACT, SIBLINGS } from "@pusaka/shared";
 import { cleanOf } from "@pusaka/shared/clean";
@@ -15,7 +15,9 @@ const CLEAN = { clean: ["clean", "#2e7d32"], risk: ["not clean", "#c62828"], unk
 export function badge(id, sats, verdict, at) {
   const left = `Pusaka #${id}`;
   const right = `${(sats / 1e8).toFixed(8)} BTC verified`;
-  const [third, color] = verdict ? CLEAN[verdict] ?? CLEAN.unknown : [];
+  const [word, color] = verdict ? CLEAN[verdict] ?? CLEAN.unknown : [];
+  // the check time is in the visible text: an embedded badge says how old its answer is
+  const third = word && (at ? `${word} @${new Date(at).toISOString().slice(11, 16)}Z` : word);
   const lw = 12 + left.length * 7, rw = 12 + right.length * 7, cw = third ? 12 + third.length * 7 : 0;
   const label = `${left}: ${right}${third ? `, ${third}` : ""}`;
   const when = at ? ` (checked ${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC)` : "";
@@ -35,9 +37,10 @@ export default async function handler(req, res) {
     const t = await tokenReserve(id, c);
     if (!t) return res.status(404).json({ error: `no Pusaka #${id}` });
     // a chain that doesn't answer makes it "unchecked", never clean (fail closed)
-    const clean = req.query?.clean ? await cleanOf(id, c, viewFinal).catch(() => ({ verdict: "unknown" })) : null;
+    const clean = req.query?.clean === "1" ? await cleanOf(id, c, viewFinal).catch(() => ({ verdict: "unknown" })) : null;
     res.setHeader("content-type", "image/svg+xml");
-    res.setHeader("cache-control", "public, s-maxage=300, stale-while-revalidate=3600");
+    // a clean verdict goes stale the moment something is signed: a minute at most, never served stale
+    res.setHeader("cache-control", clean ? "public, s-maxage=60, max-age=0, must-revalidate" : "public, s-maxage=300, stale-while-revalidate=3600");
     res.status(200).send(badge(id, t.verified_sats, clean?.verdict, clean && Date.now()));
   } catch {
     res.status(502).json({ error: "NEAR RPC unavailable" });
