@@ -27,6 +27,8 @@ jobs:
         working-directory: token-account
       - run: cargo test   # the market contract: bids per verified sat, perpetual loans
         working-directory: market
+      - run: cargo test   # the lend contract: stablecoin pool, median price of reporters, liquidation
+        working-directory: lend
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-audit }
       - run: cargo audit   # RustSec advisories for every crate in Cargo.lock
