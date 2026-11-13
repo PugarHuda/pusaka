@@ -63,7 +63,10 @@ NEAR: nonce floor; SOL: blockhash expiry). Any signature requested after a buyer
 so a seller's signed-in session stops working the moment the NFT moves. The full list is in the threat model below.
 
 SOL moved live twice: #5 → #1 on 4 Nov, and again on 13 Nov, 0.1 SOL signed by NEAR's MPC (Ed25519) and finalized on
-Solana devnet ([g9oBmNUp…](https://explorer.solana.com/tx/g9oBmNUpoZzCG9ymD5BVoMws26rL2pECNddA8WzY8rxzCtZohntwZQLvgqamxAS2gymhQBJUniSRHof8qyntbgd?cluster=devnet)).
+Solana devnet ([g9oBmNUp…](https://explorer.solana.com/tx/g9oBmNUpoZzCG9ymD5BVoMws26rL2pECNddA8WzY8rxzCtZohntwZQLvgqamxAS2gymhQBJUniSRHof8qyntbgd?cluster=devnet)). USDC moved live on Arbitrum Sepolia the same day: #5 paid 5 USDC to #1's address, an ERC-20 transfer built by the
+contract and signed by NEAR's MPC with #5's key, after a 0.001 ETH top-up for gas from an outside wallet
+([0x842cb59a…](https://sepolia.arbiscan.io/tx/0x842cb59a2b3054f35a853bddbf612b97b2cde9aa53188e24f572fb4978211792), status 1;
+#5's nonce floor on that chain is now 1, so a buyer counts its remaining USDC as safe only once that tx landed).
 
 ## USDC from a pool: stablecoin loans priced by reporters, liquidated at a price (`lend/`)
 
