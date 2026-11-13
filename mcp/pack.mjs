@@ -26,7 +26,7 @@ if (left.length) throw new Error(`still importing @pusaka/*: ${left}`);
 
 const mcpPkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "package.json"), "utf8"));
 const { "@pusaka/shared": _, ...deps } = { ...sharedPkg.dependencies, ...mcpPkg.dependencies };
-const version = process.env.PUSAKA_MCP_VERSION ?? "1.0.0";
+const version = process.env.PUSAKA_MCP_VERSION ?? "1.1.0"; // 1.1.0: USDC pool tools, Clean to buy in verify, exchange_ready
 fs.writeFileSync(path.join(DIST, "package.json"), JSON.stringify({
   name: "pusaka-mcp",
   version,
