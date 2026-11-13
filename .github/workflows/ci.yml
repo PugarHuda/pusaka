@@ -130,3 +130,4 @@ jobs:
       - run: node mcp/remote-smoke.mjs
       - run: node mcp/due-diligence.mjs 1   # an agent's read-only due diligence over MCP: contract trust, reserves audit, history, loans, credit
       - run: npm run smoke -w mcp   # local MCP server; guards refuse before signing (throwaway key)
+        env: { PUSAKA_CONTRACT: pusaka-btc.testnet }  # its guards run against the classic contract's demo stock (#1 asks for a loan, #4 is for sale)
