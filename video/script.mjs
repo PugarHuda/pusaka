@@ -194,11 +194,11 @@ export const scenes = {
     cuts: [{ from: "@checks+5", to: "@lend-1", label: "" }],
     vo: [
       { at: "@clean-1.5", text: "Before buying, the page checks every chain: nothing the seller signed can still move the Bitcoin, the ETH, the SOL or the NEAR inside." },
-      { at: "@lend", text: "Borrowing has two options. NEAR from a person, with no oracle, so a price dip can never cost you the Bitcoin. Or stablecoins from a pool, priced by three independent sources, where one bad source can't move the price either way." },
+      { at: "@lend", text: "Borrowing has two options. NEAR from a person, with no oracle, so a price dip can never cost you the Bitcoin. Or Circle's USDC from a pool, priced by three independent sources, where one bad source can't move the price either way. One loan here sits right at the limit, waiting for a real price move." },
     ],
     box: [{ at: "@checks", for: 5 }, { at: "@price", for: 3.5 }],
     zoom: [{ at: "@checks", for: 5, scale: 1.4 }],
-    x: { vo: [{ at: "@clean-1.5", text: "Before you buy, it checks every chain: nothing the seller signed can still move what's inside. And it borrows stablecoins from a pool, priced by three sources." }] },
+    x: { vo: [{ at: "@clean-1.5", text: "Before you buy, it checks every chain: nothing the seller signed can still move what's inside. And it borrows Circle's USDC from a pool, priced by three sources." }] },
   },
 
   heir: {
