@@ -4,7 +4,7 @@ name: lend-price
 # reporters the contract pauses borrowing and liquidation, as designed.
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "7,27,47 * * * *" # off the top of the hour, where GitHub delays scheduled runs most
   workflow_dispatch:
 concurrency: { group: lend-price, cancel-in-progress: false }
 jobs:

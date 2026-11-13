@@ -1,9 +1,9 @@
 {
   "contract": "pusaka-lend.testnet",
   "stable": "pusaka-usd.testnet",
-  "wasm_sha256": "37015bf49b7845cadf9af62541ec8f733f7415716f6c06bc243d7102514016fa",
+  "wasm_sha256": "ac5e97fc6e9d70c7e39a2712eac83e3b87613df2804b14373fb3d6fc81fe4454",
   "pusd_wasm_sha256": "d9b45258150e64a21f712c34fc68d7d9ff0b7b969ccdf7b3a02f48b0eecc9fbf",
-  "build": "NEP-330 reproducible: cargo near build reproducible-wasm in sourcescan/cargo-near:0.21.1-rust-1.96.1 (CI job lend-wasm, run 43366666530, commit d6830cd); contract_source_metadata names it",
+  "build": "NEP-330 reproducible: cargo near build reproducible-wasm in sourcescan/cargo-near:0.21.1-rust-1.96.1 (CI job lend-wasm; lend from run 43369725784 at commit 081fdd7, with reset; pUSD from run 43366666530 at d6830cd); contract_source_metadata names each",
   "config": {
     "nfts": [
       "pusaka-v2.testnet",
@@ -36,7 +36,8 @@
     "redeploy_reproducible": [
       "5t6nhaa8MvrKdZNrwApPQdxECguMG7JpxvDL1EwGQUDm",
       "KNxFGJvjmTTVeXJYHgmRRWssRjfW48ugJkqsWRfkjnt"
-    ]
+    ],
+    "redeploy_with_reset": "91Bpxx6DbGxgQdkVxgzoM65Vj2dPziPC6Prgny2tkoUY"
   },
   "keys": "pusaka-lend.testnet and pusaka-usd.testnet still hold a full-access key; deleted with the others at the final step (needs the owner's 2x OK)"
 }
