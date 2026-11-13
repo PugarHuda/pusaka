@@ -272,8 +272,10 @@ test("a Pusaka shows the nBTC in its own NEAR account and its Omni Bridge deposi
   await page.goto(CL + "#/pusaka/5");
   const sec = page.locator("section").filter({ has: page.getByRole("heading", { name: "nBTC on NEAR" }) });
   await expect(sec).toBeVisible({ timeout: 40_000 });
-  await expect(sec).toContainText(/[1-9][\d,]* nBTC sats/); // #5's account holds nBTC minted by the Omni connector
+  await expect(sec).toContainText(/[\d,]+ nBTC sats/); // its nBTC went on to Smart Pusaka #4 (13 Nov)
   await expect(sec.locator(".addr")).toContainText(/^tb1q[0-9a-z]{38,}/);
+  await page.goto("/#/pusaka/4"); // a Smart Pusaka counts the nBTC in its account as Bitcoin inside, redeemable to its own address
+  await expect(page.getByText(/[1-9][\d,]* sats of nBTC \(Omni Bridge\) in its account/)).toBeVisible({ timeout: 40_000 });
 });
 
 test("every Pusaka has an heir section; the will is read from the contract", async ({ page }) => {

@@ -346,7 +346,7 @@ export function SelfCheck({ id, explorer }) {
  * gateway and model attestations verified for a fresh nonce, and the model TEE's signature over the exact bytes.
  * Rendered only when the deployment has a NEAR AI key; nothing is shown in its place otherwise.
  */
-export function Appraisal({ id }) {
+export function Appraisal({ id, contract }) {
   const [on, setOn] = useState(false);
   const [state, setState] = useState(null); // null | "running" | result | { error }
   useEffect(() => {
@@ -358,7 +358,7 @@ export function Appraisal({ id }) {
   async function run() {
     setState("running");
     try {
-      const r = await fetch(`/api/appraise?id=${id}`);
+      const r = await fetch(`/api/appraise?id=${id}&contract=${contract}`);
       const body = await r.json();
       setState(r.ok ? body : { error: body.error ?? `HTTP ${r.status}` });
     } catch (e) { setState({ error: e.message }); }

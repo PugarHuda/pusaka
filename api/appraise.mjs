@@ -1,8 +1,9 @@
 // GET /api/appraise?id=N -> a short appraisal of one Pusaka, written by a model running in a NEAR AI Cloud TEE,
 // with the evidence: the gateway's and the model's attestation verified for a fresh nonce before the request,
 // and the model TEE's signature over the exact request and response bytes checked after it (api/_nearai.mjs).
+// &contract=<a sibling deployment> appraises one of its Pusakas instead (the classic one holds most of the BTC).
 // GET /api/appraise?status=1 -> { configured, model }. The appraisal needs NEARAI_API_KEY on the deployment.
-import { prices } from "@pusaka/shared";
+import { prices, CONTRACT, SIBLINGS } from "@pusaka/shared";
 import { viewFinal } from "@pusaka/shared/audit";
 import { verifiedCompletion, NEARAI_MODEL } from "./_nearai.mjs";
 
@@ -14,16 +15,16 @@ let quota = { start: Date.now(), n: 0 };
 const pctLabel = (d) => `${Math.abs(Math.round(d * 1000) / 10)}% ${d < 0 ? "below" : "above"} the value of the BTC inside`;
 
 /** Only on-chain facts (and two market prices) go to the model; it is told to use nothing else. */
-async function facts(id) {
-  const [info, px] = await Promise.all([viewFinal("token_info", { token_id: id }), prices().catch(() => null)]);
+async function facts(id, c) {
+  const [info, px] = await Promise.all([viewFinal("token_info", { token_id: id }, c), prices().catch(() => null)]);
   if (!info) return null;
   const sats = Number(info.verified_sats), yocto = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6;
   const listed = info.listing && yocto(info.price_now ?? info.listing.price);
   const holders = [...new Set(info.history.flatMap(({ event: e }) => [e.owner, e.from, e.to].filter(Boolean)))];
   return {
-    key: `${id}:${info.sign_epoch}:${sats}:${info.token.owner_id}:${listed ?? ""}:${info.loan?.lender ?? info.loan?.principal ?? ""}`,
+    key: `${c}:${id}:${info.sign_epoch}:${sats}:${info.token.owner_id}:${listed ?? ""}:${info.loan?.lender ?? info.loan?.principal ?? ""}`,
     data: {
-      pusaka: Number(id), network: "NEAR testnet (Bitcoin testnet3)", owner: info.token.owner_id,
+      pusaka: Number(id), contract: c, network: "NEAR testnet (Bitcoin testnet3)", owner: info.token.owner_id,
       verified_btc_sats: sats, verified_by: "NEAR's on-chain Bitcoin light client; never signed away",
       proven_deposits: info.proven_utxos.length, outpoints_ever_signed: info.signed_outpoints.length, signing_in_progress: info.pending,
       btc_usd: px?.btcUsd ?? null, near_usd: px?.nearUsd ?? null,
@@ -53,15 +54,17 @@ export default async function handler(req, res) {
   if (!configured) return res.status(503).json({ error: "This deployment has no NEAR AI Cloud key (NEARAI_API_KEY)." });
   const id = String(req.query.id ?? "");
   if (!/^\d{1,9}$/.test(id)) return res.status(400).json({ error: "id must be a token id" });
+  const c = String(req.query.contract ?? CONTRACT);
+  if (![CONTRACT, ...SIBLINGS].includes(c)) return res.status(400).json({ error: `contract must be one of ${[CONTRACT, ...SIBLINGS].join(", ")}` });
   try {
-    const f = await facts(id);
+    const f = await facts(id, c);
     if (!f) return res.status(404).json({ error: `no Pusaka #${id}` });
     const hit = cache.get(f.key);
     if (hit && Date.now() - hit.at < CACHE_MS) return res.status(200).json({ ...hit.body, cached: true });
     if (Date.now() - quota.start > 3_600_000) quota = { start: Date.now(), n: 0 };
     if (++quota.n > MAX_PER_HOUR) return res.status(429).json({ error: "Too many appraisals this hour; try again later." });
     const out = await verifiedCompletion([{ role: "system", content: SYSTEM }, { role: "user", content: JSON.stringify(f.data) }]);
-    const body = { id: Number(id), facts: f.data, ...out };
+    const body = { id: Number(id), contract: c, facts: f.data, ...out };
     cache.set(f.key, { at: Date.now(), body });
     res.status(200).json(body);
   } catch (e) {

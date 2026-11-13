@@ -638,7 +638,7 @@ function Market({ accountId }) {
         ))}
       </section>
       <div className="market-side">
-        <OfferBook infos={tokens?.filter((t) => t.c === CONTRACT).map((t) => t.info)} accountId={accountId} />
+        <OfferBook infos={tokens?.map((t) => t.info)} accountId={accountId} />
         <Activity />
       </div>
 
@@ -917,7 +917,7 @@ function Detail({ id, accountId }) {
           <p className="muted">A Smart Pusaka also owns a keyless NEAR account. Whatever that account holds (tokens, other Pusakas) is sold, lent and inherited with it.</p>
           <Suspense fallback={<p className="muted">Reading its account…</p>}><SmartPanel id={id} accountId={accountId} embedded /></Suspense>
         </section>}
-        {!IS_SIBLING && <div id="d-ai"><Appraisal id={id} /></div>}
+        <div id="d-ai"><Appraisal id={id} contract={CONTRACT} /></div>
 
         <div id="d-chains">
           {t.eth && <EthSection t={t} canWithdraw={isOwner && !locked} onDone={refresh} />}
