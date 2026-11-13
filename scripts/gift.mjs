@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Account, KeyPair } from "near-api-js";
-import { account, call, view, provider, keyFile, CONTRACT } from "./lib.mjs";
+import { account, call, view, provider, keyFile, CONTRACT, IS_SIBLING } from "./lib.mjs";
 
 const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
 const GIFTS = path.join(import.meta.dirname, "..", ".keys", "gifts");

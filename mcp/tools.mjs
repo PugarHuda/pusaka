@@ -380,7 +380,7 @@ reg("pusaka_gift_link", {
   const deposit = 250_000_000_000_000_000_000_000n;
   await spend(deposit, "gift");
   await call("gift", { token_id, public_key: kp.getPublicKey().toString() }, { deposit });
-  return { token_id, link: `https://pusaka-two.vercel.app/#/gift/${kp.toString()}`, note: "anyone with this link can claim the Pusaka; cancel with pusaka_cancel_gift" };
+  return { token_id, link: `https://pusaka-two.vercel.app/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${kp.toString()}`, note: "anyone with this link can claim the Pusaka; cancel with pusaka_cancel_gift" };
 }));
 
 reg("pusaka_cancel_gift", {

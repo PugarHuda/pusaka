@@ -1710,7 +1710,7 @@ function GiftLink({ id, busy, run }) {
     <button type="button" disabled={!!busy} onClick={() => run("gift", async () => {
       const kp = KeyPair.fromRandom("ed25519");
       await call("gift", { token_id: id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
-      setLink(`${location.origin}/#/gift/${kp.toString()}`);
+      setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${kp.toString()}`);
       return "Gift link made. Anyone with it can claim this Pusaka: send it privately.";
     })}>{busy === "gift" ? "Making the link…" : "Make a gift link"}</button>
   </div>;
