@@ -179,7 +179,7 @@ async function record(name, fn, { wallet = false } = {}) {
     },
     /** Connect the app to `who` through Intear (picking the account if the wallet has several). */
     connect: async (who) => {
-      if ((await p.locator("header").innerText()).includes(who)) return;
+      if ((await p.locator("header").first().innerText()).includes(who)) return;
       const out = p.getByTitle("Disconnect wallet");
       if (await out.count()) { await out.click(); await p.waitForTimeout(2000); }
       await h.click("connect", p.getByRole("button", { name: /connect/i }).first());
@@ -202,7 +202,7 @@ async function record(name, fn, { wallet = false } = {}) {
       }
       await h.click("connect-approve", w.getByRole("button", { name: "Connect", exact: true }), w);
       await p.waitForTimeout(5000);
-      await h.mark("connected", p.locator("header"));
+      await h.mark("connected", p.locator("header").first());
     },
     /** Wait for the newest status message of a section and mark it. */
     status: async (id, scope = p, re = /./, timeout = 180_000) => {
@@ -795,6 +795,90 @@ ${JSON.stringify(terms, null, 2)}`;
     await p.evaluate(() => scrollTo({ top: 0, behavior: "smooth" })); await h.pause(1500);
     await h.mark("owner", p.getByText(/^Owned by/).first()); await h.pause(4000);
   },
+  // ---------- QA: click-through checks of the remaining owner/lender actions (CLIP_TOKEN = a Pusaka the recorder holds) ----------
+  "qa-list": async (h) => {
+    const { p } = h;
+    await tokenPage(h); await h.connect(BUYER); await tokenPage(h);
+    const form = p.locator("form").filter({ has: p.getByRole("button", { name: "List for sale" }) }).first();
+    await h.scrollTo(form);
+    await h.type("price", form.locator("input[type=number]").nth(0), "0.9");
+    await h.type("floor", form.locator("input[type=number]").nth(1), "0.5");
+    await h.type("hours", form.locator("input[type=number]").nth(2), "2");
+    await h.approve("list", form.getByRole("button", { name: "List for sale" }));
+    await h.status("listed", p.locator("section.actions"), /listed|auction|rror|fail/i);
+    await tokenPage(h);
+    const cancel = p.locator("section.actions").getByRole("button", { name: "Cancel listing" });
+    await cancel.waitFor({ timeout: 90_000 });
+    await h.mark("auction", p.locator("section.actions")); await h.pause(2000);
+    await h.maybeApprove("cancel", cancel);
+    await h.status("cancelled", p.locator("section.actions"), /cancel|rror|fail/i);
+  },
+  "qa-loanask": async (h) => {
+    const { p } = h;
+    await tokenPage(h); await h.connect(BUYER); await tokenPage(h);
+    const form = p.locator("form").filter({ has: p.getByRole("button", { name: "Ask for a loan" }) }).first();
+    await h.scrollTo(form);
+    await h.type("principal", form.locator("input[type=number]").nth(0), "0.05");
+    await h.type("repay", form.locator("input[type=number]").nth(1), "0.051");
+    await h.type("days", form.locator("input[type=number]").nth(2), "1");
+    await h.maybeApprove("ask", form.getByRole("button", { name: "Ask for a loan" }));
+    await tokenPage(h);
+    const cancel = p.locator("section.actions").getByRole("button", { name: "Cancel loan request" });
+    await cancel.waitFor({ timeout: 90_000 });
+    await h.mark("asking", p.locator("section.actions")); await h.pause(2000);
+    await h.maybeApprove("cancel", cancel);
+    await h.status("cancelled", p.locator("section.actions"), /cancel|rror|fail/i);
+  },
+  "qa-fund": async (h) => {
+    const { p } = h;
+    await tokenPage(h, process.env.CLIP_FUND ?? "1"); await h.connect(BUYER); await tokenPage(h, process.env.CLIP_FUND ?? "1");
+    const lend = p.locator("section.actions").getByRole("button", { name: /^Lend [\d.]+ NEAR$/ });
+    await lend.waitFor({ timeout: 90_000 });
+    await h.scrollTo(lend); await h.mark("ask", p.locator("section.actions")); await h.pause(2000);
+    await h.approve("lend", lend);
+    await h.status("funded", p.locator("section.actions"), /lent|funded|rror|fail/i);
+  },
+  "qa-offer": async (h) => {
+    const { p } = h;
+    await tokenPage(h, process.env.CLIP_OFFER ?? "4"); await h.connect(BUYER); await tokenPage(h, process.env.CLIP_OFFER ?? "4");
+    const form = p.locator("form").filter({ has: p.getByRole("button", { name: "Offer a loan" }) }).first();
+    await h.scrollTo(form);
+    await h.type("lend", form.locator("input[type=number]").nth(0), "0.05");
+    await h.type("repay", form.locator("input[type=number]").nth(1), "0.0505");
+    await h.type("days", form.locator("input[type=number]").nth(2), "2");
+    await h.approve("offer", form.getByRole("button", { name: "Offer a loan" }));
+    await h.status("offered", form.locator(".."), /offer|rror|fail/i);
+  },
+  "qa-near": async (h) => {
+    const { p } = h;
+    await tokenPage(h); await h.connect(BUYER); await tokenPage(h);
+    const btn = p.getByRole("button", { name: "Withdraw NEAR" });
+    await btn.waitFor({ timeout: 90_000 });
+    const form = p.locator("form").filter({ has: btn }).first();
+    await h.scrollTo(form);
+    await h.type("to", form.locator("input").first(), "pusaka-seller.testnet");
+    await h.type("amount", form.locator("input[type=number]").first(), "0.005");
+    await h.approve("withdraw-near", btn);
+    await h.status("sent", form.locator(".."), /Sent|rror|fail/i, 240_000);
+  },
+  "qa-mint": async (h) => {
+    const { p } = h;
+    await tokenPage(h); await h.connect(BUYER); // connect where the button is known to work, then mint from the header
+    const mint = p.getByRole("button", { name: "Mint a Pusaka" }).first();
+    await mint.waitFor({ timeout: 60_000 });
+    await h.approve("mint", mint);
+    await h.status("minted", p, /Minted|Pusaka #\d+|rror|fail/i, 240_000);
+  },
+  "qa-appraise": async (h) => {
+    const { p } = h;
+    await tokenPage(h, process.env.CLIP_OFFER ?? "4");
+    const b = p.getByRole("button", { name: "Appraise this Pusaka" });
+    await h.scrollTo(b); await h.click("appraise", b);
+    await p.locator(".appraisal p.stats").waitFor({ timeout: 200_000 });
+    await h.mark("verified", p.locator(".appraisal")); await h.pause(3000);
+    const t = await p.locator(".appraisal p.stats").innerText();
+    if (!/^Verified: (\d+) of \1 checks passed/.test(t)) throw new Error(`appraisal: ${t}`);
+  },
   chains: async (h) => {
     const { p } = h;
     await tokenPage(h);
@@ -806,7 +890,7 @@ ${JSON.stringify(terms, null, 2)}`;
   },
 };
 
-const WALLET_SCENES = ["buy", "withdraw", "loan", "repay", "heir", "claim", "letter", "gift", "v2-act", "vault", "call", "lend-borrow", "lend-repay", "liquidate"];
+const WALLET_SCENES = ["buy", "withdraw", "loan", "repay", "heir", "claim", "letter", "gift", "v2-act", "vault", "call", "lend-borrow", "lend-repay", "liquidate", "qa-list", "qa-loanask", "qa-fund", "qa-offer", "qa-near", "qa-mint"];
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "import") { // add an account from .keys/<id>.json to the recorder's Intear profile (key typed, never printed)
   const k = JSON.parse(fs.readFileSync(rest[0], "utf8"));
