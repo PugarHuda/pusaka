@@ -17,7 +17,8 @@ Three things to check, in this order:
    it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn). A will
    executed by attested code: an agent in a TEE claims for the heir with a key that never leaves the enclave and can
    only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR)).
-   Watch the next one happen during judging:
+   Failure cases, each with its test: a guardian loses their key, a guardian turns hostile, the holder is alive but
+   offline ([table](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)). Watch the next one happen during judging:
 
    [![Pusaka #27: heir countdown](https://pusaka-two.vercel.app/api/badge?id=27&contract=pusaka-btc.testnet&heir=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/27)
 
@@ -190,7 +191,9 @@ transaction hashes, and listed in full in [docs/FEATURES.md](docs/FEATURES.md#ev
   with the NFT.
 - **Smart Pusakas** (`pusaka-v2.testnet`, [docs/V2.md](docs/V2.md)): a keyless account per NFT, bundles, vault with
   clawback, covered calls, post-quantum lock, SIWE and BIP-322 proofs for exchanges.
-- **For agents:** `npx -y pusaka-mcp` (61 tools, spend caps), x402 audits. [docs/AGENTS.md](docs/AGENTS.md)
+- **For agents:** `npx -y pusaka-mcp` (61 tools, spend caps), x402 audits. [docs/AGENTS.md](docs/AGENTS.md).
+  A prompt-injected agent that tries to send the Bitcoin to an attacker is refused three ways before anything is signed:
+  `node mcp/injection-demo.mjs` ([log](docs/FEATURES.md#attack-demo-a-prompt-injected-agent-tries-to-pay-an-attacker)).
 - **Why it holds:** every attack in the [threat model](docs/THREAT-MODEL.md) has a test named after it, and
   [#/refused](https://pusaka-two.vercel.app/#/refused) shows 39 real attempts the contracts turned down.
 

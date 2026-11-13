@@ -382,7 +382,7 @@ export function Appraisal({ id, contract }) {
           <div className="appraisal-text">{res.text.split("\n").filter(Boolean).map((l, i) => <p key={i}>{l}</p>)}</div>
           <p className={res.verified ? "stats" : "warn"}>
             {res.verified ? `Verified: ${evidence.filter((c) => c.ok).length} of ${evidence.length} checks passed` : `Not verified: ${evidence.filter((c) => !c.ok).length} check(s) failed. Treat this text as unverified.`}
-            {" "}· {res.model}{res.cached ? " · from the last 15 min" : ""}
+            {" "}· {res.model}
           </p>
           <details><summary>Evidence</summary>
             <ul className="checks">{evidence.map((c, i) => (

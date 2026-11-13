@@ -7,9 +7,10 @@ import { prices, CONTRACT, SIBLINGS } from "@pusaka/shared";
 import { viewFinal } from "@pusaka/shared/audit";
 import { verifiedCompletion, NEARAI_MODEL } from "./_nearai.mjs";
 
-// ponytail: per instance; caps credit spend if the page is hammered. A firewall rule is the upgrade path.
-const CACHE_MS = 15 * 60_000, MAX_PER_HOUR = 60;
-const cache = new Map();
+// Nothing is kept server-side: the facts, the model's answer and the attestation are returned and dropped. The only
+// state is a request counter (a number, no content) that caps NEAR AI credit spend.
+// ponytail: per instance; a firewall rule is the upgrade path.
+const MAX_PER_HOUR = 60;
 let quota = { start: Date.now(), n: 0 };
 
 const pctLabel = (d) => `${Math.abs(Math.round(d * 1000) / 10)}% ${d < 0 ? "below" : "above"} the value of the BTC inside`;
@@ -22,7 +23,6 @@ async function facts(id, c) {
   const listed = info.listing && yocto(info.price_now ?? info.listing.price);
   const holders = [...new Set(info.history.flatMap(({ event: e }) => [e.owner, e.from, e.to].filter(Boolean)))];
   return {
-    key: `${c}:${id}:${info.sign_epoch}:${sats}:${info.token.owner_id}:${listed ?? ""}:${info.loan?.lender ?? info.loan?.principal ?? ""}`,
     data: {
       pusaka: Number(id), contract: c, network: "NEAR testnet (Bitcoin testnet3)", owner: info.token.owner_id,
       verified_btc_sats: sats, verified_by: "NEAR's on-chain Bitcoin light client; never signed away",
@@ -59,14 +59,10 @@ export default async function handler(req, res) {
   try {
     const f = await facts(id, c);
     if (!f) return res.status(404).json({ error: `no Pusaka #${id}` });
-    const hit = cache.get(f.key);
-    if (hit && Date.now() - hit.at < CACHE_MS) return res.status(200).json({ ...hit.body, cached: true });
     if (Date.now() - quota.start > 3_600_000) quota = { start: Date.now(), n: 0 };
     if (++quota.n > MAX_PER_HOUR) return res.status(429).json({ error: "Too many appraisals this hour; try again later." });
     const out = await verifiedCompletion([{ role: "system", content: SYSTEM }, { role: "user", content: JSON.stringify(f.data) }]);
-    const body = { id: Number(id), contract: c, facts: f.data, ...out };
-    cache.set(f.key, { at: Date.now(), body });
-    res.status(200).json(body);
+    res.status(200).json({ id: Number(id), contract: c, facts: f.data, ...out });
   } catch (e) {
     res.status(502).json({ error: String(e.message ?? e).slice(0, 300) });
   }
