@@ -664,7 +664,7 @@ reg("pusaka_redeem_nbtc", {
   return { ...out, tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
-// Pusaka lend (lend/, pusaka-lend.testnet): pUSD from a lender pool against a Pusaka's proven Bitcoin, priced by the
+// Pusaka lend (lend/, pusaka-lend.testnet): the pool's stablecoin (Circle testnet USDC since 13 Nov; pUSD before) from a lender pool against a Pusaka's proven Bitcoin, priced by the
 // median of 3 reporters, liquidated from 80% loan-to-value. pUSD is a test stablecoin (pusaka-usd.testnet, faucet).
 const LEND = NETWORK === "testnet" ? "pusaka-lend.testnet" : null, PUSD = "pusaka-usd.testnet";
 const lendView = (method, args = {}) => { if (!LEND) throw new Error(`No Pusaka lend on ${NETWORK}.`); return provider.callFunction({ contractId: LEND, method, args, blockQuery: { finality: "optimistic" } }); };
@@ -680,7 +680,7 @@ async function pusdReady(need) {
 }
 
 reg("pusaka_lend_pool", {
-  description: "The pUSD lending pool: cash, lent, the BTC price it uses (low side for borrowing, high side for liquidation; null = stale, borrowing and liquidation paused) and every open loan with its debt, loan-to-value and whether it can be liquidated now. With `token_id` (and `contract`), only that Pusaka's loan and the most it could borrow.",
+  description: "The USDC lending pool (Circle testnet USDC): cash, lent, the BTC price it uses (low side for borrowing, high side for liquidation; null = stale, borrowing and liquidation paused) and every open loan with its debt, loan-to-value and whether it can be liquidated now. With `token_id` (and `contract`), only that Pusaka's loan and the most it could borrow.",
   inputSchema: { token_id: z.string().optional(), contract: z.string().optional() },
 }, tool(async ({ token_id, contract = CONTRACT }) => {
   const [pool, loans, cfg] = await Promise.all([lendView("pool"), lendView("loans", { limit: 100 }), lendView("config")]);
@@ -692,7 +692,7 @@ reg("pusaka_lend_pool", {
 }));
 
 reg("pusaka_lend_borrow", {
-  description: "Holder: borrow pUSD from the pool against a Pusaka (up to 50% of its proven BTC's value at the pool's low price). The NFT goes to the pool, which holds it until repaid; nobody can ask for a Bitcoin signature meanwhile. If the pool refuses (stale price, over the limit, not enough cash) the NFT comes straight back and the refusal reason is returned.",
+  description: "Holder: borrow the pool's USDC against a Pusaka (up to the pool's max loan-to-value, 79.5% on testnet, of its proven BTC's value at the pool's low price). The NFT goes to the pool, which holds it until repaid; nobody can ask for a Bitcoin signature meanwhile. If the pool refuses (stale price, over the limit, not enough cash) the NFT comes straight back and the refusal reason is returned.",
   inputSchema: { token_id: z.string(), pusd: z.number().positive(), contract: z.string().optional() },
 }, tool(async ({ token_id, pusd, contract = CONTRACT }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
@@ -704,7 +704,7 @@ reg("pusaka_lend_borrow", {
 }));
 
 reg("pusaka_lend_repay", {
-  description: "Anyone: repay a pUSD loan in full (debt now plus a cent; the rest is refunded). The NFT goes back to the borrower; the interest goes to the pool's lenders. On testnet the pUSD comes from the faucet if needed.",
+  description: "Anyone: repay a pool loan in full (debt now plus a cent; the rest is refunded). The NFT goes back to the borrower; the interest goes to the pool's lenders. The repayer needs the pool's USDC (Circle testnet faucet, network NEAR); with the old pUSD pool the faucet topped it up.",
   inputSchema: { loan_id: z.string() },
 }, tool(async ({ loan_id }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
@@ -717,7 +717,7 @@ reg("pusaka_lend_repay", {
 }));
 
 reg("pusaka_lend_liquidate", {
-  description: "Anyone: liquidate a pUSD loan whose loan-to-value reached 80% at the pool's high price, paying max(debt, 95% of the BTC's value). The pool gets the debt, the borrower the rest, the caller the NFT and with it the Bitcoin key. Refused while the loan is healthy or the price is stale.",
+  description: "Anyone: liquidate a pool loan whose loan-to-value reached 80% at the pool's high price, paying max(debt, 95% of the BTC's value). The pool gets the debt, the borrower the rest, the caller the NFT and with it the Bitcoin key. Refused while the loan is healthy or the price is stale.",
   inputSchema: { loan_id: z.string() },
 }, tool(async ({ loan_id }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");

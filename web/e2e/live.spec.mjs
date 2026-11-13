@@ -299,7 +299,7 @@ test("a buyer sees whether anything the seller signed could still move what's in
     await expect(clean.getByText(what)).toBeVisible();
 });
 
-test("a Pusaka offers a pUSD loan from the pool, priced by 2 of 3 reporters, next to the NEAR loans", async ({ page }) => {
+test("a Pusaka offers a USDC loan from the pool, priced by 2 of 3 reporters, next to the NEAR loans", async ({ page }) => {
   await page.goto(CL + "#/pusaka/11");
   const sec = page.locator("section.lend");
   await expect(sec).toBeVisible({ timeout: 60_000 });

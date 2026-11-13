@@ -9,7 +9,7 @@ export const LEND = NETWORK === "testnet" ? "pusaka-lend.testnet" : null;
 const PUSD = "pusaka-usd.testnet"; // the test stablecoin with a faucet; the pool's own token is read from its config
 const U = 1_000_000;
 const v = (contractId, method, args = {}) => provider.callFunction({ contractId, method, args, blockQuery: { finality: "optimistic" } });
-const usd = (x) => `${(Number(x) / U).toLocaleString(undefined, { maximumFractionDigits: 2 })} pUSD`;
+const usd = (x) => `${(Number(x) / U).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`; // only used for Circle USDC messages; the panel names its pool's own token
 const pct = (bps) => `${(Number(bps) / 100).toFixed(1)}%`;
 
 async function ensureUsd(USD, accountId, need) {
