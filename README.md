@@ -135,7 +135,7 @@ npm install
 npm run demo
 ```
 
-What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the deployed contract; the numbers match what the script prints):
+What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the classic contract `pusaka-btc.testnet`, the one nobody can change, where the demo stock is; `PUSAKA_CONTRACT=pusaka-v2.testnet` runs it on Smart Pusakas; the numbers match what the script prints):
 
 0. Two fresh NEAR accounts are created through the public NEAR testnet faucet. **See:** `created pusaka-s-….testnet`.
 1. The seller mints a Pusaka. The contract fetches its Bitcoin key from the MPC contract on-chain. **See:** a `tb1q…` address.
