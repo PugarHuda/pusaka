@@ -29,7 +29,12 @@ export function LendPanel({ id, info, accountId, isOwner, onDone }) {
   const [msg, setMsg] = useState(null);
   const load = () => Promise.all([v(LEND, "pool"), v(LEND, "loans", { limit: 100 }), v(LEND, "config")])
     .then(([pool, loans, cfg]) => setS({ pool, cfg, loan: loans.find((l) => l.loan.nft === CONTRACT && l.loan.token_id === String(id)) }), () => setS({ error: true }));
-  useEffect(() => { if (LEND) load(); }, [id, info.token.owner_id]);
+  useEffect(() => {
+    if (!LEND) return;
+    load();
+    // reporters post if their prices are over 30 min old; then reload so the page shows the fresh one
+    fetch("/api/prices", { method: "POST" }).then((r) => r.ok && r.json()).then((j) => j?.reported?.length && load()).catch(() => {});
+  }, [id, info.token.owner_id]);
   if (!LEND || !s) return null;
   if (s.error) return <section><h2>Borrow from the pool</h2><p className="muted">Couldn't read the lending pool right now.</p></section>;
   const { pool, loan, cfg } = s, price = pool.price, USD = cfg.stable, sym = USD === PUSD ? "pUSD" : "USDC";

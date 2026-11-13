@@ -12,7 +12,8 @@
     "./nbtc": "./nbtc.mjs",
     "./tee": "./tee.mjs",
     "./holderproof": "./holderproof.mjs",
-    "./clean": "./clean.mjs"
+    "./clean": "./clean.mjs",
+    "./lendprice": "./lendprice.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

@@ -24,11 +24,7 @@ let USD = PUSD;
 try { USD = (await view("config", {}, "pusaka-lend.testnet")).stable; } catch {}
 const faucet = () => USD === PUSD;
 const U = 1_000_000n; // pUSD has 6 decimals
-const REPORTERS = {
-  "pusaka-relayer.testnet": ["mempool.space", async () => (await j("https://mempool.space/api/v1/prices")).USD],
-  "pusaka-admin.testnet": ["CoinGecko", async () => (await j("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd")).bitcoin.usd],
-  "pusaka-seller.testnet": ["Rhea nBTC", async () => Number((await j("https://api.ref.finance/list-token-price"))["nbtc.bridge.near"].price)],
-};
+import { SOURCES as REPORTERS, sourcePrice } from "../shared/lendprice.mjs";
 const j = async (u) => { const r = await fetch(u, { signal: AbortSignal.timeout(10_000) }); if (!r.ok) throw new Error(`${u}: HTTP ${r.status}`); return r.json(); };
 const link = (o) => `${NEAR_EXPLORER}/tx/${o.transaction.hash}`;
 const failed = (o) => JSON.stringify(o.receipts_outcome.map((r) => r.outcome.status)).match(/Failure[^}]*}/)?.[0];
@@ -63,10 +59,9 @@ if (cmd === "deploy") {
   console.log("pool:", JSON.stringify(await view("pool", {}, LEND)));
 } else if (cmd === "report") {
   const got = [];
-  for (const [who, [src, get]] of Object.entries(REPORTERS)) {
+  for (const [who, [src]] of Object.entries(REPORTERS)) {
     try {
-      const p = await get();
-      if (!(p > 1000 && p < 10_000_000)) throw new Error(`implausible ${p}`);
+      const p = (await sourcePrice(who)) / 1e6;
       const limited = process.env.LEND_REPORTER_KEYS && JSON.parse(process.env.LEND_REPORTER_KEYS)[who];
       const o = await callRaw(limited ? new Account(who, provider, limited) : account(who), "report_price", { price: String(Math.round(p * 1e6)) }, { receiver: LEND, tgas: 10 });
       got.push(p); console.log(`${who} (${src}): ${p} USD/BTC ${failed(o) ?? link(o)}`);
