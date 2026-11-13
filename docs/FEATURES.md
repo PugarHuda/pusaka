@@ -121,6 +121,18 @@ it "unknown", never clean. An heir sees the same check as **Clean to inherit** b
 from `verify.mjs` for every Pusaka for sale on both contracts (13 Nov: 5 of 5 clean) and, for an exchange, with a
 BIP-322 proof from `POST /api/verify` as `clean` plus `exchange_ready` in one JSON.
 
+**Proof of clean, anywhere.** `/api/badge?id=4&contract=pusaka-btc.testnet&clean=1` draws a badge with the BTC
+verified inside and the clean verdict read from every chain at that moment, with the time of the check on the badge
+(cached at most a minute, never served stale). A seller pastes it next to a listing on any marketplace; it stays
+honest because it is redrawn from the chains, and a chain that doesn't answer makes it "unchecked", never clean.
+Every token page has a button that copies it.
+
+**Inheritance watched by agents** (`mcp/heir-agents.mjs`, over MCP). The holder's agent tells the holder how long
+each Pusaka has before its heir can claim it and warns inside a window; it never checks in for them, because a will
+an agent keeps alive forever would never pass on. The heir's agent watches every Pusaka naming it and claims the
+ones whose holder has gone silent, gas-free. Live 13 Nov: it found classic #2 claimable (its holder silent since
+9 Nov) and claimed it for pusaka-seller.testnet.
+
 ## Demo history added on 13 Nov (`scripts/demo-cases.mjs` and friends), every case a real transaction
 
 | Case | What happened | Tx |
