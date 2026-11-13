@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@neardefi/shade-agent-js": "2.2.0",
+    "@phala/dstack-sdk": "0.5.7",
     "near-api-js": "7.4.0",
     "borsh": "2.0.0",
     "@noble/curves": "2.4.0",

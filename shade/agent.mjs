@@ -4,11 +4,15 @@
 // own TEE-born key, using the same code path as the Vercel relayer (api/_relayer.mjs).
 // GET / shows what it has done. Nothing here can move anyone's assets: prove_deposit only records
 // light-client-verified facts.
-// Heirs' claims from attested code: at boot the agent makes a second key that never leaves the enclave and shows its
+// Heirs' claims from attested code: the agent holds a second key (derived by dstack's KMS, so it survives reboots) that never leaves the enclave and shows its
 // public half at GET / (heir_key). An heir who adds it to their own account as a function-call key limited to
 // claim_inheritance on a Pusaka contract, and lists their account in HEIR_ACCOUNTS, gets their inheritance claimed by
 // this agent the moment the holder's silence runs out. The key can do nothing else, and dies with the enclave.
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { DstackClient } from "@phala/dstack-sdk";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { base58 } from "@scure/base";
 import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair } from "near-api-js";
 import { ShadeClient, sanitize } from "@neardefi/shade-agent-js";
 import { CONTRACT, SIBLINGS, nearProvider } from "@pusaka/shared";
@@ -52,8 +56,14 @@ setInterval(() => agent.register().catch((e) => fail("re-register", e)), 6 * 24 
 const [key] = agent.getPrivateKeys({ acknowledgeRisk: true });
 const prover = new Account(status.agent, nearProvider({ FailoverRpcProvider, JsonRpcProvider }), key);
 
-// the heirs' claim key: born here, never exported; heirs grant it claim_inheritance only
-const heirKey = KeyPair.fromRandom("ed25519");
+// the heirs' claim key, never exported; heirs grant it claim_inheritance only. In the TEE it is derived by dstack's KMS
+// for this app (GetKey), so it is the same key after a reboot and an heir adds it once; outside a TEE it is random.
+async function heirKeyPair() {
+  if (!existsSync("/var/run/dstack.sock")) return KeyPair.fromRandom("ed25519");
+  const seed = (await new DstackClient().getKey("pusaka/heir-claim", "ed25519")).key.slice(0, 32);
+  return KeyPair.fromString(`ed25519:${base58.encode(new Uint8Array([...seed, ...ed25519.getPublicKey(seed)]))}`);
+}
+const heirKey = await heirKeyPair();
 const HEIRS = (process.env.HEIR_ACCOUNTS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 status.heir_key = heirKey.getPublicKey().toString();
 status.heirs = HEIRS;
