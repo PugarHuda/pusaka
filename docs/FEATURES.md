@@ -62,12 +62,15 @@ NEAR: nonce floor; SOL: blockhash expiry). Any signature requested after a buyer
 `DeleteKey` or a function call, so no second key can be planted. The holder room checks ownership on every request,
 so a seller's signed-in session stops working the moment the NFT moves. The full list is in the threat model below.
 
-## pUSD from a pool: stablecoin loans priced by reporters, liquidated at a price (`lend/`)
+## USDC from a pool: stablecoin loans priced by reporters, liquidated at a price (`lend/`)
 
 A second way to borrow, next to the NEAR loans above, so the holder picks the risk. **NEAR from a person**: fixed term,
 no oracle, so a price dip can never cost the borrower the Bitcoin; the lender prices that risk into the rate.
-**pUSD from a pool** (`pusaka-lend.testnet`): any amount up to 50% of the BTC's value, repay any time, 8% a year;
-from 80% loan-to-value anyone may liquidate. Every token page shows both.
+**USDC from a pool** (`pusaka-lend.testnet`, Circle's own testnet USDC `3e2210e1…`): repay any time, 8% a year;
+from 80% loan-to-value anyone may liquidate. Every token page shows both. On testnet the pool runs tight (borrow up to
+79.5%) so that a real BTC price move of well under 1% can trigger a real liquidation while judges watch; a mainnet
+pool would borrow up to 50%. It started on pUSD, a faucet test token, and moved to Circle USDC with `reset`, which
+only the pool account can call and only while the pool is empty (no loan, no share).
 
 - **Collateral is the NFT itself.** `nft_transfer_call(pusaka-lend.testnet, token, {"borrow": "<pUSD>"})`: the pool
   reads `token_info` on-chain and values `verified_sats` (light-client proven, never signed away). While the pool holds
@@ -83,8 +86,8 @@ from 80% loan-to-value anyone may liquidate. Every token page shows both.
 - **Liquidation pays the borrower**: the liquidator pays max(debt, 95% of the BTC's value); the pool takes the debt,
   the borrower the rest (claimable if they can't receive pUSD), the liquidator the NFT and with it the Bitcoin key.
 - **Lenders** hold shares; interest repaid raises every share's value; `withdraw` while the cash is there.
-- **pUSD** (`pusaka-usd.testnet`) is a test stablecoin with a faucet (1,000 per call) and no value, like Unwrapped's
-  test USDC; the pool works with any NEP-141 set at init.
+- **The stablecoin** is any NEP-141 fixed in the config: Circle's testnet USDC now (from faucet.circle.com, network
+  NEAR); `pusaka-usd.testnet` (pUSD, a faucet test token) before 13 Nov ~12:40 local.
 
 Live 13 Nov (`scripts/lend.mjs`, `deployments/testnet-lend.json`): reports from all three sources (69,139 / 69,072 /
 69,146 -> 69,139 USD), 200 pUSD supplied, 1 pUSD borrowed against classic #11 at 42.5% LTV
@@ -94,7 +97,12 @@ earned the interest), then a request over 50% refused with the NFT sent straight
 ([H1oUW2Tp…](https://testnet.near.rocks/tx/H1oUW2TpMczMMyCYraHHJvFpJbXsVNCrc6ZqqJ9WrHvM)). 20 contract tests, each named
 after the attack it stops (a lying reporter outvoted, one source can't move either side, a stale price blocks
 liquidation, a liquidator can't pay under the floor, an approved account can't pledge someone else's Pusaka…).
-MCP: `pusaka_lend_pool`, `pusaka_lend_borrow`, `pusaka_lend_repay`, `pusaka_lend_liquidate`. `verify.mjs` checks the
+**Then on Circle USDC** (13 Nov): the pUSD shares withdrawn, `reset` to Circle USDC at 79.5/80
+([7tEDaihu…](https://testnet.near.rocks/tx/7tEDaihu6zeV29JuzbyVvwGVv6ubuETUvsAAMZzAmWsh)), 10 USDC supplied
+([BxcQTFLp…](https://testnet.near.rocks/tx/BxcQTFLpFxhs8AT2nSnLcFoCMf9A1aV1nKusju7esrcw)), and 3.544336 USDC borrowed
+against Smart Pusaka #1 (6,500 sats, $4.46 at 68,589 USD/BTC) at 79.49% loan-to-value
+([ERLuF8nf…](https://testnet.near.rocks/tx/ERLuF8nfwMTPBjywXRNxZpFHc8hLrbgfnk2Lj4xWTxX1)). It becomes liquidatable if the
+reporters' price falls about 0.64%; a watcher liquidates it then, on the real price. MCP: `pusaka_lend_pool`, `pusaka_lend_borrow`, `pusaka_lend_repay`, `pusaka_lend_liquidate`. `verify.mjs` checks the
 pool's code and rules against the record, that it holds its cash, and that every pledged Pusaka is held by it.
 
 ## Clean to buy (and clean to inherit)

@@ -1,6 +1,6 @@
 {
   "contract": "pusaka-lend.testnet",
-  "stable": "pusaka-usd.testnet",
+  "stable": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
   "wasm_sha256": "ac5e97fc6e9d70c7e39a2712eac83e3b87613df2804b14373fb3d6fc81fe4454",
   "pusd_wasm_sha256": "d9b45258150e64a21f712c34fc68d7d9ff0b7b969ccdf7b3a02f48b0eecc9fbf",
   "build": "NEP-330 reproducible: cargo near build reproducible-wasm in sourcescan/cargo-near:0.21.1-rust-1.96.1 (CI job lend-wasm; lend from run 43369725784 at commit 081fdd7, with reset; pUSD from run 43366666530 at d6830cd); contract_source_metadata names each",
@@ -15,8 +15,8 @@
       "pusaka-seller.testnet (Rhea nBTC)"
     ],
     "quorum": 2,
-    "max_age_ms": 3600000,
-    "max_ltv_bps": 5000,
+    "max_age_ms": 7200000,
+    "max_ltv_bps": 7950,
     "liq_ltv_bps": 8000,
     "liq_price_bps": 9500,
     "rate_bps": 800
@@ -37,7 +37,12 @@
       "5t6nhaa8MvrKdZNrwApPQdxECguMG7JpxvDL1EwGQUDm",
       "KNxFGJvjmTTVeXJYHgmRRWssRjfW48ugJkqsWRfkjnt"
     ],
-    "redeploy_with_reset": "91Bpxx6DbGxgQdkVxgzoM65Vj2dPziPC6Prgny2tkoUY"
+    "redeploy_with_reset": "91Bpxx6DbGxgQdkVxgzoM65Vj2dPziPC6Prgny2tkoUY",
+    "pusd_withdrawn": "FqQMqgnMexzjoQCpGUvb2ZbN3mcfvF1pKGabYy7kkE6H",
+    "reset_to_circle_usdc": "7tEDaihu6zeV29JuzbyVvwGVv6ubuETUvsAAMZzAmWsh",
+    "usdc_supply_10": "BxcQTFLpFxhs8AT2nSnLcFoCMf9A1aV1nKusju7esrcw",
+    "usdc_borrow_at_79_49pct_against_v2_1": "ERLuF8nfwMTPBjywXRNxZpFHc8hLrbgfnk2Lj4xWTxX1"
   },
-  "keys": "pusaka-lend.testnet and pusaka-usd.testnet still hold a full-access key; deleted with the others at the final step (needs the owner's 2x OK)"
+  "keys": "pusaka-lend.testnet and pusaka-usd.testnet still hold a full-access key; deleted with the others at the final step (needs the owner's 2x OK)",
+  "stable_note": "Circle's testnet USDC on NEAR since the reset of 13 Nov; pusaka-usd.testnet (pUSD) before"
 }
