@@ -17,6 +17,7 @@ import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
 import { cleanChecks, verdict } from "@pusaka/shared/clean";
+import { LendPanel } from "./lend.jsx";
 import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt, SelfCheck, Appraisal } from "./extras.jsx";
 import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
@@ -864,6 +865,7 @@ function Detail({ id, accountId }) {
           <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} bundle={bundleList} />
         </div>
         {!isOwner && <CleanToBuy t={t} />}
+        <LendPanel id={id} info={info} accountId={accountId} isOwner={isOwner} onDone={refresh} />
 
         <DetailNav sections={[["d-btc", "Bitcoin"], ["d-proof", "Proof"], CONTRACT === SMART && ["d-smart", "Smart features"], ["d-ai", "AI appraisal"], (t.eth || t.sol || t.nearAcct) && ["d-chains", "Other chains"], ["d-heir", "Heir & letter"], ["d-history", "History"]].filter(Boolean)} />
 

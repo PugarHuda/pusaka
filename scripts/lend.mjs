@@ -1,17 +1,20 @@
 // Pusaka lend (lend/): borrow pUSD against a Pusaka's proven Bitcoin, from a lender pool, liquidated at a price.
-//   node scripts/lend.mjs deploy <funder>                 create + deploy pusaka-usd.testnet (pUSD) and pusaka-lend.testnet
+//   node scripts/lend.mjs deploy [funder]                 create + deploy pusaka-usd.testnet (pUSD) and pusaka-lend.testnet
 //   node scripts/lend.mjs report                          each reporter posts BTC/USD from its own source
 //   node scripts/lend.mjs supply <lender> <usd>           faucet pUSD and supply it to the pool
 //   node scripts/lend.mjs borrow <holder> <contract> <token_id> <usd>
 //   node scripts/lend.mjs repay <payer> <loan_id>
 //   node scripts/lend.mjs status
+//   node scripts/lend.mjs reporter-keys                   add a key per reporter that can only call report_price (for CI)
+// In CI, LEND_REPORTER_KEYS = {"<reporter>": "ed25519:…"} holds only those limited keys (.github/workflows/lend-price.yml).
 // Price: three reporters, each posting one independent source (mempool.space, CoinGecko, Rhea's nBTC pool on NEAR);
 // the contract takes the median of fresh reports, at least 2 of 3, at most 1 hour old. On testnet all three
 // reporter accounts are ours: the quorum guards against one bad source, not against us (the README says so).
 import fs from "node:fs";
 import path from "node:path";
 import { KeyPair } from "near-api-js";
-import { account, callRaw, saveKey, exists, view, NEAR_EXPLORER } from "./lib.mjs";
+import { Account } from "near-api-js";
+import { account, callRaw, saveKey, exists, view, provider, NEAR_EXPLORER } from "./lib.mjs";
 
 export const LEND = "pusaka-lend.testnet", USD = "pusaka-usd.testnet";
 const U = 1_000_000n; // pUSD has 6 decimals
@@ -32,7 +35,7 @@ const register = async (who) => {
 };
 
 if (cmd === "deploy") {
-  const funder = a[0] ?? "pusaka-admin.testnet";
+  const funder = a[0] ?? "pusaka-buyer.testnet"; // storage: 1 NEAR per 100 kB of wasm, plus 0.6 for state
   for (const [id, wasm, args] of [
     [USD, "lend/pusd/target/near/pusd.wasm", {}],
     [LEND, "lend/target/near/pusaka_lend.wasm", { config: {
@@ -43,7 +46,7 @@ if (cmd === "deploy") {
     if (!(await exists(id))) {
       const kp = KeyPair.fromRandom("ed25519");
       saveKey(id, kp); // before the account exists: a crash can't lose the key
-      console.log(`created ${id}: ${link(await callRaw(account(funder), "create_account", { new_account_id: id, new_public_key: kp.getPublicKey().toString() }, { deposit: 4n * 10n ** 24n, tgas: 100, receiver: "testnet" }))}`);
+      console.log(`created ${id}: ${link(await callRaw(account(funder), "create_account", { new_account_id: id, new_public_key: kp.getPublicKey().toString() }, { deposit: BigInt(fs.statSync(path.join(import.meta.dirname, "..", wasm)).size) * 10n ** 19n + 6n * 10n ** 23n, tgas: 100, receiver: "testnet" }))}`);
     }
     const acct = account(id);
     console.log(`deployed ${id}: ${link(await acct.deployContract(fs.readFileSync(path.join(import.meta.dirname, "..", wasm))))}`);
@@ -58,11 +61,23 @@ if (cmd === "deploy") {
     try {
       const p = await get();
       if (!(p > 1000 && p < 10_000_000)) throw new Error(`implausible ${p}`);
-      const o = await callRaw(account(who), "report_price", { price: String(Math.round(p * 1e6)) }, { receiver: LEND, tgas: 10 });
+      const limited = process.env.LEND_REPORTER_KEYS && JSON.parse(process.env.LEND_REPORTER_KEYS)[who];
+      const o = await callRaw(limited ? new Account(who, provider, limited) : account(who), "report_price", { price: String(Math.round(p * 1e6)) }, { receiver: LEND, tgas: 10 });
       got.push(p); console.log(`${who} (${src}): ${p} USD/BTC ${failed(o) ?? link(o)}`);
     } catch (e) { console.log(`${who} (${src}): not reported (${e.message})`); }
   }
   console.log("contract price (median of fresh):", await view("price", {}, LEND));
+} else if (cmd === "reporter-keys") {
+  const out = {};
+  for (const who of Object.keys(REPORTERS)) {
+    const kp = KeyPair.fromRandom("ed25519");
+    // function-call key: receiver pusaka-lend.testnet, method report_price only, 0.25 NEAR of gas allowance
+    const o = await account(who).addFunctionCallAccessKey({ publicKey: kp.getPublicKey().toString(), contractId: LEND, methodNames: ["report_price"], allowance: 250_000_000_000_000_000_000_000n });
+    out[who] = kp.toString();
+    console.log(`${who}: report-only key ${kp.getPublicKey().toString()} ${link(o)}`);
+  }
+  fs.writeFileSync(path.join(import.meta.dirname, "..", ".keys", "lend-reporters.json"), JSON.stringify(out));
+  console.log("saved .keys/lend-reporters.json (set it as the LEND_REPORTER_KEYS repository secret)");
 } else if (cmd === "supply") {
   const [who, amount] = a, n = BigInt(Math.round(Number(amount) * 1e6));
   await register(who);

@@ -1,0 +1,18 @@
+{
+  "contract": "pusaka-lend.testnet",
+  "stable": "pusaka-usd.testnet",
+  "wasm_sha256": "fdf6ce1ce4b41335204fad1a77031f0fa1914a86ea8eb7fa0568e651f9ddbf23",
+  "pusd_wasm_sha256": "214cf023a636f99d83632f67d6af204d16a1a44e8460563b031ac451d48b4301",
+  "build": "cargo near build non-reproducible-wasm --no-abi (lend/ and lend/pusd/), commit 911cd37",
+  "config": { "nfts": ["pusaka-v2.testnet", "pusaka-btc.testnet"], "reporters": ["pusaka-relayer.testnet (mempool.space)", "pusaka-admin.testnet (CoinGecko)", "pusaka-seller.testnet (Rhea nBTC)"], "quorum": 2, "max_age_ms": 3600000, "max_ltv_bps": 5000, "liq_ltv_bps": 8000, "liq_price_bps": 9500, "rate_bps": 800 },
+  "live_13_nov": {
+    "deploy": "9PffaZb37Dq2QtSB6UncHsDAY7vEZF9u1dKd5dfhBZJi",
+    "init": "6hwXNT6LqYJndj6BhNAs4r7PGESpGwbpV8R9gBnTXsXZ",
+    "first_prices": ["6zmxS7uQtdBzKckDpH7ndP9YUeYcD27HRQjGDghMuX4V", "8fGBxYCRGGJ5kyBZshdXtsPnEq8bNuWE75LvUqq2RasB", "8orwyLDFahAoNrQnBefrdRyZRhGHvWTTBRU9TGMRcq48"],
+    "supply_200": "CRMTUJ8oGdGoz7qUnzBfMqE3DDn2UmZTvrXsuapqiqci",
+    "borrow_1_against_classic_11": "9vDbh8MNhdGggZUyLhVVhfqxAeqGK8H1Bi1V9iDNKNT8",
+    "repay": "95nnpFVb1ztDTczCYrAG2X7XjQNeBrEoM9n5EvUEzowA",
+    "borrow_over_50pct_refused_nft_returned": "H1oUW2TpMczMMyCYraHHJvFpJbXsVNCrc6ZqqJ9WrHvM"
+  },
+  "keys": "pusaka-lend.testnet and pusaka-usd.testnet still hold a full-access key; deleted with the others at the final step (needs the owner's 2x OK)"
+}

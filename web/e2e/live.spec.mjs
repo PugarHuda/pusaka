@@ -295,6 +295,15 @@ test("a buyer sees whether anything the seller signed could still move what's in
     await expect(clean.getByText(what)).toBeVisible();
 });
 
+test("a Pusaka offers a pUSD loan from the pool, priced by 2 of 3 reporters, next to the NEAR loans", async ({ page }) => {
+  await page.goto(CL + "#/pusaka/11");
+  const sec = page.locator("section.lend");
+  await expect(sec).toBeVisible({ timeout: 60_000 });
+  await expect(sec).toContainText("NEAR from a person");
+  await expect(sec).toContainText(/Pool [\d,.]+ pUSD/);
+  await expect(sec).toContainText(/median of 3 reporters|no fresh price/);
+});
+
 test("every Pusaka has an heir section; the will is read from the contract", async ({ page }) => {
   await page.goto("/#/pusaka/1");
   const s = page.locator("section", { has: page.getByRole("heading", { name: "Heir" }) });

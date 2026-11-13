@@ -1,0 +1,20 @@
+name: lend-price
+# Keeps pusaka-lend.testnet's BTC/USD fresh (max age 1 h): each reporter posts its own source (mempool.space,
+# CoinGecko, Rhea's nBTC pool) with a key that can only call report_price. Without fresh reports from 2 of 3
+# reporters the contract pauses borrowing and liquidation, as designed.
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+concurrency: { group: lend-price, cancel-in-progress: false }
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: '[ -n "$LEND_REPORTER_KEYS" ] && node scripts/lend.mjs report || echo "no LEND_REPORTER_KEYS secret: nothing reported"'
+        env: { LEND_REPORTER_KEYS: "${{ secrets.LEND_REPORTER_KEYS }}" }

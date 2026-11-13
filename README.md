@@ -23,15 +23,16 @@ Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin 
 |---|---|---|---|---|
 | Bitcoin inside | none (Satchel: 16 EVM chains), or native BTC read off-chain | native UTXOs, SPV-proven on NEAR | native, proven once for one deal | **native UTXOs proven on NEAR, plus nBTC in the NFT's own account, redeemable back to native BTC (done live)** |
 | Balance stays right after spends | EVM sign record (Satchel); otherwise nothing on NEAR | proven minus a signature ledger | n/a (escrow ends) | **proven minus every signed output, and a buy fails if anything was signed since the buyer looked (sign epoch)** |
-| Borrowing | no | USDC from a pool, oracle price, liquidation | no | **NEAR from any lender: standing offers, gas-free accept, refinance, partial repay; no oracle can liquidate it early, only the due date** |
+| Borrowing | no | USDC from a pool, oracle price, liquidation | no | **both, and the holder picks the risk: NEAR from a person (standing offers, gas-free accept, refinance; fixed term, no oracle, so a price dip never costs the Bitcoin), or pUSD from a pool (`pusaka-lend.testnet`: 50% max LTV, liquidation from 80% at ≥95% of the BTC's value with the surplus paid to the borrower, 2-of-3 reporter price where one outlier can't move either side)** |
 | "Clean to buy" check | yes for EVM (Satchel) | n/a | n/a | **yes, on every token page: Bitcoin, every EVM chain, Solana and its NEAR account (NEAR, nBTC), loan status** |
 | Outside NEAR | no | no | no | **SIWE sign-in and BIP-322 proofs an exchange checks at `#/verify` or `POST /api/verify`, with the sats proven at that address** |
 | What else it does | transfer, sale | loan | one swap | **Dutch auctions, Mintbase, NEAR Intents exit, heir with guardians, gift link, staking, bundles, sealed letters, NEAR AI TEE appraisal, deposits proven by an attested Shade Agent, 57-tool MCP server, x402 audits** |
 | Code anyone can trust | Satchel: locked, 0 keys | upgradeable | varies | **classic contract keyless, upgrades renounced, reproducible build (NEP-330); every event replayed from genesis by `verify.mjs`** |
 
-Where others are ahead, said plainly: Unwrapped lends stablecoins from a pool with oracle-priced liquidation (Pusaka lends
-NEAR peer to peer, fixed term, and shows LTV and the BTC price at which a loan stops being covered); Satchel covers 16
-EVM chains and is on mainnet (Pusaka covers Bitcoin first, EVM/Solana/NEAR alongside, on testnet).
+Where others are ahead, said plainly: Unwrapped's pool lends real-world-shaped test USDC with a longer track record of
+liquidation logic; Pusaka's pUSD pool is newer, and its three price reporters (mempool.space, CoinGecko, Rhea's nBTC
+pool) are all run by us on testnet, so the 2-of-3 quorum guards against one bad source, not against us. Satchel covers
+16 EVM chains and is on mainnet (Pusaka covers Bitcoin first, EVM/Solana/NEAR alongside, on testnet).
 
 One NFT is a whole set of wallets: the same MPC key holds an address on every EVM chain (ETH, USDC), a second Ed25519
 key is a Solana address and the NFT's own NEAR account. **Smart Pusakas** (`pusaka-v2.testnet`) add a keyless NEAR
