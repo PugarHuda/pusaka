@@ -279,3 +279,27 @@ fn a_busy_loan_cannot_be_repaid_twice() {
     }));
     assert!(again.is_err());
 }
+
+#[test]
+#[should_panic(expected = "NotEmpty")]
+fn the_pool_cannot_be_reset_while_lenders_or_borrowers_are_in_it() {
+    let l = with_loan(50 * U);
+    env::state_write(&l);
+    ctx(LEND);
+    let cfg = l.config();
+    Lend::reset(cfg);
+}
+
+#[test]
+fn an_empty_pool_can_start_over_with_another_stablecoin() {
+    let mut l = new_lend();
+    supply(&mut l, "lender.testnet", 10 * U);
+    ctx("lender.testnet");
+    let _ = l.withdraw(U128(10 * U));
+    env::state_write(&l);
+    ctx(LEND);
+    let mut cfg = l.config();
+    cfg.stable = acc("usdc.testnet");
+    let fresh = Lend::reset(cfg);
+    assert_eq!(fresh.config().stable, acc("usdc.testnet"));
+}

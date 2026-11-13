@@ -5,6 +5,7 @@
 //   node scripts/lend.mjs borrow <holder> <contract> <token_id> <usd>
 //   node scripts/lend.mjs repay <payer> <loan_id>
 //   node scripts/lend.mjs status
+//   node scripts/lend.mjs reset <max_ltv_bps> <liq_ltv_bps>   empty pool only: switch it to Circle USDC with these ratios
 //   node scripts/lend.mjs reporter-keys                   add a key per reporter that can only call report_price (for CI)
 // In CI, LEND_REPORTER_KEYS = {"<reporter>": "ed25519:…"} holds only those limited keys (.github/workflows/lend-price.yml).
 // Price: three reporters, each posting one independent source (mempool.space, CoinGecko, Rhea's nBTC pool on NEAR);
@@ -16,7 +17,12 @@ import { KeyPair } from "near-api-js";
 import { Account } from "near-api-js";
 import { account, callRaw, saveKey, exists, view, provider, NEAR_EXPLORER } from "./lib.mjs";
 
-export const LEND = "pusaka-lend.testnet", USD = "pusaka-usd.testnet";
+export const LEND = "pusaka-lend.testnet", PUSD = "pusaka-usd.testnet";
+export const USDC = "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af"; // Circle's USDC on NEAR testnet
+// the pool's stablecoin, read from the contract (pUSD at first, Circle USDC after `reset`); deploy uses pUSD
+let USD = PUSD;
+try { USD = (await view("config", {}, "pusaka-lend.testnet")).stable; } catch {}
+const faucet = () => USD === PUSD;
 const U = 1_000_000n; // pUSD has 6 decimals
 const REPORTERS = {
   "pusaka-relayer.testnet": ["mempool.space", async () => (await j("https://mempool.space/api/v1/prices")).USD],
@@ -27,7 +33,7 @@ const j = async (u) => { const r = await fetch(u, { signal: AbortSignal.timeout(
 const link = (o) => `${NEAR_EXPLORER}/tx/${o.transaction.hash}`;
 const failed = (o) => JSON.stringify(o.receipts_outcome.map((r) => r.outcome.status)).match(/Failure[^}]*}/)?.[0];
 const logs = (o) => o.receipts_outcome.flatMap((r) => r.outcome.logs).filter((l) => l.includes("pusaka-lend")).map((l) => JSON.parse(l.slice(11)).event);
-const usd = (x) => `${(Number(x) / 1e6).toLocaleString()} pUSD`;
+const usd = (x) => `${(Number(x) / 1e6).toLocaleString()} ${faucet() ? "pUSD" : "USDC"}`;
 
 const [cmd, ...a] = process.argv.slice(2);
 const register = async (who) => {
@@ -82,7 +88,7 @@ if (cmd === "deploy") {
 } else if (cmd === "supply") {
   const [who, amount] = a, n = BigInt(Math.round(Number(amount) * 1e6));
   await register(who);
-  for (let left = n; left > 0n; left -= left > 1000n * U ? 1000n * U : left)
+  if (faucet()) for (let left = n; left > 0n; left -= left > 1000n * U ? 1000n * U : left)
     await callRaw(account(who), "faucet", { amount: String(left > 1000n * U ? 1000n * U : left) }, { receiver: USD, tgas: 30 });
   const o = await callRaw(account(who), "ft_transfer_call", { receiver_id: LEND, amount: String(n), msg: "supply" }, { deposit: 1n, tgas: 100, receiver: USD });
   console.log(`${who} supplied ${usd(n)}: ${failed(o) ?? link(o)}; shares ${(await view("shares_of", { account_id: who }, LEND))}`);
@@ -98,10 +104,28 @@ if (cmd === "deploy") {
   const l = await view("loan", { loan_id: id }, LEND);
   const pay = BigInt(l.debt) + U / 100n; // a cent extra for the seconds until it lands; the rest comes back
   const have = BigInt(await view("ft_balance_of", { account_id: who }, USD));
-  if (have < pay) await callRaw(account(who), "faucet", { amount: String(pay - have) }, { receiver: USD, tgas: 30 });
+  if (have < pay) { if (!faucet()) throw new Error(`${who} has ${usd(have)}; needs ${usd(pay)}`); await callRaw(account(who), "faucet", { amount: String(pay - have) }, { receiver: USD, tgas: 30 }); }
   const o = await callRaw(account(who), "ft_transfer_call", { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ repay: Number(id) }) }, { deposit: 1n, tgas: 200, receiver: USD });
   console.log(`${who} repaid loan ${id} (debt ${usd(l.debt)}): ${logs(o).join(", ")} ${failed(o) ?? ""} ${link(o)}`);
+} else if (cmd === "withdraw") {
+  const [who] = a;
+  const shares = await view("shares_of", { account_id: who }, LEND);
+  const o = await callRaw(account(who), "withdraw", { shares }, { receiver: LEND, tgas: 100 });
+  console.log(`${who} withdrew ${shares} shares: ${logs(o).join(", ")} ${failed(o) ?? link(o)}`);
+} else if (cmd === "liquidate") {
+  const [who, id] = a;
+  const l = await view("loan", { loan_id: id }, LEND);
+  if (!l?.liquidatable) throw new Error(`loan ${id} is not liquidatable: LTV ${l && l.ltv_bps / 100}%`);
+  const pay = BigInt(Math.max(Number(l.debt), Math.ceil(Number(l.value) * 0.95))) + U / 100n;
+  const o = await callRaw(account(who), "ft_transfer_call", { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ liquidate: Number(id) }) }, { deposit: 1n, tgas: 250, receiver: USD });
+  console.log(`${who} liquidated loan ${id} (debt ${usd(l.debt)}, BTC worth ${usd(l.value)}, LTV ${l.ltv_bps / 100}%): ${logs(o).join(", ")} ${failed(o) ?? link(o)}`);
+} else if (cmd === "reset") {
+  const [maxLtv = "7950", liqLtv = "8000"] = a;
+  const cfg = await view("config", {}, LEND);
+  const o = await callRaw(account(LEND), "reset", { config: { ...cfg, stable: USDC, max_ltv_bps: Number(maxLtv), liq_ltv_bps: Number(liqLtv) } }, { receiver: LEND, tgas: 50 });
+  console.log(`reset to Circle USDC, max LTV ${maxLtv / 100}%, liquidation from ${liqLtv / 100}%: ${failed(o) ?? link(o)}`);
+  console.log("config:", JSON.stringify(await view("config", {}, LEND)));
 } else if (cmd === "status") {
   console.log("price:", await view("price", {}, LEND), "\nreports:", JSON.stringify(await view("reports", {}, LEND)));
   console.log("pool:", JSON.stringify(await view("pool", {}, LEND)), "\nloans:", JSON.stringify(await view("loans", {}, LEND), null, 1));
-} else console.log("usage: deploy <funder> | report | supply <lender> <usd> | borrow <holder> <contract> <token_id> <usd> | repay <payer> <loan_id> | status");
+} else console.log("usage: deploy <funder> | report | reset <max_ltv_bps> <liq_ltv_bps> | withdraw <lender> | liquidate <who> <loan_id> | supply <lender> <usd> | borrow <holder> <contract> <token_id> <usd> | repay <payer> <loan_id> | status");

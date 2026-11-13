@@ -670,11 +670,13 @@ const LEND = NETWORK === "testnet" ? "pusaka-lend.testnet" : null, PUSD = "pusak
 const lendView = (method, args = {}) => { if (!LEND) throw new Error(`No Pusaka lend on ${NETWORK}.`); return provider.callFunction({ contractId: LEND, method, args, blockQuery: { finality: "optimistic" } }); };
 const lendEvents = (o) => o.receipts_outcome.flatMap((r) => r.outcome.logs).filter((l) => l.includes('"pusaka-lend"')).map((l) => JSON.parse(l.slice(11)));
 async function pusdReady(need) {
-  if (!(await provider.callFunction({ contractId: PUSD, method: "storage_balance_of", args: { account_id: account.accountId } })))
-    await account.callFunctionRaw({ contractId: PUSD, methodName: "storage_deposit", args: { account_id: account.accountId }, deposit: 1_250_000_000_000_000_000_000n, gas: teraToGas(30) });
-  let short = BigInt(need) - BigInt(await provider.callFunction({ contractId: PUSD, method: "ft_balance_of", args: { account_id: account.accountId } }));
+  const PUSD_ = (await lendView("config")).stable; // pUSD (faucet) or Circle USDC, whatever the pool lends
+  if (!(await provider.callFunction({ contractId: PUSD_, method: "storage_balance_of", args: { account_id: account.accountId } })))
+    await account.callFunctionRaw({ contractId: PUSD_, methodName: "storage_deposit", args: { account_id: account.accountId }, deposit: 1_250_000_000_000_000_000_000n, gas: teraToGas(30) });
+  let short = BigInt(need) - BigInt(await provider.callFunction({ contractId: PUSD_, method: "ft_balance_of", args: { account_id: account.accountId } }));
+  if (short > 0n && PUSD_ !== PUSD) throw new Error(`Needs ${Number(short) / 1e6} more USDC (Circle's testnet faucet, network NEAR).`);
   for (; short > 0n; short -= 1_000_000_000n) // testnet faucet, at most 1,000 pUSD a call
-    await account.callFunctionRaw({ contractId: PUSD, methodName: "faucet", args: { amount: String(short > 1_000_000_000n ? 1_000_000_000n : short) }, gas: teraToGas(30) });
+    await account.callFunctionRaw({ contractId: PUSD_, methodName: "faucet", args: { amount: String(short > 1_000_000_000n ? 1_000_000_000n : short) }, gas: teraToGas(30) });
 }
 
 reg("pusaka_lend_pool", {
@@ -710,7 +712,7 @@ reg("pusaka_lend_repay", {
   if (!l) throw new Error(`No open loan ${loan_id}.`);
   const pay = BigInt(l.debt) + 10_000n;
   await pusdReady(pay);
-  const o = await account.callFunctionRaw({ contractId: PUSD, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(200), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ repay: Number(loan_id) }) } });
+  const o = await account.callFunctionRaw({ contractId: (await lendView("config")).stable, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(200), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ repay: Number(loan_id) }) } });
   return { debt_pusd: Number(l.debt) / 1e6, events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
@@ -724,7 +726,7 @@ reg("pusaka_lend_liquidate", {
   if (!l.liquidatable) throw new Error(`Loan ${loan_id} is healthy (loan-to-value ${l.ltv_bps === null ? "unknown: stale price" : l.ltv_bps / 100 + "%"}); it can't be liquidated.`);
   const pay = BigInt(Math.max(Number(l.debt), Math.ceil(Number(l.value) * 0.95))) + 1_000_000n;
   await pusdReady(pay);
-  const o = await account.callFunctionRaw({ contractId: PUSD, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(250), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ liquidate: Number(loan_id) }) } });
+  const o = await account.callFunctionRaw({ contractId: (await lendView("config")).stable, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(250), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ liquidate: Number(loan_id) }) } });
   return { events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 

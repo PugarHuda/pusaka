@@ -155,6 +155,17 @@ impl Lend {
         }
     }
 
+    /// Starts the pool over with new rules (another stablecoin, other ratios), only while it is empty: no open loan,
+    /// no lender share, nothing owed. Only the pool account itself can call it, so once its key is deleted it is gone.
+    #[private]
+    #[init(ignore_state)]
+    pub fn reset(config: Config) -> Self {
+        let old: Lend = env::state_read().unwrap_or_else(|| env::panic_str("NoState"));
+        require!(old.loans.is_empty() && old.total_shares == 0 && old.borrowed == 0, "NotEmpty: repay every loan and withdraw every share first");
+        // stale reports from the old reporters stay in their map; the new config decides whose count
+        Self { next_id: old.next_id, ..Self::new(config) }
+    }
+
     // ---------- price ----------
 
     pub fn report_price(&mut self, price: U128) {
