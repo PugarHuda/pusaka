@@ -32,7 +32,7 @@ await show("pusaka_inspect", { token_id: "1" });
 const LTV_REFUSED = /Loan-to-value .* is above|could not be cross-checked/;
 const refused = (r, why) => { if (!r.isError || !why.test(r.content[0].text)) throw new Error(`expected a refusal matching ${why}`); };
 // Guard: #1 asks for a loan at well under 2% LTV; an agent capped at 0.1% must refuse.
-refused(await show("pusaka_fund_loan", { token_id: "1", max_ltv: 0.001 }), LTV_REFUSED);
+refused(await show("pusaka_fund_loan", { token_id: "25", max_ltv: 0.001 }), LTV_REFUSED); // #25 keeps an open loan request
 // Guard: price cap. #4 is listed at 0.5 NEAR; an agent capped at 0.1 must refuse.
 refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above your max/);
 // Guard: outflows (give, withdraw_*) are off unless the operator opts in.
