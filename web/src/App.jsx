@@ -934,7 +934,7 @@ function Detail({ id, accountId }) {
 
         <div id="d-heir"><HeirSection id={id} owner={owner} accountId={accountId} isOwner={isOwner} onDone={refresh} t={t} />
 
-        {!IS_SIBLING && <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} />}</div>
+        <HolderRoom key={`${id}:${accountId}`} id={id} owner={owner} accountId={accountId} canSeal={isOwner && !locked} onDone={refresh} extra={info.token.metadata?.extra} /></div>
 
         <History history={info.history} />
       </div>
@@ -1501,7 +1501,7 @@ function HolderRoom({ id, owner, accountId, canSeal, onDone, extra: extraJson })
   const [msg, setMsg] = useState(null);
 
   const ask = async (body) => {
-    const r = await fetch("/api/holder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch("/api/holder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, contract: CONTRACT }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error ?? `holder room answered ${r.status}`);
     return j;

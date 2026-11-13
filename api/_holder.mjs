@@ -4,7 +4,7 @@ import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } f
 import { FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
-import { CONTRACT, nearProvider } from "@pusaka/shared";
+import { CONTRACT, SIBLINGS, nearProvider } from "@pusaka/shared";
 
 const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
 const MAX_AGE_MS = 5 * 60_000;
@@ -59,45 +59,47 @@ export async function verifyHolder(tokenId, auth, recipient) {
 }
 
 /** Checked on every request, so the room closes for a seller the moment the NFT moves. */
-export async function currentOwner(tokenId) {
-  const t = await provider.callFunction({ contractId: CONTRACT, method: "nft_token", args: { token_id: String(tokenId) }, blockQuery: { finality: "optimistic" } });
+export async function currentOwner(tokenId, contract = CONTRACT) {
+  const t = await provider.callFunction({ contractId: contract, method: "nft_token", args: { token_id: String(tokenId) }, blockQuery: { finality: "optimistic" } });
   if (!t) throw fail(404, `no Pusaka #${tokenId}`);
   return t;
 }
 
 // Legacy (v1:) letters only: the key is derived from the relayer secret, so the operator could read
 // them. New letters are ckd1:, sealed in the browser with a NEAR MPC CKD key (shared/ckd.mjs).
-function letterKey() {
+// The salt is the contract a letter belongs to: classic letters were sealed when it was the main contract.
+function letterKey(contract = CONTRACT) {
   const secret = process.env.LETTER_SECRET ?? process.env.RELAYER_PRIVATE_KEY;
   if (!secret) throw fail(503, "holder room is not configured");
-  return Buffer.from(hkdfSync("sha256", secret, CONTRACT, "pusaka-letter-v1", 32));
+  return Buffer.from(hkdfSync("sha256", secret, contract, "pusaka-letter-v1", 32));
 }
 
 /** AES-256-GCM; the token id is bound in as AAD, so a sealed letter can't be pasted onto another Pusaka. */
-export function seal(tokenId, text) {
+export function seal(tokenId, text, contract = CONTRACT) {
   if (typeof text !== "string" || !text.trim()) throw fail(400, "write something first");
   if (Buffer.byteLength(text) > 1400) throw fail(400, "letters are limited to 1400 bytes");
   const iv = randomBytes(12);
-  const c = createCipheriv("aes-256-gcm", letterKey(), iv).setAAD(Buffer.from(`pusaka:${tokenId}`));
+  const c = createCipheriv("aes-256-gcm", letterKey(contract), iv).setAAD(Buffer.from(`pusaka:${tokenId}`));
   const ct = Buffer.concat([c.update(text, "utf8"), c.final()]);
   return "v1:" + Buffer.concat([iv, c.getAuthTag(), ct]).toString("base64");
 }
 
-export function open(tokenId, sealed) {
+export function open(tokenId, sealed, contract = CONTRACT) {
   if (!sealed?.startsWith("v1:")) return null;
   const b = Buffer.from(sealed.slice(3), "base64");
-  const d = createDecipheriv("aes-256-gcm", letterKey(), b.subarray(0, 12)).setAAD(Buffer.from(`pusaka:${tokenId}`));
+  const d = createDecipheriv("aes-256-gcm", letterKey(contract), b.subarray(0, 12)).setAAD(Buffer.from(`pusaka:${tokenId}`));
   d.setAuthTag(b.subarray(12, 28));
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
 }
 
-/** {token_id, auth, action: "open" | "seal", text?} -> the room's content for the current holder only. */
-export async function holderRoom({ token_id, auth, action = "open", text }, recipient) {
+/** {token_id, contract?, auth, action: "open" | "seal", text?} -> the room's content for the current holder only. */
+export async function holderRoom({ token_id, contract = CONTRACT, auth, action = "open", text }, recipient) {
   if (!/^\d{1,10}$/.test(String(token_id ?? ""))) throw fail(400, "token_id must be a number");
+  if (![CONTRACT, ...SIBLINGS].includes(contract)) throw fail(400, `contract must be one of ${[CONTRACT, ...SIBLINGS].join(", ")}`);
   const who = await verifyHolder(token_id, auth, recipient);
-  const token = await currentOwner(token_id);
+  const token = await currentOwner(token_id, contract);
   if (token.owner_id !== who) throw fail(403, `${who} doesn't hold Pusaka #${token_id}; only its current holder can open this room`);
-  if (action === "seal") return { sealed: seal(token_id, text) };
+  if (action === "seal") return { sealed: seal(token_id, text, contract) };
   const extra = (() => { try { return JSON.parse(token.metadata?.extra ?? "{}"); } catch { return {}; } })();
-  return { holder: who, creator: extra.creator ?? null, letter: extra.letter ? open(token_id, extra.letter) : null };
+  return { holder: who, creator: extra.creator ?? null, letter: extra.letter ? open(token_id, extra.letter, contract) : null };
 }
