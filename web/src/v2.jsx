@@ -2,7 +2,7 @@
 // lock, an agent budget, sign-in, BIP-322, rental, Bitcoin sale, vault and call options. How each works: #/docs.
 // Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
-import { ORIGINAL, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, NBTC, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
+import { ORIGINAL, SIBLINGS, nbtcDepositAddress, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, NBTC, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
 import { redeemPlan } from "@pusaka/shared/nbtc";
 import { witnessFromMpc } from "@pusaka/shared/bip322";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
@@ -25,7 +25,7 @@ async function intentsOf(account) {
 /** Everything a buyer of the NFT also gets: Pusakas (v1 or v2) its account holds, with their proven Bitcoin, and its USDC. */
 async function insideOf(account) {
   const pusakas = [];
-  for (const c of [ORIGINAL, V2]) for (const t of await view("nft_tokens_for_owner", { account_id: account, from_index: "0", limit: 20 }, c).catch(() => []))
+  for (const c of [...new Set([ORIGINAL, V2, ...SIBLINGS])]) for (const t of await view("nft_tokens_for_owner", { account_id: account, from_index: "0", limit: 20 }, c).catch(() => []))
     pusakas.push({ c, id: t.token_id, sats: Number((await view("token_info", { token_id: t.token_id }, c)).verified_sats) });
   const usdc = Number(await view("ft_balance_of", { account_id: account }, USDC).catch(() => 0)) / 1e6;
   const nbtc = Number(await view("ft_balance_of", { account_id: account }, NBTC).catch(() => 0));
@@ -85,8 +85,9 @@ export function V2Token({ id, accountId, embedded = false }) {
       const [acct, alias, pq, ag, user, btcSale, vault, call] = await Promise.all([view("account_of", { token_id: id }), view("alias_of", { token_id: id }), view("pq_key_of", { token_id: id }),
         view("agent_of", { token_id: id }), view("user_of", { token_id: id }), view("btc_listing_of", { token_id: id }),
         view("vault_of", { token_id: id }).catch(() => null), view("call_of", { token_id: id }).catch(() => null)]);
-      const [a, b, intents, inside] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null), insideOf(acct).catch(() => null)]);
-      return { info, acct, alias, pq, ag, user, btcSale, vault, call, a, b, intents, inside };
+      const [a, b, intents, inside, nbtcIn] = await Promise.all([accountOf(acct), accountOf(alias), intentsOf(acct).catch(() => null), insideOf(acct).catch(() => null),
+        nbtcDepositAddress(acct).catch(() => null)]);
+      return { info, acct, alias, pq, ag, user, btcSale, vault, call, a, b, intents, inside, nbtcIn };
     })().catch((e) => ({ error: e.message })).then((x) => live && setS(x));
     return () => { live = false; };
   }, [id, tick]);
@@ -114,11 +115,13 @@ export function V2Token({ id, accountId, embedded = false }) {
       {!s.inside ? <p className="muted">Couldn't read its account's holdings.</p>
         : !s.inside.pusakas.length && !s.inside.usdc && !s.inside.nbtc ? <p className="muted">Nothing besides the above. Put a Pusaka or tokens into its account and they're sold with it.</p>
         : <ul className="v2-inside">
-            {s.inside.pusakas.map((p) => <li key={p.c + p.id}><a href={`${location.pathname}${p.c === V2 ? `?contract=${V2}` : ""}#/pusaka/${p.id}`}>{p.c === V2 ? "Smart Pusaka" : "Pusaka"} #{p.id}</a>: {p.sats.toLocaleString()} sats of Bitcoin proven inside</li>)}
+            {s.inside.pusakas.map((p) => <li key={p.c + p.id}><a href={`${location.pathname}${p.c === ORIGINAL ? "" : `?contract=${p.c}`}#/pusaka/${p.id}`}>{p.c === V2 ? "Smart Pusaka" : "Classic Pusaka"} #{p.id}</a>: {p.sats.toLocaleString()} sats of Bitcoin proven inside</li>)}
             {s.inside.nbtc > 0 && <li>{s.inside.nbtc.toLocaleString()} sats of nBTC (Omni Bridge) in its account: Bitcoin on NEAR, redeemable to this Pusaka's own Bitcoin address</li>}
             {s.inside.usdc > 0 && <li>{s.inside.usdc} USDC in its account</li>}
             <li className="muted">All of it changes hands with this NFT and leaves only through its holder; the account can move assets, never sign for them, so nothing can be kept back after a sale.</li>
           </ul>}
+      {s.nbtcIn && <p className="muted">To add nBTC: send native BTC (at least 2,500 sats) to the Omni Bridge address <code className="addr">{s.nbtcIn}</code>.
+        Near-One's relayer checks the deposit against NEAR's Bitcoin light client and mints nBTC (less a 200-sat fee) into this Pusaka's own account.</p>}
       <h2>Post-quantum lock</h2>
       {s.pq ? <p>On: every action by the holder needs a fresh unlock signed with their ML-DSA-65 key and checked on-chain
         {s.pq.open ? <> (<strong>open now</strong>, until block {s.pq.unlocked_until_block})</> : <> (<strong>locked</strong>)</>}. Unlocks used: {s.pq.nonce}.</p>

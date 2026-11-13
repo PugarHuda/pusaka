@@ -276,6 +276,14 @@ test("a Pusaka shows the nBTC in its own NEAR account and its Omni Bridge deposi
   await expect(sec.locator(".addr")).toContainText(/^tb1q[0-9a-z]{38,}/);
   await page.goto("/#/pusaka/4"); // a Smart Pusaka counts the nBTC in its account as Bitcoin inside, redeemable to its own address
   await expect(page.getByText(/[1-9][\d,]* sats of nBTC \(Omni Bridge\) in its account/)).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByText(/^To add nBTC: send native BTC/)).toContainText(/tb1q[0-9a-z]{38,}/); // its own Omni deposit address
+});
+
+test("a Smart Pusaka lists the classic Pusakas its account holds, linked on their own contract", async ({ page }) => {
+  await page.goto("/#/pusaka/3"); // v2 #3's account holds classic #26 (12 Nov demo data)
+  const link = page.getByRole("link", { name: /^Classic Pusaka #\d+$/ }).first();
+  await expect(link).toBeVisible({ timeout: 40_000 });
+  await expect(link).toHaveAttribute("href", /\?contract=pusaka-btc\.testnet#\/pusaka\/\d+$/);
 });
 
 test("every Pusaka has an heir section; the will is read from the contract", async ({ page }) => {
