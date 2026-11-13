@@ -688,7 +688,7 @@ reg("pusaka_lend_pool", {
   const info = await provider.callFunction({ contractId: contract, method: "token_info", args: { token_id } });
   const loan = loans.find((l) => l.loan.nft === contract && l.loan.token_id === token_id) ?? null;
   const max = pool.price ? Math.floor(Number(info.verified_sats) * Number(pool.price.low) / 1e8 * cfg.max_ltv_bps / 10_000) : null;
-  return { pool, loan, verified_sats: Number(info.verified_sats), max_borrow_pusd: max === null ? null : max / 1e6 };
+  return { pool, loan, verified_sats: Number(info.verified_sats), max_borrow_usdc: max === null ? null : max / 1e6 };
 }));
 
 reg("pusaka_lend_borrow", {
