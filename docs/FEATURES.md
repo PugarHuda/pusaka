@@ -62,6 +62,9 @@ NEAR: nonce floor; SOL: blockhash expiry). Any signature requested after a buyer
 `DeleteKey` or a function call, so no second key can be planted. The holder room checks ownership on every request,
 so a seller's signed-in session stops working the moment the NFT moves. The full list is in the threat model below.
 
+SOL moved live twice: #5 → #1 on 4 Nov, and again on 13 Nov, 0.1 SOL signed by NEAR's MPC (Ed25519) and finalized on
+Solana devnet ([g9oBmNUp…](https://explorer.solana.com/tx/g9oBmNUpoZzCG9ymD5BVoMws26rL2pECNddA8WzY8rxzCtZohntwZQLvgqamxAS2gymhQBJUniSRHof8qyntbgd?cluster=devnet)).
+
 ## USDC from a pool: stablecoin loans priced by reporters, liquidated at a price (`lend/`)
 
 A second way to borrow, next to the NEAR loans above, so the holder picks the risk. **NEAR from a person**: fixed term,
