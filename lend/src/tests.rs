@@ -94,7 +94,7 @@ fn a_single_reporter_has_no_quorum() {
     let mut l = new_lend();
     report(&mut l, "r1.testnet", PRICE, T0);
     ctx(LEND);
-    assert_eq!(l.price(), None);
+    assert!(l.price().is_none());
 }
 
 #[test]
@@ -104,7 +104,19 @@ fn a_lying_reporter_is_outvoted_by_the_median() {
     report(&mut l, "r2.testnet", PRICE + U, T0);
     report(&mut l, "r3.testnet", 1, T0); // claims BTC is worth nothing, to liquidate everyone
     ctx(LEND);
-    assert_eq!(l.price(), Some(U128(PRICE)));
+    assert_eq!(l.price_now(), Some((PRICE, PRICE)));
+}
+
+#[test]
+fn with_two_reports_one_source_cannot_move_the_price_either_way() {
+    let mut l = new_lend();
+    report(&mut l, "r1.testnet", PRICE, T0);
+    report(&mut l, "r2.testnet", PRICE * 104 / 100, T0); // 4% higher: borrowing sees the lower, liquidation the higher
+    ctx(LEND);
+    assert_eq!(l.price_now(), Some((PRICE, PRICE * 104 / 100)));
+    report(&mut l, "r2.testnet", PRICE * 2, T0); // one source doubles the price to over-borrow: there is no price at all
+    ctx(LEND);
+    assert_eq!(l.price_now(), None);
 }
 
 #[test]

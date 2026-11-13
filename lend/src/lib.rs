@@ -27,6 +27,8 @@ const INFO_TGAS: u64 = 20;
 const NFT_TGAS: u64 = 50;
 const FT_TGAS: u64 = 15;
 const CB_TGAS: u64 = 25;
+/// The two middle fresh reports may differ by at most 5%, or there is no price.
+pub const MAX_SPREAD_BPS: u128 = 500;
 
 #[ext_contract(ext_nft)]
 #[allow(dead_code)]
@@ -163,9 +165,11 @@ impl Lend {
         emit("price_reported", json!({ "reporter": who, "price": price }));
     }
 
-    /// The median of fresh reports, or None if fewer than `quorum` are fresh.
-    pub fn price(&self) -> Option<U128> {
-        self.price_now().map(U128)
+    /// The two middle fresh reports (equal for an odd count): `low` values collateral for borrowing, `high` decides
+    /// liquidation, so one outlying source can never move the price used against the pool or against a borrower.
+    /// None if fewer than `quorum` are fresh or the two middles disagree by more than MAX_SPREAD_BPS.
+    pub fn price(&self) -> Option<Value> {
+        self.price_now().map(|(low, high)| json!({ "low": U128(low), "high": U128(high) }))
     }
 
     // ---------- lenders ----------
@@ -196,7 +200,7 @@ impl Lend {
         }
         if let Some(id) = parse_id(&msg, "liquidate").map(|i| i as u64) {
             let mut loan = self.open_loan(id);
-            let price = self.price_now().unwrap_or_else(|| env::panic_str("StalePrice"));
+            let (_, price) = self.price_now().unwrap_or_else(|| env::panic_str("StalePrice"));
             let debt = loan.debt(self.config.rate_bps, env::block_timestamp_ms());
             let value = value_of(loan.sats.0, price);
             require!(debt.saturating_mul(BPS) >= value.saturating_mul(self.config.liq_ltv_bps as u128), "Healthy");
@@ -263,7 +267,7 @@ impl Lend {
     /// The contract holds the token now: check it, the price and the pool, then pay the loan out.
     #[private]
     pub fn on_borrow_info(&mut self, nft: AccountId, token_id: String, borrower: AccountId, amount: U128) -> bool {
-        let Some(price) = self.price_now() else { emit("borrow_refused", json!({ "token_id": token_id, "reason": "StalePrice" })); return true };
+        let Some((price, _)) = self.price_now() else { emit("borrow_refused", json!({ "token_id": token_id, "reason": "StalePrice" })); return true };
         let info = read_info().filter(|i| i.token.owner_id == env::current_account_id() && i.loan.is_none() && i.listing.is_none());
         let Some(info) = info else { emit("borrow_refused", json!({ "token_id": token_id, "reason": "BadToken" })); return true };
         let value = value_of(info.verified_sats.0, price);
@@ -373,7 +377,7 @@ impl Lend {
 }
 
 impl Lend {
-    fn price_now(&self) -> Option<u128> {
+    fn price_now(&self) -> Option<(u128, u128)> {
         let now = env::block_timestamp_ms();
         let mut fresh: Vec<u128> = self.config.reporters.iter()
             .filter_map(|r| self.reports.get(r))
@@ -383,7 +387,8 @@ impl Lend {
         if fresh.len() < self.config.quorum as usize { return None }
         fresh.sort_unstable();
         let n = fresh.len();
-        Some(if n % 2 == 1 { fresh[n / 2] } else { (fresh[n / 2 - 1] + fresh[n / 2]) / 2 })
+        let (low, high) = (fresh[(n - 1) / 2], fresh[n / 2]);
+        ((high - low).saturating_mul(BPS) <= low.saturating_mul(MAX_SPREAD_BPS)).then_some((low, high))
     }
 
     fn assets(&self) -> u128 {
@@ -419,8 +424,8 @@ impl Lend {
     fn loan_view(&self, l: &Loan) -> Value {
         let now = env::block_timestamp_ms();
         let debt = l.debt(self.config.rate_bps, now);
-        let price = self.price_now();
-        let value = price.map(|p| value_of(l.sats.0, p));
+        // the liquidation side of the price: what decides whether this loan can be liquidated
+        let value = self.price_now().map(|(_, high)| value_of(l.sats.0, high));
         json!({
             "loan": l, "debt": U128(debt),
             "value": value.map(U128),
