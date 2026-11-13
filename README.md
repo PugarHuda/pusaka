@@ -19,19 +19,25 @@ Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin 
 
 ## Why it's different
 
-| | NFT with a NEAR (sub-)account (Satchel, Capybazaar) | NFT with a Chain Signatures address (Handover, Incorpr) | BTC escrow with light-client proofs (Trueque) | **Pusaka** |
+| | NFT = a Chain Signatures wallet (Satchel, Handover, Incorpr) | BTC vault NFT for loans (Unwrapped) | BTC escrow with light-client proofs (Trueque) | **Pusaka** |
 |---|---|---|---|---|
-| Bitcoin inside | wrapped token only | native, balance read off-chain | native, proven once for one deal | **native UTXOs, proven on NEAR** |
-| Balance stays right after spends | n/a | no (nothing on NEAR tracks it) | n/a (escrow ends) | **yes: proven minus every signed output, always** |
-| What can be done with it | transfer | transfer | one swap | **sell (also Dutch auction, Mintbase, NEAR Intents), borrow against it, offers and refinancing, heir with guardians, gift link, stake its NEAR, bundle it inside another NFT** |
-| Seller can't keep a way back in | keyless account | sign log | escrow | **sign epoch: a buy fails if anything was signed since the buyer looked** |
-| Code anyone can trust | varies | varies | varies | **keyless, upgrades renounced, reproducible build (NEP-330), every event replayed from genesis by `verify.mjs`** |
+| Bitcoin inside | none (Satchel: 16 EVM chains), or native BTC read off-chain | native UTXOs, SPV-proven on NEAR | native, proven once for one deal | **native UTXOs proven on NEAR, plus nBTC in the NFT's own account, redeemable back to native BTC (done live)** |
+| Balance stays right after spends | EVM sign record (Satchel); otherwise nothing on NEAR | proven minus a signature ledger | n/a (escrow ends) | **proven minus every signed output, and a buy fails if anything was signed since the buyer looked (sign epoch)** |
+| Borrowing | no | USDC from a pool, oracle price, liquidation | no | **NEAR from any lender: standing offers, gas-free accept, refinance, partial repay; no oracle can liquidate it early, only the due date** |
+| "Clean to buy" check | yes for EVM (Satchel) | n/a | n/a | **yes, on every token page: Bitcoin, every EVM chain, Solana and its NEAR account (NEAR, nBTC), loan status** |
+| Outside NEAR | no | no | no | **SIWE sign-in and BIP-322 proofs an exchange checks at `#/verify` or `POST /api/verify`, with the sats proven at that address** |
+| What else it does | transfer, sale | loan | one swap | **Dutch auctions, Mintbase, NEAR Intents exit, heir with guardians, gift link, staking, bundles, sealed letters, NEAR AI TEE appraisal, deposits proven by an attested Shade Agent, 57-tool MCP server, x402 audits** |
+| Code anyone can trust | Satchel: locked, 0 keys | upgradeable | varies | **classic contract keyless, upgrades renounced, reproducible build (NEP-330); every event replayed from genesis by `verify.mjs`** |
+
+Where others are ahead, said plainly: Unwrapped lends stablecoins from a pool with oracle-priced liquidation (Pusaka lends
+NEAR peer to peer, fixed term, and shows LTV and the BTC price at which a loan stops being covered); Satchel covers 16
+EVM chains and is on mainnet (Pusaka covers Bitcoin first, EVM/Solana/NEAR alongside, on testnet).
 
 One NFT is a whole set of wallets: the same MPC key holds an address on every EVM chain (ETH, USDC), a second Ed25519
 key is a Solana address and the NFT's own NEAR account. **Smart Pusakas** (`pusaka-v2.testnet`) add a keyless NEAR
 account per NFT: it can hold USDC from a NEAR Intents swap of the NFT's own Bitcoin, or another Pusaka, and all of it
 is sold, lent and inherited as one bundle (live: an AI agent bought one at 66% below its contents, then an heir inherited it).
-The original contract stays frozen for good; the Market shows both as one list.
+Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.testnet` stays frozen for good (open any of its Pusakas with `?contract=pusaka-btc.testnet`), and the Market, reserves, offer book and refusals cover both.
 
 > **What's real, and what isn't (yet).**
 > - **Real, on NEAR testnet, every claim with a tx hash** (178 of them, all checked by `verify.mjs`).
@@ -54,7 +60,7 @@ agent owned and governed by its members (tracks Social Money, Autonomous Busines
 
 | | |
 |---|---|
-| Contract | [`pusaka-btc.testnet`](https://testnet.near.rocks/account/pusaka-btc.testnet) (NEAR testnet) |
+| Contracts | [`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet) (main: Smart Pusakas) and the frozen classic [`pusaka-btc.testnet`](https://testnet.near.rocks/account/pusaka-btc.testnet) (keyless, renounced), NEAR testnet |
 | MPC signer | `v1.signer-prod.testnet` (NEAR Chain Signatures) |
 | Bitcoin network | testnet3 ([mempool.space/testnet](https://mempool.space/testnet)), the network NEAR's Bitcoin light client tracks |
 | Bitcoin light client | [`btc-client-v4.testnet`](https://testnet.near.rocks/account/btc-client-v4.testnet) (Near-One / Omni Bridge), verifies every deposit on-chain |

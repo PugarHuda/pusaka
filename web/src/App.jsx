@@ -16,6 +16,7 @@ import { formatEther, formatUnits, parseEther, parseUnits, isAddress } from "vie
 import { Account, KeyPair } from "near-api-js";
 import Emblem from "./Emblem.jsx";
 import Field from "./Field.jsx";
+import { cleanChecks, verdict } from "./clean.js";
 import { AuctionClock, BtcQr, Bell, GallerySkeleton, ProofTrail, OwnerChecklist, CommandPalette, ThemeToggle, WatchStar, Tilt, SelfCheck, Appraisal } from "./extras.jsx";
 import { celebrate, useNow, watched } from "./util.js";
 import { flushSync } from "react-dom";
@@ -861,8 +862,9 @@ function Detail({ id, accountId }) {
           </section>
           <Actions t={t} accountId={accountId} isOwner={isOwner} onDone={refresh} px={px} bundle={bundleList} />
         </div>
+        {!isOwner && <CleanToBuy t={t} />}
 
-        <DetailNav sections={[["d-btc", "Bitcoin"], ["d-proof", "Proof"], CONTRACT === SMART && ["d-smart", "Smart features"], !IS_SIBLING && ["d-ai", "AI appraisal"], (t.eth || t.sol || t.nearAcct) && ["d-chains", "Other chains"], ["d-heir", "Heir & letter"], ["d-history", "History"]].filter(Boolean)} />
+        <DetailNav sections={[["d-btc", "Bitcoin"], ["d-proof", "Proof"], CONTRACT === SMART && ["d-smart", "Smart features"], ["d-ai", "AI appraisal"], (t.eth || t.sol || t.nearAcct) && ["d-chains", "Other chains"], ["d-heir", "Heir & letter"], ["d-history", "History"]].filter(Boolean)} />
 
         <section id="d-btc">
           <h2>Its Bitcoin address</h2>
@@ -1281,6 +1283,18 @@ function StakeSection({ t, canStake, onDone }) {
       )}
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </section>
+  );
+}
+
+/** For a buyer: could anything the seller already signed still move what's inside? (web/src/clean.js) */
+function CleanToBuy({ t }) {
+  const checks = cleanChecks(t), v = verdict(checks);
+  return (
+    <details className={`clean clean-${v}`} open={v === "risk"}>
+      <summary><strong>{v === "clean" ? "✓ Clean to buy" : v === "risk" ? "⚠ Not clean right now" : "Clean to buy? Still checking"}</strong>
+        <span className="muted"> · {v === "clean" ? "nothing the seller signed can still move what's inside" : v === "risk" ? "see what could still move" : "some chains haven't answered yet"}</span></summary>
+      <ul>{checks.map((c) => <li key={c.what} className={c.ok === false ? "bad" : c.ok ? "ok" : ""}>{c.ok === false ? "✗" : c.ok ? "✓" : "…"} {c.what} <span className="muted">({c.detail})</span></li>)}</ul>
+    </details>
   );
 }
 
@@ -1986,14 +2000,18 @@ function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
         {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka and its {btc(Number(info.verified_sats))} verified BTC as collateral.</p>}
         {px && (() => {
           const st = loanStats(loan, Number(info.verified_sats), px);
-          return (
+          return (<>
+            {Number.isFinite(st.ltv) && st.ltv >= 0.7 && <p className="warn">Loan-to-value is {pct(st.ltv)}{st.ltv >= 1 ? ": the loan is now worth more than the Bitcoin securing it" : ": a further drop in BTC against NEAR would leave the loan undercovered"}.
+              {isOwner || accountId === loan.borrower ? " Repaying early unlocks it at any time." : accountId === loan.lender ? " You can claim the Pusaka only after the due date." : ""}</p>}
             <p className="stats">
               Loan {usd(st.principalUsd)}, collateral {usd(st.collateralUsd)}: loan-to-value <strong>{Number.isFinite(st.ltv) ? pct(st.ltv) : "no verified collateral"}</strong>,
               interest <strong>{pct(st.apr)} a year</strong>. Mainnet prices from mempool.space and Rhea, {px.crossChecked ? "within 5% of CoinGecko" : "not cross-checked (CoinGecko unavailable)"}.
               {exit?.usdc > 0 && <> If the lender takes the collateral, NEAR Intents solvers pay <strong>{usd(exit.usdc)}</strong> for its BTC
                 right now, {(exit.usdc / st.principalUsd).toFixed(1)}× the loan.</>}
+              {Number(info.verified_sats) > 0 && <> The collateral covers the loan until BTC falls to <strong>{usd(st.principalUsd / (Number(info.verified_sats) / 1e8))}</strong> (at today's NEAR price).
+                No price oracle can liquidate it early: the only trigger is the due date, so a price dip never costs the borrower the Bitcoin; the lender prices that risk into the rate.</>}
             </p>
-          );
+          </>);
         })()}
         {funded && <p>{loan.borrower} borrowed {near(loan.principal)} NEAR from {loan.lender}. {near(loan.repay)} NEAR {overdue ? "was" : "is"} due {when(due)}.</p>}
         {funded && !overdue && (accountId === loan.borrower || accountId === loan.lender) && <Reminder uid={`loan-${id}-${due}`} at={due}

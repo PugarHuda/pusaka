@@ -79,6 +79,7 @@ jobs:
       - run: node api/_nearai.test.mjs  # NEAR AI Cloud: response-signature checks, then live TDX quote + nonce/signer + RTMR3 + GPU attestation (no key)
       - run: node web/src/errors.test.mjs  # contract panic codes read as sentences, unknown ones pass through
       - run: node web/src/ics.test.mjs  # calendar reminders are valid RFC 5545 (CRLF, folding, escaping, alarm)
+      - run: node web/src/clean.test.mjs  # "Clean to buy": a pending signature, unused EVM/NEAR nonce or funded loan is never called clean
       - run: npm run lint   # node code (api, shared, mcp, scripts, shade) and web, no-undef on
       - run: npm run build -w web
       - run: npx playwright install --with-deps chromium firefox webkit

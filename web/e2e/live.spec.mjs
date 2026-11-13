@@ -286,6 +286,15 @@ test("a Smart Pusaka lists the classic Pusakas its account holds, linked on thei
   await expect(link).toHaveAttribute("href", /\?contract=pusaka-btc\.testnet#\/pusaka\/\d+$/);
 });
 
+test("a buyer sees whether anything the seller signed could still move what's inside, chain by chain", async ({ page }) => {
+  await page.goto(CL + "#/pusaka/11");
+  const clean = page.locator("details.clean");
+  await expect(clean.locator("summary")).toContainText(/Clean to buy|Not clean right now/, { timeout: 90_000 });
+  await clean.locator("summary").click();
+  for (const what of ["No Bitcoin signature in progress", "Every coin it ever signed for is left out of the BTC shown", "Not collateral for a loan"])
+    await expect(clean.getByText(what)).toBeVisible();
+});
+
 test("every Pusaka has an heir section; the will is read from the contract", async ({ page }) => {
   await page.goto("/#/pusaka/1");
   const s = page.locator("section", { has: page.getByRole("heading", { name: "Heir" }) });

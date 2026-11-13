@@ -768,3 +768,9 @@ footer p { max-width: var(--measure); margin: 0; }
 .ladder td button { margin: 0.15rem 0.3rem 0.15rem 0; }
 .exchange .plain li, .por .plain li { margin: 0.4rem 0; }
 @media (max-width: 640px) { .ladder { display: block; overflow-x: auto; } }
+.clean { margin: 1rem 0; padding: 0.7rem 1rem; border-radius: 14px; background: var(--panel); }
+.clean summary { cursor: pointer; }
+.clean-clean summary strong { color: var(--leaf-ink); }
+.clean-risk summary strong { color: var(--seal); }
+.clean ul { margin: 0.6rem 0 0; padding-left: 1.1rem; list-style: none; }
+.clean li { margin: 0.2rem 0; }
