@@ -138,6 +138,7 @@ BIP-322 proof from `POST /api/verify` as `clean` plus `exchange_ready` in one JS
 | A gift to someone with no account | #15 given as a link; claiming it created pusaka-gift-550341.testnet | [H7JiPsHB…](https://testnet.near.rocks/tx/H7JiPsHBYRJjJQ1zWAb33jJL27km67Bx9mkis5TeQH2g) |
 | Dust can't be proven | a 1,500-sat deposit to Smart Pusaka #2 refused: "deposit below the minimum that can be proven" (anti-dust) | (refused at proof) |
 | SOL, again | 0.1 SOL #5 → #1, MPC Ed25519, finalized on devnet | [g9oBmNUp…](https://explorer.solana.com/tx/g9oBmNUpoZzCG9ymD5BVoMws26rL2pECNddA8WzY8rxzCtZohntwZQLvgqamxAS2gymhQBJUniSRHof8qyntbgd?cluster=devnet) |
+| ETH on Arbitrum | 0.0003 ETH #5 → #1, a native transfer signed by NEAR's MPC | [0xf3571e72…](https://sepolia.arbiscan.io/tx/0xf3571e72f44a5dc2cc74474bf682286f446bc4fb0d33336a5097fd058cc2ef26) |
 | USDC on Arbitrum | 5 USDC #5 → #1, an ERC-20 transfer signed by NEAR's MPC | [0x842cb59a…](https://sepolia.arbiscan.io/tx/0x842cb59a2b3054f35a853bddbf612b97b2cde9aa53188e24f572fb4978211792) |
 | A TEE agent proves a deposit | Shade agent 5df9eac6… proved Smart Pusaka #1's 6,500-sat change | [9DW5y4Mz…](https://testnet.near.rocks/tx/9DW5y4MzdNg4wxCjQnP4nQ6jfRuZNnv1andTR1MdaVUu) |
 

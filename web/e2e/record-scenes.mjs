@@ -12,6 +12,9 @@ import { chromium } from "playwright";
 
 const URL = process.env.E2E_URL ?? "https://pusaka-two.vercel.app";
 const TOKEN = process.env.CLIP_TOKEN ?? "11"; // the Pusaka the core story buys
+// the core story runs on the frozen classic contract (its Pusakas hold most of the BTC); "" for the main contract
+const Q = process.env.CLIP_Q ?? "?contract=pusaka-btc.testnet";
+const LIQUIDATOR = process.env.CLIP_LIQUIDATOR ?? "pusaka-admin.testnet", LIQ_TOKEN = process.env.CLIP_LIQ_TOKEN ?? "1"; // Smart Pusaka #1, pledged to the pool
 const BUYER = process.env.CLIP_BUYER ?? "pusaka-w-mvzhtaw8.testnet"; // recorder wallet
 const WITHDRAW_TO = process.env.CLIP_WITHDRAW_TO ?? "tb1q4jyg3kjgre5r59fukjsrxmf5fjgcxq9pxfw3vj"; // Pusaka #3, also the recorder's
 const HEIR_TOKEN = process.env.CLIP_HEIR_TOKEN ?? "3", HEIR = process.env.CLIP_HEIR ?? "pusaka-seller.testnet";
@@ -249,7 +252,7 @@ async function record(name, fn, { wallet = false } = {}) {
 }
 
 const tokenPage = async (h, id = TOKEN, base = "pusaka") => {
-  await h.p.goto(`${URL}/#/${base}/${id}`);
+  await h.p.goto(`${URL}/${base === "v2" ? "" : Q}#/${base}/${id}`);
   await h.p.getByText(base === "v2" ? "Its own account" : "Bitcoin inside, verified on NEAR").first().waitFor({ timeout: 60_000 });
   await h.pause(2500);
 };
@@ -450,7 +453,7 @@ const scenes = {
     const area = sec.locator("textarea");
     await area.waitFor({ timeout: 120_000 });
     await h.pause(1500);
-    await h.type("write", area, "To whoever holds Pusaka #11 next: the Bitcoin inside is yours now. Keep it safe.");
+    await h.type("write", area, `To whoever holds Pusaka #${TOKEN} next: the Bitcoin inside is yours now. Keep it safe.`);
     await h.maybeApprove("seal", sec.getByRole("button", { name: "Seal into this Pusaka" }));
     await h.status("sealed", sec, /./, 240_000);
     await h.pause(2500);
@@ -740,6 +743,57 @@ ${JSON.stringify(terms, null, 2)}`;
     await h.mark("price", lend.locator("p.stats"));
     await h.pause(4000);
   },
+  // The USDC pool, with real clicks: the holder borrows Circle USDC against the Pusaka from its page.
+  "lend-borrow": async (h) => {
+    const { p } = h;
+    await tokenPage(h);
+    await h.connect(BUYER);
+    await tokenPage(h);
+    const sec = p.locator("section.lend");
+    await sec.waitFor({ timeout: 60_000 });
+    await h.scrollTo(sec); await h.mark("pool", sec); await h.pause(3000);
+    await h.mark("price", sec.locator("p.stats")); await h.pause(2500);
+    await h.type("amount", sec.locator("input").first(), process.env.CLIP_BORROW ?? "1");
+    await h.pause(600);
+    await h.approve("borrow", sec.getByRole("button", { name: /^Borrow (USDC|pUSD)$/ }));
+    await h.status("borrowed", sec, /Borrowed|refused|rror|fail/i, 240_000);
+    await h.pause(2500);
+    await tokenPage(h);
+    const after = p.locator("section.lend");
+    await h.scrollTo(after); await h.mark("collateral", after); await h.pause(5000);
+  },
+  // ...and repays it: the pool sends the NFT back.
+  "lend-repay": async (h) => {
+    const { p } = h;
+    await tokenPage(h);
+    await h.connect(BUYER);
+    await tokenPage(h);
+    const sec = p.locator("section.lend");
+    const repay = sec.getByRole("button", { name: /^Repay / });
+    await repay.waitFor({ timeout: 90_000 });
+    await h.scrollTo(sec); await h.mark("loan", sec); await h.pause(3000);
+    await h.approve("repay", repay);
+    await h.status("repaid", sec, /Repaid|rror|fail/i, 240_000);
+    await h.pause(2500);
+    await p.evaluate(() => scrollTo({ top: 0, behavior: "smooth" })); await h.pause(1500);
+    await h.mark("owner", p.getByText(/^Owned by/).first()); await h.pause(4000);
+  },
+  // A liquidation from the page, on the reporters' real price: anyone can, once the loan reaches 80%.
+  liquidate: async (h) => {
+    const { p } = h;
+    const open = async () => { await p.goto(`${URL}/#/pusaka/${LIQ_TOKEN}`); await p.getByText("Bitcoin inside, verified on NEAR").first().waitFor({ timeout: 60_000 }); await h.pause(2000); };
+    await open();
+    await h.connect(LIQUIDATOR);
+    await open();
+    const sec = p.locator("section.lend");
+    await sec.waitFor({ timeout: 60_000 });
+    await h.scrollTo(sec); await h.mark("loan", sec); await h.pause(4000);
+    await h.approve("liquidate", sec.getByRole("button", { name: "Liquidate" }));
+    await h.status("liquidated", sec, /Liquidated|rror|fail/i, 240_000);
+    await h.pause(2500);
+    await p.evaluate(() => scrollTo({ top: 0, behavior: "smooth" })); await h.pause(1500);
+    await h.mark("owner", p.getByText(/^Owned by/).first()); await h.pause(4000);
+  },
   chains: async (h) => {
     const { p } = h;
     await tokenPage(h);
@@ -751,7 +805,7 @@ ${JSON.stringify(terms, null, 2)}`;
   },
 };
 
-const WALLET_SCENES = ["buy", "withdraw", "loan", "repay", "heir", "claim", "letter", "gift", "v2-act", "vault", "call"];
+const WALLET_SCENES = ["buy", "withdraw", "loan", "repay", "heir", "claim", "letter", "gift", "v2-act", "vault", "call", "lend-borrow", "lend-repay", "liquidate"];
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "import") { // add an account from .keys/<id>.json to the recorder's Intear profile (key typed, never printed)
   const k = JSON.parse(fs.readFileSync(rest[0], "utf8"));

@@ -49,6 +49,8 @@ Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.t
 >   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote.
 > - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
+> - **The USDC pool** lends Circle's own testnet USDC. Its three price reporters are ours, and on testnet it runs tight
+>   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation; mainnet: 50/80.
 
 **Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (61 tools,
 spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
@@ -142,12 +144,14 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 **The core (contract `pusaka-btc.testnet`, final: no key, upgrades renounced)**
 - **Bitcoin proven, not claimed**: every deposit is checked by NEAR's Bitcoin light client; `verified_sats` is net of everything ever signed away. [How](docs/FEATURES.md#trustless-balance-nears-bitcoin-light-client) · [proof of reserves](https://pusaka-two.vercel.app/#/reserves)
 - **Sell the NFT = sell the Bitcoin**, in one NEAR transaction; a buy fails if anything was signed since the buyer looked. Also on outside markets (NEP-178/199, tested on Mintbase). [How](docs/FEATURES.md#one-nft-many-wallets-how-control-passes-on-transfer)
-- **Borrow against the Bitcoin**, auctions, a loan-offer book and refinancing. [How](docs/FEATURES.md#borrow-against-your-bitcoin-sell-by-auction) · [prices](docs/FEATURES.md#prices-what-a-lender-or-buyer-is-actually-getting)
+- **Borrow against the Bitcoin**, two ways: NEAR from a person (offer book, refinancing, auctions; no oracle, only the due date), or **Circle USDC from a pool** priced by three reporters, where one bad source can't move the price either way and a liquidation pays the borrower everything above the debt. [How](docs/FEATURES.md#borrow-against-your-bitcoin-sell-by-auction) · [the pool](docs/FEATURES.md#usdc-from-a-pool-stablecoin-loans-priced-by-reporters-liquidated-at-a-price-lend) · [prices](docs/FEATURES.md#prices-what-a-lender-or-buyer-is-actually-getting)
+- **Clean to buy, clean to inherit**: before paying, a buyer (or an heir before claiming) sees whether anything already signed could still move what's inside, on Bitcoin, every EVM chain, Solana and the NFT's NEAR account; `verify.mjs` checks it for every Pusaka for sale. [How](docs/FEATURES.md#clean-to-buy-and-clean-to-inherit)
 - **Inheritance**: an heir claims after the holder goes silent, optionally only with guardians' approval. [How](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)
 - **One NFT, many wallets**: the same MPC keys hold ETH and USDC on Ethereum/Base/Arbitrum, SOL, its own NEAR account (staking, nBTC: native BTC → nBTC → back to native BTC, live from a Smart Pusaka's keyless account), all moving with the NFT. [How](docs/FEATURES.md#one-nft-many-wallets-how-control-passes-on-transfer)
 - **Holder room**: a sealed letter and files only the current holder can open (NEAR MPC confidential key derivation). [How](docs/FEATURES.md#holder-room-gated-by-the-nft)
 - **Gift links, gas-free actions and passkeys**: send a Pusaka by link; list, borrow and inherit without NEAR for gas; no wallet needed with a passkey. [How](docs/FEATURES.md#gas-free-actions-nep-366-relayer)
-- **Verified USDC, TEE prover, private AI appraisal**. [How](docs/FEATURES.md#verified-usdc-near-mpc-reads-base-and-arbitrum)
+- **Verified USDC, TEE prover, private AI appraisal**: deposits proven by an attested Shade Agent are marked in the proof trail (4 so far, the latest on 13 Nov). [How](docs/FEATURES.md#verified-usdc-near-mpc-reads-base-and-arbitrum)
+- **For exchanges**: a BIP-322 proof of a Pusaka's address checked in one call, with the sats proven there, its clean check and `exchange_ready`. [#/verify](https://pusaka-two.vercel.app/#/verify)
 
 **Smart Pusakas (contract `pusaka-v2.testnet`: the same, plus)** — [docs/V2.md](docs/V2.md)
 - The NFT owns a keyless NEAR account and a NEAR Intents balance; a post-quantum (ML-DSA-65) lock; an AI agent's daily budget enforced on-chain.
@@ -158,6 +162,8 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 **Markets and agents**
 - A market contract: bids and buy pools priced per verified sat, perpetual loans with rate auctions. [How](docs/FEATURES.md#bids-per-verified-sat-and-loans-with-no-due-date-a-second-market-contract)
 - An MCP server with 61 tools for AI agents, on npm and in the official MCP Registry: `npx -y pusaka-mcp` ([npm](https://www.npmjs.com/package/pusaka-mcp), registry name `io.github.PugarHuda/pusaka`), a proof-of-reserves audit paid per call over x402 on NEAR, an ERC-8004 registration file. [docs/AGENTS.md](docs/AGENTS.md) · [summary](docs/FEATURES.md#for-ai-agents-pusaka-over-mcp)
+
+**Real history to look at**: loans funded and repaid, sales from listings and into per-sat bids, refused bids, a USDC loan refused, one healthy and one at the limit, an heir named, a gift claimed by a brand-new account, SOL and USDC moved by the NFT's own keys, a TEE agent's proof; each with its tx in [docs/FEATURES.md](docs/FEATURES.md#demo-history-added-on-13-nov-scriptsdemo-casesmjs-and-friends-every-case-a-real-transaction).
 
 **Why it holds**: the seller can't keep a way back into the Bitcoin. Every attack in the [threat model](docs/THREAT-MODEL.md) has a test named after it, and the [Refused](https://pusaka-two.vercel.app/#/refused) page shows 39 real attempts the contracts turned down. [Measured on testnet](docs/EVIDENCE.md) · [every NEAR primitive used](docs/EVIDENCE.md#every-near-primitive-pusaka-uses-and-where-to-see-it-live).
 
@@ -189,7 +195,9 @@ contract/   Rust smart contract (near-sdk 5, NEP-171) + unit tests
 shared/     Bitcoin helpers used by scripts and web: address, safe balance, witness assembly + signature check
 scripts/    setup.mjs (deploy), demo.mjs (end-to-end), withdraw*.mjs (BTC, ETH/USDC, SOL, NEAR),
             mintbase.mjs, holder-test.mjs, handover.mjs
-api/        Vercel functions: relay (NEP-366), prove, holder (NEP-413), reserves, badge, prices, mcp
+api/        Vercel functions: relay (NEP-366), prove, holder (NEP-413), reserves, badge, prices (+ pool price reports), mcp, verify, audit (x402), appraise
+lend/       the USDC lending pool (Rust): shares, 2-of-3 reporter price, liquidation; lend/pusd the faucet test token it started on
+market/     per-sat bids and perpetual loans (Rust)
 mcp/        MCP server for AI agents
 shade/      TEE deposit prover (Phala TDX), its attestation-checking agent contract, compose/deploy config
 web/        Vite + React app, NEAR wallet via @hot-labs/near-connect
