@@ -22,7 +22,7 @@ if (cmd === "create") {
   // the link is saved before the call: an RPC error after the tx landed must not lose the only key that claims it
   fs.mkdirSync(GIFTS, { recursive: true });
   const file = path.join(GIFTS, `pusaka-${token_id}.txt`);
-  fs.writeFileSync(file, `${APP}/#/gift/${kp.toString()}\n`);
+  fs.writeFileSync(file, `${APP}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${kp.toString()}\n`); // a classic gift opens on its own contract
   await call(account(owner), "gift", { token_id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
   console.log(`Pusaka #${token_id} is a gift link now: ${JSON.stringify(await view("gift_of", { token_id }))}; the link is in ${file}`);
 } else if (cmd === "claim") {
