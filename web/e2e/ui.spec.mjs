@@ -28,7 +28,8 @@ test("landing → market → a Pusaka → back and forward keep the right page",
   const first = page.locator("a[href^='#/pusaka/']").first();
   await expect(first).toBeVisible({ timeout: 30_000 });
   const href = await first.getAttribute("href");
-  await first.click();
+  // the gallery re-sorts as the classic Pusakas and bundles load in: click that exact card, not whichever is first now
+  await page.locator(`a[href="${href}"]`).first().click();
   await expect(page).toHaveURL(new RegExp(`${href.replace(/[#/]/g, "\\$&")}$`));
   await expect(page.getByRole("heading", { name: /Pusaka #\d+/ }).first()).toBeVisible({ timeout: 30_000 });
   await page.goBack();
