@@ -1,5 +1,6 @@
 // README screenshots from the live app: docs/screenshots/*.png.
 //   node web/e2e/readme-shots.mjs [proof.json]   (proof.json: a BIP-322 {message, witness} for the verify page)
+//   SHOT_ONLY=heir node web/e2e/readme-shots.mjs  one screenshot only
 import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
@@ -11,8 +12,9 @@ fs.mkdirSync(OUT, { recursive: true });
 const proof = process.argv[2] && JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "light", timezoneId: "UTC" }); // times match the README (UTC)
 const shot = async (name, fn) => {
+  if (process.env.SHOT_ONLY && process.env.SHOT_ONLY !== name) return;
   try { await fn(); await page.waitForTimeout(1500); await page.screenshot({ path: path.join(OUT, `${name}.png`) }); console.log("✓", name); }
   catch (e) { console.log("✗", name, e.message.split("\n")[0]); }
 };
@@ -48,6 +50,11 @@ if (proof) await shot("verify-exchange", async () => {
 await shot("smart-pusaka-nbtc", async () => {
   await open("/#/pusaka/4", /sats of nBTC/);
   await center(page.getByText(/sats of nBTC \(Omni Bridge\)/));
+});
+await shot("heir", async () => {
+  await open(CL + "#/pusaka/27", "Bitcoin inside, verified on NEAR");
+  await page.getByText(/can claim this Pusaka with everything it holds/).first().waitFor({ timeout: 90_000 });
+  await center(page.getByRole("heading", { name: "Heir", exact: true }));
 });
 await shot("reserves", async () => { await open("/#/reserves", /verified across/); });
 await shot("refused", async () => { await open("/#/refused", /Refused:/); });

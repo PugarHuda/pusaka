@@ -41,7 +41,7 @@ node scripts/mainnet-proof.mjs                # the same proof, accepted by NEAR
 ```
 Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin proven inside it, and what you can do now.
 
-## What it looks like (live app, 13 Nov)
+## What it looks like (live app, 14 Nov)
 
 | | |
 |---|---|
@@ -55,6 +55,8 @@ Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin 
 | **Smart Pusaka**: its own account, nBTC in and out | **Proof of reserves**, re-checkable from your browser |
 | ![Real attacks the contracts refused, each confirmed failed on NEAR](docs/screenshots/refused.png) | ![For AI agents: the live MCP endpoint's tools, prompts and resources](docs/screenshots/agents.png) |
 | **Refused**: real attacks, failed on-chain | **For AI agents**: 61 MCP tools, x402 audits |
+| ![Pusaka #27's will: if its holder stays silent until 16 Nov 02:00 UTC, pusaka-buyer.testnet can claim it with everything it holds](docs/screenshots/heir.png) | ![A prompt-injected agent tries to send a Pusaka's Bitcoin to an attacker and is refused three ways; nothing changes on chain](docs/screenshots/attack-demo.png) |
+| **It passes on**: #27's heir can claim from 16 Nov 02:00 UTC (the TEE agent will) | **Attack demo**: a prompt-injected agent, refused before signing |
 
 Regenerate: `node web/e2e/readme-shots.mjs [bip322-proof.json]`.
 
