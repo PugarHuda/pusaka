@@ -15,7 +15,9 @@ const REFRESH_MS = 30 * 60_000;
 let lastReport = 0; // ponytail: per instance; the contract itself ignores nothing, so two instances just both report
 
 async function reportLend(res) {
-  const keys = JSON.parse(process.env.LEND_REPORTER_KEYS || "{}");
+  let keys;
+  // never echo a parse error: its message can quote the key material
+  try { keys = JSON.parse(process.env.LEND_REPORTER_KEYS || "{}"); } catch { return res.status(500).json({ error: "reporter keys misconfigured" }); }
   if (!Object.keys(keys).length) return res.status(503).json({ error: "no reporter keys on this deployment" });
   const provider = nearProvider({ FailoverRpcProvider, JsonRpcProvider });
   const reports = await provider.callFunction({ contractId: LEND, method: "reports", args: {} });
@@ -28,14 +30,20 @@ async function reportLend(res) {
       const price = await sourcePrice(who);
       await new Account(who, provider, keys[who]).callFunction({ contractId: LEND, methodName: "report_price", args: { price: String(price) }, gas: 10_000_000_000_000n });
       return { reporter: who, source: SOURCES[who][0], price: price / 1e6 };
-    } catch (e) { return { reporter: who, source: SOURCES[who][0], error: String(e.message ?? e).slice(0, 120) }; }
+    } catch (e) {
+      console.error("report", who, String(e.message ?? e).replace(/ed25519:\w+/g, "[key]").slice(0, 200));
+      return { reporter: who, source: SOURCES[who][0], error: "not reported" };
+    }
   }));
   res.status(200).json({ reported: out });
 }
 
 export default async function handler(req, res) {
   res.setHeader("cache-control", "no-store");
-  if (req.method === "POST") return reportLend(res).catch((e) => res.status(502).json({ error: String(e.message ?? e).slice(0, 200) }));
+  if (req.method === "POST") return reportLend(res).catch((e) => {
+    console.error("reportLend", String(e.message ?? e).replace(/ed25519:\w+/g, "[key]").slice(0, 200));
+    res.status(502).json({ error: "report failed" });
+  });
   if (req.method !== "GET" && req.method !== "HEAD") return res.status(405).json({ error: "GET or POST" });
   try {
     last = { ...(await prices()), fetchedAt: Date.now() };
