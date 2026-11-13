@@ -58,6 +58,7 @@ const HEIRS = (process.env.HEIR_ACCOUNTS ?? "").split(",").map((x) => x.trim()).
 status.heir_key = heirKey.getPublicKey().toString();
 status.heirs = HEIRS;
 status.claims = [];
+const retryAt = new Map(); // "<contract>:<token>" -> no retry before this time
 
 async function claimForHeirs() {
   if (!HEIRS.length) return;
@@ -65,12 +66,25 @@ async function claimForHeirs() {
     const tokens = await prover.provider.callFunction({ contractId: c, method: "nft_tokens", args: { from_index: "0", limit: 100 } });
     for (const t of tokens) {
       const h = await prover.provider.callFunction({ contractId: c, method: "heir_of", args: { token_id: t.token_id } }).catch(() => null);
+      // heir_of is null once the Pusaka changed hands, so a will from an earlier holder never shows up here
       if (!h || !HEIRS.includes(h.heir) || Date.now() < Number(h.claimable_from_ms)) continue;
+      const k = `${c}:${t.token_id}`;
+      if ((retryAt.get(k) ?? 0) > Date.now()) continue; // backed off after a failure
+      // every condition claim_inheritance enforces, checked before the heir's key pays any gas
+      const [g, info] = await Promise.all([
+        prover.provider.callFunction({ contractId: c, method: "guardians_of", args: { token_id: t.token_id } }).catch(() => null),
+        prover.provider.callFunction({ contractId: c, method: "token_info", args: { token_id: t.token_id } }).catch(() => null),
+      ]);
+      const now = Date.now();
+      if (g && !((g.release_at_ms && Number(g.release_at_ms) <= now) || Number(g.backstop_from_ms) <= now)) continue; // guardians first
+      if (!info || info.loan?.lender || info.pending) continue; // a funded loan's lender comes first; nothing mid-signature
+      const recent = status.claims.filter((x) => x.heir === h.heir && now - Date.parse(x.at) < 3_600_000).length;
+      if (recent >= 5) continue; // per-heir budget: at most 5 claims an hour on their key
       try {
         await new Account(h.heir, prover.provider, heirKey.toString()).callFunction({ contractId: c, methodName: "claim_inheritance", args: { token_id: t.token_id }, gas: 100_000_000_000_000n });
         status.claims = [...status.claims.slice(-19), { contract: c, token_id: t.token_id, heir: h.heir, at: new Date().toISOString() }];
         console.log("claimed", c, t.token_id, "for", h.heir);
-      } catch (e) { fail(`claim ${c} #${t.token_id} for ${h.heir}`, e); }
+      } catch (e) { retryAt.set(k, Date.now() + 30 * 60_000); fail(`claim ${c} #${t.token_id} for ${h.heir}`, e); }
     }
   }
 }

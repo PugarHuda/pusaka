@@ -26,7 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+      # pinned: a newer cargo-near's wasm validation rejects bulk-memory ops this toolchain emits
+      - run: curl --proto '=https' --tlsv1.2 -LsSf --retry 3 https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
       - run: cargo near build non-reproducible-wasm --no-abi
         working-directory: shade/agent-contract
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
