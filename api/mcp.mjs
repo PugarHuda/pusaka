@@ -1,5 +1,5 @@
 // Remote MCP endpoint (Streamable HTTP, stateless): any MCP client can connect by URL and use
-// the read-only Pusaka tools (overview, inspect, loan_offers). Trading tools need the local server and the
+// the read-only Pusaka tools (READ_TOOLS in mcp/tools.mjs: overview, inspect, audit, history, …). Trading tools need the local server and the
 // agent's own key: this endpoint never holds a key.
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "../mcp/tools.mjs";

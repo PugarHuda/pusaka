@@ -11,13 +11,22 @@ const esc = (s) => String(s).replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const CLEAN = { clean: ["clean", "#2e7d32"], risk: ["not clean", "#c62828"], unknown: ["clean: unchecked", "#6b6b6b"] };
 
-/** `verdict`: "clean" | "risk" | "unknown" adds a third segment; `at`: when the chains were read. */
-export function badge(id, sats, verdict, at) {
+/** `heir_of(id)` as a badge segment: when the heir can claim (a countdown a judge can watch run out), or that it's due. */
+export function heirSegment(h, now) {
+  if (!h) return ["no heir named", "#6b6b6b"];
+  const due = Number(h.claimable_from_ms);
+  if (due <= now) return [`heir can claim now`, "#7a3fb0"];
+  const left = due - now, d = Math.floor(left / 86_400_000), hrs = Math.floor((left % 86_400_000) / 3_600_000), m = Math.floor((left % 3_600_000) / 60_000);
+  return [`heir claims ${new Date(due).toISOString().slice(5, 16).replace("T", " ")}Z (in ${d ? `${d}d ` : ""}${hrs}h ${m}m)`, "#1f5fa8"];
+}
+
+/** `verdict`: "clean" | "risk" | "unknown" adds a third segment; `at`: when the chains were read; `seg` overrides it. */
+export function badge(id, sats, verdict, at, seg) {
   const left = `Pusaka #${id}`;
   const right = `${(sats / 1e8).toFixed(8)} BTC verified`;
-  const [word, color] = verdict ? CLEAN[verdict] ?? CLEAN.unknown : [];
+  const [word, color] = seg ?? (verdict ? CLEAN[verdict] ?? CLEAN.unknown : []);
   // the check time is in the visible text: an embedded badge says how old its answer is
-  const third = word && (at ? `${word} @${new Date(at).toISOString().slice(11, 16)}Z` : word);
+  const third = word && (at && !seg ? `${word} @${new Date(at).toISOString().slice(11, 16)}Z` : word);
   const lw = 12 + left.length * 7, rw = 12 + right.length * 7, cw = third ? 12 + third.length * 7 : 0;
   const label = `${left}: ${right}${third ? `, ${third}` : ""}`;
   const when = at ? ` (checked ${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC)` : "";
@@ -53,6 +62,13 @@ export default async function handler(req, res) {
       res.setHeader("cache-control", "public, s-maxage=60, max-age=0, must-revalidate");
       res.setHeader("access-control-allow-origin", "*");
       return res.status(200).json(attestation(id, c, t.verified_sats, clean, Date.now()));
+    }
+    if (req.query?.heir === "1") {
+      // a countdown: never cached longer than a minute
+      const h = await viewFinal("heir_of", { token_id: id }, c);
+      res.setHeader("content-type", "image/svg+xml");
+      res.setHeader("cache-control", "public, s-maxage=60, max-age=0, must-revalidate");
+      return res.status(200).send(badge(id, t.verified_sats, null, null, heirSegment(h, Date.now())));
     }
     res.setHeader("content-type", "image/svg+xml");
     // a clean verdict goes stale the moment something is signed: a minute at most, never served stale

@@ -14,8 +14,12 @@ Three things to check, in this order:
    on every view; the same answer as JSON is an open format any NFT-wallet can adopt:
    [proof of clean](docs/PROOF-OF-CLEAN.md) (`/api/badge?id=4&contract=pusaka-btc.testnet&format=json`).
 3. **It passes on, with no custodian.** If the holder goes silent, the named heir claims the NFT and every Bitcoin in
-   it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn), and an
-   heir's AI agent can claim it for them the moment the silence runs out.
+   it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn). A will
+   executed by attested code: an agent in a TEE claims for the heir with a key that never leaves the enclave and can
+   only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR)).
+   Watch the next one happen during judging:
+
+   [![Pusaka #27: heir countdown](https://pusaka-two.vercel.app/api/badge?id=27&contract=pusaka-btc.testnet&heir=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/27)
 
 Each Pusaka is a NEAR NFT (NEP-171) with its own native Bitcoin address, signed for by the NEAR MPC network through
 [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) only when the **current NFT owner** asks.

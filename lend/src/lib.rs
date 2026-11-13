@@ -11,7 +11,9 @@
 //!   anyone may liquidate (`{"liquidate": id}`) by paying max(debt, `liq_price_bps` of the BTC's value): the pool
 //!   gets the debt, the borrower the rest, the liquidator the NFT and, with it, the Bitcoin key.
 //!
-//! Nothing is configurable after init; the deployment's key is deleted, so these rules are final.
+//! Nothing is configurable after init except `reset`, which only the pool account itself can call and only while the
+//! pool is empty. Once the deployment's key is deleted (deployments/testnet-lend.json says whether it has been), these
+//! rules are final.
 
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{self, json, Value};
