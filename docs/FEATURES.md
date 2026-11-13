@@ -121,6 +121,26 @@ it "unknown", never clean. An heir sees the same check as **Clean to inherit** b
 from `verify.mjs` for every Pusaka for sale on both contracts (13 Nov: 5 of 5 clean) and, for an exchange, with a
 BIP-322 proof from `POST /api/verify` as `clean` plus `exchange_ready` in one JSON.
 
+## Demo history added on 13 Nov (`scripts/demo-cases.mjs` and friends), every case a real transaction
+
+| Case | What happened | Tx |
+|---|---|---|
+| A lender funds a standing request | pusaka-seller lent 0.5 NEAR against #14 (10,000 sats); #14 is now locked as collateral | [FQavS338…](https://testnet.near.rocks/tx/FQavS3388RXHaqjQeasFhkGUpm6kVzH8teuN7ZwyQSTf) |
+| A borrower repays in full | pusaka-buyer repaid #12's loan, 0.501 NEAR to the lender; #12 unlocked | [Ch9gxRBN…](https://testnet.near.rocks/tx/Ch9gxRBNcNHDAFbs2jCjE5ip7yyWTHXUBBKBxKEZ7V18) |
+| A sale from a listing | pusaka-seller bought #27 (11,000 sats) for 0.35 NEAR | [9vdrWLuB…](https://testnet.near.rocks/tx/9vdrWLuB4mwW4yT93FVMsjPNsLtAyvTotckj5L5yAPR1) |
+| A per-sat bid the token can't meet | the market refused it on-chain (`SatsOutOfRange`) | [5kg3YamS…](https://testnet.near.rocks/tx/5kg3YamSC6tqyLbjTPNk8rEK64sZ8U5ecNjUdf9swFKD) |
+| A sale into a per-sat bid | #27 sold into pusaka-buyer's bid (0.3 NEAR per 10,000 sats) for 0.33 NEAR | [C6rsfEot…](https://testnet.near.rocks/tx/C6rsfEot9g61SrJ4PxeKExY3xRrd6aYn6bJbwgLnjTeP) |
+| Listed again | #27 back on sale at 0.35 NEAR | [AdXRV6WY…](https://testnet.near.rocks/tx/AdXRV6WyVhYAvj6brserUomcoJZn3ThUXmaFySKDNnx7) |
+| The USDC pool refuses thin collateral | #11 (1,400 sats) can't cover the 1 USDC minimum: `borrow_refused` (OverLimit), the NFT straight back | [6VxM5AH6…](https://testnet.near.rocks/tx/6VxM5AH6TBrV8Fzmj9Uf7Bjgw21VXFEgYkYUQrkgyFaq) |
+| A healthy USDC loan | 3 USDC against #12 (10,000 sats) at 43.9% loan-to-value | [DdJxauWe…](https://testnet.near.rocks/tx/DdJxauWe67oYC6HRrj8vrQjibA1FZpzcVcoBgBwp1hKG) |
+| A USDC loan at the limit | 3.544336 USDC against Smart Pusaka #1 at 79.5%, waiting for a real price move to 80% | [ERLuF8nf…](https://testnet.near.rocks/tx/ERLuF8nfwMTPBjywXRNxZpFHc8hLrbgfnk2Lj4xWTxX1) |
+| An heir named | #11's holder names pusaka-seller, 30 days of silence | [5EbU7qxM…](https://testnet.near.rocks/tx/5EbU7qxMxWBHG7y9qQw7rtEpA8eCGxgZsGYGdnT9JBwu) |
+| A gift to someone with no account | #15 given as a link; claiming it created pusaka-gift-550341.testnet | [H7JiPsHB…](https://testnet.near.rocks/tx/H7JiPsHBYRJjJQ1zWAb33jJL27km67Bx9mkis5TeQH2g) |
+| Dust can't be proven | a 1,500-sat deposit to Smart Pusaka #2 refused: "deposit below the minimum that can be proven" (anti-dust) | (refused at proof) |
+| SOL, again | 0.1 SOL #5 → #1, MPC Ed25519, finalized on devnet | [g9oBmNUp…](https://explorer.solana.com/tx/g9oBmNUpoZzCG9ymD5BVoMws26rL2pECNddA8WzY8rxzCtZohntwZQLvgqamxAS2gymhQBJUniSRHof8qyntbgd?cluster=devnet) |
+| USDC on Arbitrum | 5 USDC #5 → #1, an ERC-20 transfer signed by NEAR's MPC | [0x842cb59a…](https://sepolia.arbiscan.io/tx/0x842cb59a2b3054f35a853bddbf612b97b2cde9aa53188e24f572fb4978211792) |
+| A TEE agent proves a deposit | Shade agent 5df9eac6… proved Smart Pusaka #1's 6,500-sat change | [9DW5y4Mz…](https://testnet.near.rocks/tx/9DW5y4MzdNg4wxCjQnP4nQ6jfRuZNnv1andTR1MdaVUu) |
+
 ## Pusaka v2: the NFT owns an account, has a name, and can be locked with a post-quantum key
 
 The contract above is final. New features run in a second deployment, **[`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet)**:
