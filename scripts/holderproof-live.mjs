@@ -2,6 +2,7 @@
 // and the #/verify page). The holder signs in as the NFT (EIP-4361) and proves its Bitcoin address (BIP-322); both verify;
 // a tampered text, another site's sign-in, another Pusaka's proof and a holder who no longer holds it are all refused.
 //   node scripts/holderproof-live.mjs [holder] [token_id]     (default pusaka-seller.testnet 1, on pusaka-v2.testnet)
+// PROOF_OUT=<file> also saves the BIP-322 { message, witness } (the demo video pastes it into #/verify).
 // Spends ~0.0001 NEAR of gas; the sign-in keeps the Pusaka unlistable for an hour (V2-10).
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -38,6 +39,7 @@ const witness = witnessFromMpc(b);
 const bp = await verifyBtcProof({ message: b.message, witness });
 show(`BIP-322 proof of ${bp.address}`, bp);
 assert.ok(bp.valid);
+if (process.env.PROOF_OUT) (await import("node:fs")).writeFileSync(process.env.PROOF_OUT, JSON.stringify({ message: b.message, witness }));
 const elsewhere = await verifyBtcProof({ message: b.message.replace(`Pusaka #${token_id} `, `Pusaka #${token_id === "1" ? "2" : "1"} `), witness });
 show("the same proof claimed for another Pusaka", elsewhere);
 assert.ok(!elsewhere.valid);

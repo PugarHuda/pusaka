@@ -378,10 +378,55 @@ export const scenes = {
     start: "@top-1",
     caption: "Tools for AI agents, and an audit paid over x402",
     vo: [
-      { at: "@top", text: "For AI agents: an MCP server with fifty-five tools and hard spending caps." },
+      { at: "@top", text: "For AI agents: an MCP server with fifty-seven tools and hard spending caps." },
       { at: "@x402", text: "The audit is paid per call over x402: 402 until a gasless wNEAR payment settles." },
     ],
     box: [{ at: "@tools", for: 3 }],
+  },
+
+  verify: {
+    clip: "verify",
+    start: "@message-1.5",
+    caption: "An exchange checks a Pusaka's Bitcoin address",
+    cuts: [{ from: "@check+1", to: "@valid-0.5", label: "" }],
+    vo: [
+      { at: "@message-1", text: "An exchange wants proof that a withdrawal address belongs to this Pusaka. The holder has NEAR's MPC sign a BIP-322 message." },
+      { at: "@valid", text: "Valid: the signature is by Pusaka one's own Bitcoin address, the holder still holds it, and ten thousand sats are proven there. If the NFT is sold, that Bitcoin goes with it." },
+    ],
+    box: [{ at: "@message", for: 2.5 }, { at: "@valid", for: 6 }],
+    x: { vo: [{ at: "@message-1", text: "Exchanges can whitelist it: a BIP-322 proof, checked against NEAR, says who controls the Bitcoin right now." }] },
+  },
+
+  nbtc: {
+    clip: "nbtc",
+    start: "@inside-1",
+    caption: "Native BTC in, nBTC on NEAR, native BTC out",
+    cuts: [{ from: "@deposit+4", to: "@redeem-1", label: "" }],
+    vo: [
+      { at: "@inside-0.5", text: "A Smart Pusaka also holds nBTC in its own keyless account, counted as Bitcoin inside." },
+      { at: "@deposit", text: "Native BTC sent to its Omni Bridge address becomes nBTC there." },
+      { at: "@redeem", text: "And it goes back: this one call redeemed thirty-six hundred nBTC, paid out as native Bitcoin to the Pusaka's own address." },
+    ],
+    box: [{ at: "@inside", for: 3.5 }, { at: "@deposit", for: 3.5 }],
+    zoom: [{ at: "@redeem+0.5", region: [240, 120, 1440, 420], for: 4, scale: 1.3 }],
+  },
+
+  tee: {
+    clip: "tee",
+    start: "@badge-2",
+    caption: "Deposits proven by an attested TEE agent",
+    vo: [{ at: "@badge-1.5", text: "Deposits can be proven by anyone. This one was proven by Pusaka's Shade Agent, running in an Intel TDX enclave whose attestation NEAR checked on-chain." }],
+    zoom: [{ at: "@badge", for: 4, scale: 1.6 }],
+    box: [{ at: "@badge", for: 4 }],
+    x: { vo: [{ at: "@badge-1.5", text: "Some deposits are proven by our Shade Agent, inside an attested TEE." }] },
+  },
+
+  reserves: {
+    clip: "reserves",
+    start: "@total-1",
+    caption: "Proof of reserves, re-checkable from your browser",
+    vo: [{ at: "@total-0.5", text: "And proof of reserves: every satoshi across both contracts, each row re-checkable in your browser against NEAR and Bitcoin." }],
+    box: [{ at: "@total", for: 4 }],
   },
 
   end: {
@@ -393,7 +438,7 @@ export const scenes = {
 
 export const compositions = {
   Preview: ["title", "landing", "token", "buy"],
-  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "end"],
-  X: ["title", "token", "buy", "withdraw", "refused", "check", "rest", "end"],
+  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "nbtc", "tee", "reserves", "end"],
+  X: ["title", "token", "buy", "withdraw", "refused", "check", "tee", "verify", "rest", "end"],
 };
 export const limits = { X: 135, Full: 360 }; // seconds: X allows 2:20 without Premium; the walkthrough aims for 6 min

@@ -657,6 +657,68 @@ ${JSON.stringify(terms, null, 2)}`;
     await h.mark("header", p.locator("header")); await h.pause(4000);
   },
   // The same MPC keys: ETH/USDC on EVM chains, SOL, its own NEAR account; everything moves with the NFT.
+  // A Smart Pusaka's nBTC: counted as Bitcoin inside, its own Omni deposit address, and the live redeem to native BTC.
+  nbtc: async (h) => {
+    const { p } = h;
+    await p.goto(`${URL}/#/pusaka/4`);
+    const li = p.getByText(/sats of nBTC \(Omni Bridge\) in its account/).first();
+    await li.waitFor({ timeout: 60_000 });
+    await h.pause(1500);
+    await h.scrollTo(li); await h.move(li); await h.mark("inside", li);
+    await h.pause(4000);
+    const dep = p.getByText(/^To add nBTC: send native BTC/).first();
+    await h.scrollTo(dep); await h.mark("deposit", dep);
+    await h.pause(4000);
+    await p.goto("https://testnet.near.rocks/tx/3fh6naremmRQhwQciDiWWSUtPKDADcWDicRTHAdpK64y");
+    await p.waitForLoadState("networkidle").catch(() => {});
+    await h.pause(2500);
+    await h.mark("redeem", p.locator("main").first());
+    await h.pause(6000);
+  },
+  // Deposits proven by Pusaka's Shade Agent in a TEE: the badge in the proof trail of classic #1.
+  tee: async (h) => {
+    const { p } = h;
+    await p.goto(`${URL}/?contract=pusaka-btc.testnet#/pusaka/1`);
+    const badge = p.getByText(/Proven by Pusaka's attested TEE agent/).first();
+    await badge.waitFor({ timeout: 90_000 });
+    await h.pause(1500);
+    await h.scrollTo(badge); await h.move(badge); await h.mark("badge", badge);
+    await h.pause(5000);
+  },
+  // An exchange checks a Pusaka's BIP-322 proof of its Bitcoin address (made live by scripts/holderproof-live.mjs, PROOF_OUT).
+  verify: async (h) => {
+    const { p } = h;
+    const proof = JSON.parse(fs.readFileSync(process.env.CLIP_PROOF ?? path.join(os.tmpdir(), "bip322.json"), "utf8"));
+    await p.goto(`${URL}/#/verify`);
+    const msg = p.getByLabel("Signed message");
+    await msg.waitFor({ timeout: 60_000 });
+    await h.pause(1500);
+    await h.click("message", msg); await msg.fill(proof.message);
+    await h.pause(1200);
+    const w = p.getByLabel(/BIP-322 witness/);
+    await h.click("witness", w); await w.fill(proof.witness);
+    await h.pause(800);
+    await h.click("check", p.getByRole("button", { name: "Verify" }));
+    const ok = p.getByText(/✓ Valid/).first();
+    await ok.waitFor({ timeout: 60_000 });
+    await h.pause(600);
+    await h.mark("valid", ok.locator("..").locator(".."));
+    await h.scrollTo(ok);
+    await h.pause(6000);
+  },
+  // Proof of reserves across both contracts, with nBTC listed apart.
+  reserves: async (h) => {
+    const { p } = h;
+    await p.goto(`${URL}/#/reserves`);
+    const total = p.getByText(/sats/).first();
+    await total.waitFor({ timeout: 90_000 });
+    await h.pause(3000);
+    await h.mark("total", p.locator("main h1").first());
+    await h.pause(3000);
+    for (let i = 0; i < 4; i++) { await p.mouse.wheel(0, 380); await h.pause(1300); }
+    await h.mark("rows", p.locator("main").first());
+    await h.pause(3000);
+  },
   chains: async (h) => {
     const { p } = h;
     await tokenPage(h);
