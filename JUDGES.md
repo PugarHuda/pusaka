@@ -9,6 +9,14 @@ npm install
 node scripts/verify.mjs
 ```
 
+It checks the main contract, `pusaka-v2.testnet`. Until its last full-access key is deleted and its upgrades are
+renounced, those two lines fail on purpose: that is the honest state, not a bug. The frozen classic contract, which
+holds most of the Bitcoin, passes everything today:
+
+```
+PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/verify.mjs     # 13 Nov: all checks passed
+```
+
 Expect `all checks passed`, with these lines (numbers move as the demo is used):
 
 ```
