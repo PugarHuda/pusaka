@@ -719,6 +719,27 @@ ${JSON.stringify(terms, null, 2)}`;
     await h.mark("rows", p.locator("main").first());
     await h.pause(3000);
   },
+  // A buyer's view of a listed classic Pusaka: Clean to buy, then the two ways to borrow (NEAR from a person, pUSD from the pool).
+  lend: async (h) => {
+    const { p } = h;
+    await p.goto(`${URL}/?contract=pusaka-btc.testnet#/pusaka/27`);
+    const clean = p.locator("details.clean summary");
+    await clean.waitFor({ timeout: 90_000 });
+    await p.getByText(/✓ Clean to buy/).first().waitFor({ timeout: 90_000 }).catch(() => {});
+    await h.pause(1200);
+    await h.scrollTo(clean);
+    await h.click("clean", clean);
+    await h.pause(800);
+    await h.mark("checks", p.locator("details.clean"));
+    await h.pause(5000);
+    const lend = p.locator("section.lend");
+    await lend.waitFor({ timeout: 60_000 });
+    await h.scrollTo(lend);
+    await h.mark("lend", lend);
+    await h.pause(4000);
+    await h.mark("price", lend.locator("p.stats"));
+    await h.pause(4000);
+  },
   chains: async (h) => {
     const { p } = h;
     await tokenPage(h);

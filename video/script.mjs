@@ -187,6 +187,20 @@ export const scenes = {
     zoom: [{ at: "@locked", for: 4, scale: 1.3 }, { at: "@repaid", for: 2.5, scale: 1.8 }],
   },
 
+  lend: {
+    clip: "lend",
+    start: "@clean-2",
+    caption: "Clean to buy, and a second way to borrow",
+    cuts: [{ from: "@checks+5", to: "@lend-1", label: "" }],
+    vo: [
+      { at: "@clean-1.5", text: "Before buying, the page checks every chain: nothing the seller signed can still move the Bitcoin, the ETH, the SOL or the NEAR inside." },
+      { at: "@lend", text: "Borrowing has two options. NEAR from a person, with no oracle, so a price dip can never cost you the Bitcoin. Or stablecoins from a pool, priced by three independent sources, where one bad source can't move the price either way." },
+    ],
+    box: [{ at: "@checks", for: 5 }, { at: "@price", for: 3.5 }],
+    zoom: [{ at: "@checks", for: 5, scale: 1.4 }],
+    x: { vo: [{ at: "@clean-1.5", text: "Before you buy, it checks every chain: nothing the seller signed can still move what's inside. And it borrows stablecoins from a pool, priced by three sources." }] },
+  },
+
   heir: {
     clip: "heir",
     start: "@section-1",
@@ -378,7 +392,7 @@ export const scenes = {
     start: "@top-1",
     caption: "Tools for AI agents, and an audit paid over x402",
     vo: [
-      { at: "@top", text: "For AI agents: an MCP server with fifty-seven tools and hard spending caps." },
+      { at: "@top", text: "For AI agents: an MCP server with sixty-one tools and hard spending caps." },
       { at: "@x402", text: "The audit is paid per call over x402: 402 until a gasless wNEAR payment settles." },
     ],
     box: [{ at: "@tools", for: 3 }],
@@ -438,7 +452,7 @@ export const scenes = {
 
 export const compositions = {
   Preview: ["title", "landing", "token", "buy"],
-  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "nbtc", "tee", "reserves", "end"],
-  X: ["title", "token", "buy", "withdraw", "refused", "check", "tee", "verify", "rest", "end"],
+  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "lend", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "nbtc", "tee", "reserves", "end"],
+  X: ["title", "token", "buy", "withdraw", "refused", "check", "lend", "tee", "verify", "rest", "end"],
 };
 export const limits = { X: 135, Full: 360 }; // seconds: X allows 2:20 without Premium; the walkthrough aims for 6 min
