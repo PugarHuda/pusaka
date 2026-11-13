@@ -6,170 +6,6 @@ Moved out of the [README](../README.md) to keep it short; every transaction cite
 
 The list that used to open the README; each line links to its detail below.
 
-# Pusaka
-
-[![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
-
-**An NFT that holds real Bitcoin, and NEAR itself knows how much. Sell, lend or bequeath the NFT, and the Bitcoin goes with it.**
-
-Each Pusaka is a NEAR NFT (NEP-171) with its own native Bitcoin address, signed for by the NEAR MPC network through
-[Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) only when the **current NFT owner** asks.
-Every deposit is **proven on NEAR** against Bitcoin's own headers by NEAR's Bitcoin light client, and the contract
-subtracts every output it ever signed away: `verified_sats` is a number a buyer, lender, heir or AI agent can rely on
-with no indexer, no oracle, no wrapped BTC and no trust in us.
-
-Live badges, redrawn from the chains on every view (BTC proven on NEAR, and whether anything the holder already signed
-could still move it, with the time of the check):
-
-[![Pusaka #4: proof of clean](https://pusaka-two.vercel.app/api/badge?id=4&contract=pusaka-btc.testnet&clean=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/4)
-[![Pusaka #27: proof of clean](https://pusaka-two.vercel.app/api/badge?id=27&contract=pusaka-btc.testnet&clean=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/27)
-
-**60 seconds, no wallet:**
-```
-npm install && node scripts/verify.mjs        # every claim below, checked against NEAR, its MPC, its light client and Bitcoin
-node scripts/mainnet-proof.mjs                # the same proof, accepted by NEAR's *mainnet* Bitcoin light client (free view call)
-```
-Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin proven inside it, and what you can do now.
-
-## What it looks like (live app, 13 Nov)
-
-| | |
-|---|---|
-| ![The market: every Pusaka with the Bitcoin proven inside it](screenshots/market.png) | ![A Pusaka for sale by Dutch auction: 10,000 sats verified on NEAR, its price against the BTC inside, a live NEAR Intents exit quote](screenshots/token.png) |
-| **Market**: every Pusaka, the BTC proven inside, what you can do now | **A Pusaka**: BTC verified on NEAR, price vs. the BTC inside, live exit quote |
-| ![Clean to buy: nothing the seller signed can still move what's inside, checked on every chain](screenshots/clean-to-buy.png) | ![Borrow Circle USDC from the pool, priced by three reporters](screenshots/lend-pool.png) |
-| **Clean to buy**: Bitcoin, every EVM chain, Solana, its NEAR account | **Two ways to borrow**: NEAR from a person, or Circle USDC from the pool |
-| ![Proof trail: each deposit's Bitcoin tx, the light client's merkle check, and the attested TEE agent that proved it](screenshots/proof-trail-tee.png) | ![An exchange checks a Pusaka's BIP-322 proof: valid, exchange-ready, clean](screenshots/verify-exchange.png) |
-| **Proof trail**, with deposits proven by the attested Shade Agent | **For exchanges**: BIP-322 proof, sats proven, clean, `exchange_ready` |
-| ![A Smart Pusaka: its own keyless NEAR account, nBTC inside, its Omni deposit address](screenshots/smart-pusaka-nbtc.png) | ![Proof of reserves across both contracts, each row re-checkable in the browser](screenshots/reserves.png) |
-| **Smart Pusaka**: its own account, nBTC in and out | **Proof of reserves**, re-checkable from your browser |
-| ![Real attacks the contracts refused, each confirmed failed on NEAR](screenshots/refused.png) | ![For AI agents: the live MCP endpoint's tools, prompts and resources](screenshots/agents.png) |
-| **Refused**: real attacks, failed on-chain | **For AI agents**: 61 MCP tools, x402 audits |
-
-Regenerate: `node web/e2e/readme-shots.mjs [bip322-proof.json]`.
-
-## Why it's different
-
-| | NFT = a Chain Signatures wallet (Satchel, Handover, Incorpr) | BTC vault NFT for loans (Unwrapped) | BTC escrow with light-client proofs (Trueque) | **Pusaka** |
-|---|---|---|---|---|
-| Bitcoin inside | none (Satchel: 16 EVM chains), or native BTC read off-chain | native UTXOs, SPV-proven on NEAR | native, proven once for one deal | **native UTXOs proven on NEAR, plus nBTC in the NFT's own account, redeemable back to native BTC (done live)** |
-| Balance stays right after spends | EVM sign record (Satchel); otherwise nothing on NEAR | proven minus a signature ledger | n/a (escrow ends) | **proven minus every signed output, and a buy fails if anything was signed since the buyer looked (sign epoch)** |
-| Borrowing | no | USDC from a pool, oracle price, liquidation | no | **both, and the holder picks the risk: NEAR from a person (standing offers, gas-free accept, refinance; fixed term, no oracle, so a price dip never costs the Bitcoin), or **Circle's testnet USDC** from a pool (`pusaka-lend.testnet`: liquidation from 80% at ≥95% of the BTC's value with the surplus paid to the borrower, 2-of-3 reporter price where one outlier can't move either side)** |
-| "Clean to buy" check | yes for EVM (Satchel) | n/a | n/a | **yes, on every token page: Bitcoin, every EVM chain, Solana and its NEAR account (NEAR, nBTC), loan status** |
-| Outside NEAR | no | no | no | **SIWE sign-in and BIP-322 proofs an exchange checks at `#/verify` or `POST /api/verify`, with the sats proven at that address** |
-| What else it does | transfer, sale | loan | one swap | **Dutch auctions, Mintbase, NEAR Intents exit, heir with guardians, gift link, staking, bundles, sealed letters, NEAR AI TEE appraisal, deposits proven by an attested Shade Agent, 61-tool MCP server, x402 audits** |
-| Code anyone can trust | Satchel: locked, 0 keys | upgradeable | varies | **classic contract keyless, upgrades renounced, reproducible build (NEP-330); every event replayed from genesis by `verify.mjs`** |
-
-Where others are ahead, said plainly: Unwrapped's pool has a longer track record of liquidation logic; Pusaka's pool
-(Circle's own testnet USDC since 13 Nov, from Circle's faucet) is newer, runs tight on testnet (borrow up to 79.5%,
-liquidation from 80%) so that a real price move can trigger a real liquidation during judging (mainnet: 50/80), and its three price reporters (mempool.space, CoinGecko, Rhea's nBTC
-pool) are all run by us on testnet, so the 2-of-3 quorum guards against one bad source, not against us. Satchel covers
-16 EVM chains and is on mainnet (Pusaka covers Bitcoin first, EVM/Solana/NEAR alongside, on testnet).
-
-One NFT is a whole set of wallets: the same MPC key holds an address on every EVM chain (ETH, USDC), a second Ed25519
-key is a Solana address and the NFT's own NEAR account. **Smart Pusakas** (`pusaka-v2.testnet`) add a keyless NEAR
-account per NFT: it can hold USDC from a NEAR Intents swap of the NFT's own Bitcoin, or another Pusaka, and all of it
-is sold, lent and inherited as one bundle (live: an AI agent bought one at 66% below its contents, then an heir inherited it).
-Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.testnet` stays frozen for good (open any of its Pusakas with `?contract=pusaka-btc.testnet`), and the Market, reserves, offer book and refusals cover both.
-
-> **What's real, and what isn't (yet).**
-> - **Real, on NEAR testnet, every claim with a tx hash** (178 of them, all checked by `verify.mjs`).
-> - **Mainnet:** not deployed (needs funds; `docs/MAINNET.md`), but `scripts/mainnet-proof.mjs` shows Pusaka's proof
->   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
-> - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`
->   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote.
-> - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
->   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
-> - **The USDC pool** lends Circle's own testnet USDC. Its three price reporters are ours, and on testnet it runs tight
->   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation; mainnet: 50/80.
-
-**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (61 tools,
-spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
-
-*Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
-
-Built at NEAR HACKATHON (Nov 2026). Tracks: NFTs That Do Something, Unstoppable DeFi, Open Innovation.
-
-Second project by the same builder, independent of this one: [Koperasi](https://github.com/PugarHuda/koperasi), an AI
-agent owned and governed by its members (tracks Social Money, Autonomous Business, Agent Economy).
-
-| | |
-|---|---|
-| Contracts | [`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet) (main: Smart Pusakas) and the frozen classic [`pusaka-btc.testnet`](https://testnet.near.rocks/account/pusaka-btc.testnet) (keyless, renounced), NEAR testnet |
-| MPC signer | `v1.signer-prod.testnet` (NEAR Chain Signatures) |
-| Bitcoin network | testnet3 ([mempool.space/testnet](https://mempool.space/testnet)), the network NEAR's Bitcoin light client tracks |
-| Bitcoin light client | [`btc-client-v4.testnet`](https://testnet.near.rocks/account/btc-client-v4.testnet) (Near-One / Omni Bridge), verifies every deposit on-chain |
-| Live demo | **https://pusaka-two.vercel.app** (or run locally, below) |
-
-## Try it in two minutes (testnet wallet only)
-
-1. Open **https://pusaka-two.vercel.app/#/market**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
-2. **Buy:** Pusaka #27 (11,000 sats verified) is for sale at 0.35 NEAR, #10 at 0.5; #4 is a Dutch auction falling to 0.4 NEAR. Each card says how its price compares with the BTC inside. Click one, then *Buy*. **See:** "You own Pusaka #N", and you can *Withdraw* its BTC to any `tb1…` address.
-3. **Lend:** #14 and #25 ask to borrow against 10,000 verified sats each. The page shows the loan-to-value and what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
-4. **A bundle:** Smart Pusaka #7 holds classic Pusaka #22 (11,500 sats) and 12.5 USDC in its own account; its page says so before you buy, and the Market counts that Bitcoin once.
-5. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
-6. **See the attacks it refused:** [#/refused](https://pusaka-two.vercel.app/#/refused) lists real failed transactions (a seller withdrawing after a sale, a front-run signature, an early heir, a stranger spending from an NFT's own account, …), each with the contract's own panic read live from NEAR's archive and the test that guards it.
-7. **Don't trust our page:** open any Pusaka and click *Check it yourself*: your browser asks NEAR, its MPC signer, its light client and Bitcoin directly. Same code as `scripts/verify.mjs`.
-
-## Try it
-
-Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the contract.
-
-### 1. Run the unit tests (offline; ~4 min on a cold build, ~10 s after) — Rust
-
-```sh
-cd contract && cargo test
-```
-
-See: `375 passed`. They cover every attack in the [threat model](THREAT-MODEL.md#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
-
-### 2. Run the full flow against the deployed contract (~3 min)
-
-```sh
-npm install
-npm run demo
-```
-
-What happens, step by step (all on NEAR testnet + Bitcoin testnet3, against the deployed contract; the numbers match what the script prints):
-
-0. Two fresh NEAR accounts are created through the public NEAR testnet faucet. **See:** `created pusaka-s-….testnet`.
-1. The seller mints a Pusaka. The contract fetches its Bitcoin key from the MPC contract on-chain. **See:** a `tb1q…` address.
-2. **The one manual step (optional):** send testnet3 BTC to that address, e.g. one click at [coinfaucet.eu/en/btc-testnet](https://coinfaucet.eu/en/btc-testnet/) (one request per IP per 12 h; any testnet3 faucet works). The script waits for **1 Bitcoin confirmation**, then calls `prove_deposit`: the contract parses the transaction, checks it pays this Pusaka, and the on-chain light client verifies the merkle proof. **See:** `proven by btc-client-v4.testnet: true` and `verified on NEAR: … sats`. **No BTC sent within 3 minutes** (an automated run can't use a faucet; `--wait 30` waits longer): the seller buys a stocked Pusaka that already holds proven BTC and the steps below run on it; at the end it is relisted for the next person. **See:** `bought stocked Pusaka #… (… sats already proven)`, and at the end `relisted #…`.
-3. The seller lists it for 1 NEAR, then tries to withdraw. **See:** `rejected (Listed)`.
-4. The buyer checks the safe balance and buys. **See:** `sold in ~3s — new owner: pusaka-b-…`. Nothing happened on Bitcoin.
-5. The old owner tries to withdraw. **See:** `rejected (NotOwner)`.
-6. The new owner withdraws 1000 sats. The contract builds the Bitcoin transaction, the MPC network signs it, the script verifies each signature locally and broadcasts. **See:** a `mempool.space/testnet/tx/…` link that the Bitcoin network accepted.
-7. The buyer borrows 0.5 NEAR against the Pusaka and the seller lends it. **See:** the borrower's withdrawal rejected with `Collateralised`.
-8. The loan isn't repaid in time and the lender takes the Pusaka with its BTC. **See:** the lender as the new owner.
-
-Already have accounts in `.keys/` and a funded token? `npm run demo -- --token 1 --seller a.testnet --buyer b.testnet` skips steps 0–2.
-
-### 2b. End-to-end checks against the live app (~3 min)
-
-```sh
-npx playwright install chromium firefox webkit   # once, on a fresh machine
-npm run e2e -w web                # Playwright, against https://pusaka-two.vercel.app
-npx playwright show-report web/playwright-report   # the HTML report, with traces and screenshots of any failure
-```
-
-Two suites. `e2e/ui.spec.mjs` runs on **Chromium, Firefox, WebKit, an iPad and a Pixel 7** (19 tests each, 95 in all; visual baselines are checked on Linux in CI): back/forward and deep links (leading zeros, a missing token, `-1`, a 5,000-character route, a script tag in the URL), the command palette with empty, huge and hostile input, no horizontal scroll on any key page, **axe-core** (WCAG 2.1 AA, no serious or critical violation on landing, market, a Pusaka, For AI agents and not-found, and in dark mode on landing, market and a Pusaka), **visual snapshots** of the pages whose pixels don't depend on live data (not-found; Your Pusakas without a wallet in light, then in dark after the system switches with the page open), committed per engine and OS, and **failure paths by route interception**: every NEAR RPC down (the token page, the market and the landing page say so and *Try again* recovers), both Bitcoin explorers down (NEAR-verified sats still shown, with a warning), the price API failing (no `NaN`), and going offline mid-session. Nothing on the success path is mocked: it reads the live testnet contract. These tests found four bugs, fixed: the theme ignored a system switch to dark while the page was open; the landing page stayed on *Reading the contract…* forever when NEAR was unreachable; fast back/forward left unhandled View Transition rejections; and twenty parallel reads failing on a rate-limited RPC cycled the shared failover index back onto that RPC (now each call skips an endpoint that failed in the last minute, and a contract panic is never retried: `node shared/failover.test.mjs`). `e2e/live.spec.mjs` (Chromium) checks the production deployment against the chain. See: `40 passed`, a few skipping when an outside feed is down (home, first paint without the bundle, loan offer book, detail, not-found recovery, keyboard skip link and focus on navigation, phone layout, no-wallet actions, relayer and API input checks, on-chain NFT image, outside-market listings, EVM/SOL/NEAR accounts, holder room, reserves and badges, nBTC, heir section, security headers, the NEAR Intents exit quote, the Your Pusakas page, and that the demo stock and the relayer's balance are there). Read-only: no wallet, no transactions. CI runs it on every push and once a day.
-
-**Monitoring** (NEAR security checklist: alert on every failed callback receipt). `node scripts/receipt-monitor.mjs [--hours 6]` reads every receipt of every transaction touching `pusaka-btc.testnet` or `pusaka-relayer.testnet` in the last 6 hours (FastNear tx API, no keys). It fails if a receipt the contract sent to itself failed (`on_key`, `on_signed*`, `on_deposit_proven`, `on_usdc_proven`, `nft_resolve_transfer`, ...), or if a token's signing lock (`pending`) has been held for 600+ blocks, which means a callback never cleared it and the owner needs `unlock_stale`. A user's own call that panics on purpose (a refused withdraw, a buy that hits `StateChanged`) is that caller's failed transaction, so it's only counted. CI runs it after the e2e checks, on the same 6-hour schedule.
-
-### 3. Use the web app
-
-```sh
-npm install
-npm run dev        # http://localhost:5173
-```
-
-- **Do:** open the home page. **See:** every Pusaka as a medallion generated from its Bitcoin key, with the BTC **verified on NEAR** by the light client, plus anything still waiting to be proven.
-- **Do:** open a Pusaka whose deposit is confirmed but not proven and click *Prove deposit* (any connected account can). **See:** the verified amount go up after the light client accepts the proof.
-- **Do:** open a Pusaka. **See:** its Bitcoin address (links to mempool.space), safe balance, at-risk balance if any, and on-chain history.
-- **Do:** connect a NEAR testnet wallet (tested with Meteor Wallet) and click *Mint a Pusaka*. Then *List for sale*, *Buy* from a second account, or *Withdraw* to any `tb1…` address.
-
-## What it does
-
 Each line is live on testnet with transaction hashes; the detail is one click away.
 
 **The core (contract `pusaka-btc.testnet`, final: no key, upgrades renounced)**
@@ -197,55 +33,6 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 **Real history to look at**: loans funded and repaid, sales from listings and into per-sat bids, refused bids, a USDC loan refused, one healthy and one at the limit, an heir named, a gift claimed by a brand-new account, SOL and USDC moved by the NFT's own keys, a TEE agent's proof; each with its tx in [docs/FEATURES.md](#demo-history-added-on-13-nov-scriptsdemo-casesmjs-and-friends-every-case-a-real-transaction).
 
 **Why it holds**: the seller can't keep a way back into the Bitcoin. Every attack in the [threat model](THREAT-MODEL.md) has a test named after it, and the [Refused](https://pusaka-two.vercel.app/#/refused) page shows 39 real attempts the contracts turned down. [Measured on testnet](EVIDENCE.md) · [every NEAR primitive used](EVIDENCE.md#every-near-primitive-pusaka-uses-and-where-to-see-it-live).
-
-## How it works
-
-```
- owner ──withdraw(utxos, to, amount)──▶ pusaka-btc.testnet ──sign(path="pusaka-N", sighash)──▶ v1.signer-prod.testnet
-                                         │ checks: caller owns NFT N,         (NEAR MPC network,
-                                         │ not listed, nothing pending        Chain Signatures)
-                                         │ builds the BTC tx + BIP143 sighashes      │
-                                         │ records the signed outpoints              │
-          signed tx  ◀──on_signed()──────┘◀──────────── signature ───────────────────┘
-             │
-             └── client attaches witnesses, verifies each signature, broadcasts to Bitcoin testnet3
-```
-
-- **Key derivation.** Token `N` uses MPC derivation path `pusaka-N` with the contract as predecessor. At mint, the contract calls `derived_public_key` on the MPC contract itself and stores the result, so nobody can mint a Pusaka that points at an address they control.
-- **Addresses** are native SegWit (P2WPKH, `tb1q…`). Sighashes follow BIP143, so input values are signed too.
-- **The contract never signs a hash you give it.** It builds the transaction from the UTXOs you name ([`omni-transaction`](https://github.com/near/omni-transaction-rs)) and computes every sighash itself. This is what makes the outpoint registry below trustworthy.
-- **Selling** is `list(price)` then `buy(expected_sign_epoch)`: one NEAR transaction pays the seller and moves the NFT. The sign epoch counts every signature ever requested for the token (BTC inputs and EVM transactions).
-
-## Repository
-
-```
-contract/   Rust smart contract (near-sdk 5, NEP-171) + unit tests
-  src/lib.rs     NFT, market, withdraw, locks, outpoint registry
-  src/btc.rs     P2WPKH scripts, BIP143 sighashes, tx building
-  src/tests.rs   threat-model tests
-shared/     Bitcoin helpers used by scripts and web: address, safe balance, witness assembly + signature check
-scripts/    setup.mjs (deploy), demo.mjs (end-to-end), withdraw*.mjs (BTC, ETH/USDC, SOL, NEAR),
-            mintbase.mjs, holder-test.mjs, handover.mjs
-api/        Vercel functions: relay (NEP-366), prove, holder (NEP-413), reserves, badge, prices (+ pool price reports), mcp, verify, audit (x402), appraise
-lend/       the USDC lending pool (Rust): shares, 2-of-3 reporter price, liquidation; lend/pusd the faucet test token it started on
-market/     per-sat bids and perpetual loans (Rust)
-mcp/        MCP server for AI agents
-shade/      TEE deposit prover (Phala TDX), its attestation-checking agent contract, compose/deploy config
-web/        Vite + React app, NEAR wallet via @hot-labs/near-connect
-docs/PRD.md product requirements and design notes
-```
-
-Build the contract: `cd contract && cargo near build non-reproducible-wasm --no-abi` → `target/near/pusaka.wasm`.
-Deploy your own: put the contract id in `shared/btc.mjs` (`CONFIG`), then `npm run setup` (creates faucet accounts, deploys, initialises). Moving to mainnet: see [docs/MAINNET.md](MAINNET.md).
-
-## Built with
-
-near-sdk 5 and near-contract-standards, [omni-transaction](https://github.com/near/omni-transaction-rs) (Bitcoin tx building in the contract), near-api-js 7, @hot-labs/near-connect, bitcoinjs-lib 7, @noble/curves, Vite + React, mempool.space API.
-All code in this repository was written during the hackathon window (2 Nov 2026 onward), with help from Claude Code (AI pair programmer).
-
-## License
-
-[MIT](LICENSE)
 
 ## Borrow against your Bitcoin, sell by auction
 
@@ -323,15 +110,15 @@ from 80% loan-to-value anyone may liquidate. Every token page shows both. On tes
 pool would borrow up to 50%. It started on pUSD, a faucet test token, and moved to Circle USDC with `reset`, which
 only the pool account can call and only while the pool is empty (no loan, no share).
 
-- **Collateral is the NFT itself.** `nft_transfer_call(pusaka-lend.testnet, token, {"borrow": "<pUSD>"})`: the pool
+- **Collateral is the NFT itself.** `nft_transfer_call(pusaka-lend.testnet, token, {"borrow": "<amount>"})`: the pool
   reads `token_info` on-chain and values `verified_sats` (light-client proven, never signed away). While the pool holds
   the NFT nobody can ask NEAR's MPC to sign its Bitcoin, so the collateral can only grow. Classic and Smart Pusakas both work.
 - **Price**: three reporters, each posting one independent source: `pusaka-relayer.testnet` (mempool.space),
   `pusaka-admin.testnet` (CoinGecko), `pusaka-seller.testnet` (Rhea's nBTC pool on NEAR). The contract needs 2 of 3
-  fresh (at most 1 hour old) reports; **borrowing values collateral at the lower middle report and liquidation decides
+  fresh (at most 2 hours old) reports; **borrowing values collateral at the lower middle report and liquidation decides
   on the higher one**, and two middles more than 5% apart mean no price at all, so one bad source can't move the price
   used against the pool or against a borrower. A stale price pauses borrowing and liquidation; nobody is liquidated on
-  an old price. Reports go out every 20 min from GitHub Actions (`lend-price.yml`) with keys that can call only
+  an old price. Reports go out whenever a page asks `/api/prices` and on a GitHub Actions schedule (`lend-price.yml`, best effort), with keys that can call only
   `report_price` on this contract. On testnet all three reporters are ours: the quorum guards against a bad source,
   not against us.
 - **Liquidation pays the borrower**: the liquidator pays max(debt, 95% of the BTC's value); the pool takes the debt,
@@ -345,7 +132,7 @@ Live 13 Nov (`scripts/lend.mjs`, `deployments/testnet-lend.json`): reports from 
 ([9vDbh8MN…](https://testnet.near.rocks/tx/9vDbh8MNhdGggZUyLhVVhfqxAeqGK8H1Bi1V9iDNKNT8)) and repaid
 ([95nnpFVb…](https://testnet.near.rocks/tx/95nnpFVb1ztDTczCYrAG2X7XjQNeBrEoM9n5EvUEzowA): the NFT went back, the pool
 earned the interest), then a request over 50% refused with the NFT sent straight back
-([H1oUW2Tp…](https://testnet.near.rocks/tx/H1oUW2TpMczMMyCYraHHJvFpJbXsVNCrc6ZqqJ9WrHvM)). 20 contract tests, each named
+([H1oUW2Tp…](https://testnet.near.rocks/tx/H1oUW2TpMczMMyCYraHHJvFpJbXsVNCrc6ZqqJ9WrHvM)). 22 contract tests, each named
 after the attack it stops (a lying reporter outvoted, one source can't move either side, a stale price blocks
 liquidation, a liquidator can't pay under the floor, an approved account can't pledge someone else's Pusaka…).
 **Then on Circle USDC** (13 Nov): the pUSD shares withdrawn, `reset` to Circle USDC at 79.5/80
@@ -353,7 +140,7 @@ liquidation, a liquidator can't pay under the floor, an approved account can't p
 ([BxcQTFLp…](https://testnet.near.rocks/tx/BxcQTFLpFxhs8AT2nSnLcFoCMf9A1aV1nKusju7esrcw)), and 3.544336 USDC borrowed
 against Smart Pusaka #1 (6,500 sats, $4.46 at 68,589 USD/BTC) at 79.49% loan-to-value
 ([ERLuF8nf…](https://testnet.near.rocks/tx/ERLuF8nfwMTPBjywXRNxZpFHc8hLrbgfnk2Lj4xWTxX1)). It becomes liquidatable if the
-reporters' price falls about 0.64%; a watcher liquidates it then, on the real price. MCP: `pusaka_lend_pool`, `pusaka_lend_borrow`, `pusaka_lend_repay`, `pusaka_lend_liquidate`. `verify.mjs` checks the
+reporters' price falls a fraction of a percent (0.44% on 13 Nov at 17:00 UTC; interest moves it closer every hour); a watcher liquidates it then, on the real price. 20 more Circle USDC from Circle's faucet supplied on 13 Nov ([BEhFzECw…](https://testnet.near.rocks/tx/BEhFzECwr95eDvQG1f5qtfCwSnSB8A1SYQSPqzVMZt6U)). MCP: `pusaka_lend_pool`, `pusaka_lend_borrow`, `pusaka_lend_repay`, `pusaka_lend_liquidate`. `verify.mjs` checks the
 pool's code and rules against the record, that it holds its cash, and that every pledged Pusaka is held by it.
 
 ## Clean to buy (and clean to inherit)
