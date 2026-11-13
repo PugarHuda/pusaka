@@ -87,7 +87,7 @@ Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.t
 >   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
 > - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`
 >   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote.
-> - **Smart Pusakas** are upgradeable through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
+> - **Smart Pusakas** (`pusaka-v2.testnet`, no key since 14 Nov) are upgradeable only through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 > - **The USDC pool** lends Circle's own testnet USDC. Its three price reporters are ours, and on testnet it runs tight
 >   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation; mainnet: 50/80.

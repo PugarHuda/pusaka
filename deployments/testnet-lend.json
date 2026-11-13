@@ -43,6 +43,6 @@
     "usdc_supply_10": "BxcQTFLpFxhs8AT2nSnLcFoCMf9A1aV1nKusju7esrcw",
     "usdc_borrow_at_79_49pct_against_v2_1": "ERLuF8nfwMTPBjywXRNxZpFHc8hLrbgfnk2Lj4xWTxX1"
   },
-  "keys": "pusaka-lend.testnet and pusaka-usd.testnet still hold a full-access key; deleted with the others at the final step (needs the owner's 2x OK)",
+  "keys": "none: both full-access keys deleted on 14 Nov (pusaka-lend.testnet HZnY3FJFLxTjypwg4tQmFoZuzgtZKR1svaAQeBhkDhRZ, pusaka-usd.testnet JCU9DDo4vuVBCVH1vBh3ctKBncBH7mpwvroCk1Jt3iqk); the pool's rules and reset can never change",
   "stable_note": "Circle's testnet USDC on NEAR since the reset of 13 Nov; pusaka-usd.testnet (pUSD) before"
 }

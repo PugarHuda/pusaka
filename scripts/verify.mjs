@@ -234,7 +234,7 @@ if (fs.existsSync(V2) && JSON.parse(fs.readFileSync(V2, "utf8")).contract !== CO
   const up2 = await view("upgrade_status", {}, v2);
   ok(up2.admin === d.accounts.upgrade_dao && Number(up2.delay_ms) >= 600_000, "v2 upgrades go through the DAO and a timelock (see the key line next)", `${up2.admin}, ${Number(up2.delay_ms) / 60_000} min`);
   const k2 = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: v2 })).keys;
-  console.log(`${k2.length ? "ℹ" : "✓"} v2 account keys: ${k2.length ? `${k2.length} (deleted at the final deploy, 13 Nov)` : "none"}`);
+  console.log(`${k2.length ? "ℹ" : "✓"} v2 account keys: ${k2.length ? `${k2.length} (expected none since 14 Nov)` : "none"}`);
   const toks = await view("nft_tokens", { from_index: "0", limit: 100 }, v2);
   const bad = [];
   let opened = 0;
@@ -258,7 +258,7 @@ Market: ${d.contract}`);
   const a = await rpc("query", { request_type: "view_account", finality: "final", account_id: d.contract });
   ok(hex(base58.decode(a.code_hash)) === d.code.wasm_sha256, "market code = the build recorded in deployments", `${d.code.wasm_sha256.slice(0, 16)}…`);
   const k = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: d.contract })).keys;
-  console.log(`${k.length ? "ℹ" : "✓"} market account keys: ${k.length ? `${k.length} (deleted at the final deploy, 13 Nov)` : "none: the code can never change"}`);
+  console.log(`${k.length ? "ℹ" : "✓"} market account keys: ${k.length ? `${k.length} (expected none since 14 Nov)` : "none: the code can never change"}`);
 }
 
 // 9. The lending pool (testnet; Circle USDC since 13 Nov): recorded code and config, solvent, and every pledged Pusaka really held by the pool.
@@ -281,7 +281,7 @@ Lend: ${d.contract} (pUSD: ${d.stable})`);
   ok(owners.every((o) => o === d.contract), "every pledged Pusaka is held by the pool (so nobody can sign its Bitcoin away)", `${loans.length} open loan(s)`);
   console.log(`${pool.price ? "✓" : "ℹ"} price: ${pool.price ? `${Number(pool.price.low) / 1e6}–${Number(pool.price.high) / 1e6} USD/BTC from ≥${cfg.quorum} fresh reports` : "stale (borrowing and liquidation paused until reporters post)"}`);
   const k = (await rpc("query", { request_type: "view_access_key_list", finality: "final", account_id: d.contract })).keys;
-  console.log(`${k.length ? "ℹ" : "✓"} lend account keys: ${k.length ? `${k.length} (deleted with the others at the final step)` : "none: the rules can never change"}`);
+  console.log(`${k.length ? "ℹ" : "✓"} lend account keys: ${k.length ? `${k.length} (expected none since 14 Nov)` : "none: the rules can never change"}`);
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : inconclusive ? "\nall checks passed; some Bitcoin lookups couldn't be made from here (⚠ above)" : "\nall checks passed");
