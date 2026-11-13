@@ -268,6 +268,9 @@ impl Lend {
     #[private]
     pub fn on_borrow_info(&mut self, nft: AccountId, token_id: String, borrower: AccountId, amount: U128) -> bool {
         let Some((price, _)) = self.price_now() else { emit("borrow_refused", json!({ "token_id": token_id, "reason": "StalePrice" })); return true };
+        // `pending` isn't checked: during this callback it is always true, because our own nft_transfer_call is in flight
+        // (token_info reports signing OR in_transfer_call). A Bitcoin signature can't be in progress: the Pusaka contract
+        // refuses to start a transfer while one is (assert_unlocked), and verified_sats never counts signed outputs.
         let info = read_info().filter(|i| i.token.owner_id == env::current_account_id() && i.loan.is_none() && i.listing.is_none());
         let Some(info) = info else { emit("borrow_refused", json!({ "token_id": token_id, "reason": "BadToken" })); return true };
         let value = value_of(info.verified_sats.0, price);
