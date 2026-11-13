@@ -1,7 +1,7 @@
 // More real on-chain demo history, case by case (classic contract pusaka-btc.testnet), each step printing its tx.
 //   PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/demo-cases.mjs
 // A step that doesn't apply any more (already done, state moved on) says so and the rest go on.
-import { account, call, callRaw, view, NEAR_EXPLORER } from "./lib.mjs";
+import { account, callRaw, view, NEAR_EXPLORER } from "./lib.mjs";
 
 const C = "pusaka-btc.testnet";
 const BUYER = "pusaka-buyer.testnet", SELLER = "pusaka-seller.testnet", HOLDER11 = "pusaka-w-mvzhtaw8.testnet";

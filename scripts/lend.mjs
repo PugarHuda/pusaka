@@ -25,7 +25,6 @@ try { USD = (await view("config", {}, "pusaka-lend.testnet")).stable; } catch {}
 const faucet = () => USD === PUSD;
 const U = 1_000_000n; // pUSD has 6 decimals
 import { SOURCES as REPORTERS, sourcePrice } from "../shared/lendprice.mjs";
-const j = async (u) => { const r = await fetch(u, { signal: AbortSignal.timeout(10_000) }); if (!r.ok) throw new Error(`${u}: HTTP ${r.status}`); return r.json(); };
 const link = (o) => `${NEAR_EXPLORER}/tx/${o.transaction.hash}`;
 const failed = (o) => JSON.stringify(o.receipts_outcome.map((r) => r.outcome.status)).match(/Failure[^}]*}/)?.[0];
 const logs = (o) => o.receipts_outcome.flatMap((r) => r.outcome.logs).filter((l) => l.includes("pusaka-lend")).map((l) => JSON.parse(l.slice(11)).event);
