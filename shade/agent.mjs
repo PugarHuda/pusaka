@@ -4,8 +4,12 @@
 // own TEE-born key, using the same code path as the Vercel relayer (api/_relayer.mjs).
 // GET / shows what it has done. Nothing here can move anyone's assets: prove_deposit only records
 // light-client-verified facts.
+// Heirs' claims from attested code: at boot the agent makes a second key that never leaves the enclave and shows its
+// public half at GET / (heir_key). An heir who adds it to their own account as a function-call key limited to
+// claim_inheritance on a Pusaka contract, and lists their account in HEIR_ACCOUNTS, gets their inheritance claimed by
+// this agent the moment the holder's silence runs out. The key can do nothing else, and dies with the enclave.
 import { createServer } from "node:http";
-import { Account, FailoverRpcProvider, JsonRpcProvider } from "near-api-js";
+import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair } from "near-api-js";
 import { ShadeClient, sanitize } from "@neardefi/shade-agent-js";
 import { CONTRACT, SIBLINGS, nearProvider } from "@pusaka/shared";
 import { proveToken } from "../api/_relayer.mjs";
@@ -48,6 +52,29 @@ setInterval(() => agent.register().catch((e) => fail("re-register", e)), 6 * 24 
 const [key] = agent.getPrivateKeys({ acknowledgeRisk: true });
 const prover = new Account(status.agent, nearProvider({ FailoverRpcProvider, JsonRpcProvider }), key);
 
+// the heirs' claim key: born here, never exported; heirs grant it claim_inheritance only
+const heirKey = KeyPair.fromRandom("ed25519");
+const HEIRS = (process.env.HEIR_ACCOUNTS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+status.heir_key = heirKey.getPublicKey().toString();
+status.heirs = HEIRS;
+status.claims = [];
+
+async function claimForHeirs() {
+  if (!HEIRS.length) return;
+  for (const c of [CONTRACT, ...SIBLINGS]) {
+    const tokens = await prover.provider.callFunction({ contractId: c, method: "nft_tokens", args: { from_index: "0", limit: 100 } });
+    for (const t of tokens) {
+      const h = await prover.provider.callFunction({ contractId: c, method: "heir_of", args: { token_id: t.token_id } }).catch(() => null);
+      if (!h || !HEIRS.includes(h.heir) || Date.now() < Number(h.claimable_from_ms)) continue;
+      try {
+        await new Account(h.heir, prover.provider, heirKey.toString()).callFunction({ contractId: c, methodName: "claim_inheritance", args: { token_id: t.token_id }, gas: 100_000_000_000_000n });
+        status.claims = [...status.claims.slice(-19), { contract: c, token_id: t.token_id, heir: h.heir, at: new Date().toISOString() }];
+        console.log("claimed", c, t.token_id, "for", h.heir);
+      } catch (e) { fail(`claim ${c} #${t.token_id} for ${h.heir}`, e); }
+    }
+  }
+}
+
 async function round() {
   status.runs++; status.last_run = new Date().toISOString();
   try {
@@ -62,6 +89,7 @@ async function round() {
       }
     }
   } catch (e) { fail("round", e); }
+  await claimForHeirs().catch((e) => fail("heirs", e));
 }
 await round();
 setInterval(round, EVERY_MS);

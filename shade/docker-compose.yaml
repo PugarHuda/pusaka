@@ -5,6 +5,7 @@ services:
       AGENT_CONTRACT_ID: ${AGENT_CONTRACT_ID}
       SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
       SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
+      HEIR_ACCOUNTS: ${HEIR_ACCOUNTS}
     platform: linux/amd64
     image: ghcr.io/pugarhuda/pusaka-agent@sha256:aa09f463ca4b5d4dddcc555129085b5b4a549d07b22c0086932b44db9a71ed04
     container_name: pusaka-agent
