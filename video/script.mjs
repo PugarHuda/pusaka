@@ -241,6 +241,30 @@ export const scenes = {
     box: [{ at: "@loan", for: 4 }, { at: "@owner", for: 3 }],
   },
 
+  badge: {
+    clip: "badge",
+    start: "@button-1",
+    caption: "Proof of clean, pasted anywhere",
+    vo: [
+      { at: "@button-0.5", text: "A seller can copy a proof-of-clean badge for any marketplace." },
+      { at: "@badge", text: "It is redrawn from the chains every time it's shown: the Bitcoin proven inside, whether anything signed could still move it, and when it was checked." },
+    ],
+    box: [{ at: "@button", for: 3 }, { at: "@badge", for: 5 }],
+    zoom: [{ at: "@badge", for: 5, scale: 1.4 }],
+  },
+
+  "heir-agent": {
+    clip: "heir-agent",
+    start: "@holder-1",
+    caption: "Inheritance watched by agents",
+    vo: [
+      { at: "@holder-0.5", text: "Agents watch the will. The holder's agent warns before an heir can claim, but never checks in for them: a will an agent keeps alive would never pass on." },
+      { at: "@heir", text: "The heir's agent watches every Pusaka naming it." },
+      { at: "@claimed", text: "When a holder goes silent, it claims, gas-free. This one inherited Pusaka two." },
+    ],
+    box: [{ at: "@holder", for: 4 }, { at: "@heir", for: 3.5 }, { at: "@claimed", for: 4 }],
+  },
+
   heir: {
     clip: "heir",
     start: "@section-1",
@@ -492,7 +516,7 @@ export const scenes = {
 
 export const compositions = {
   Preview: ["title", "landing", "token", "buy"],
-  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "lend", "lend-borrow", "lend-repay", "liquidate", "heir", "claim", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "nbtc", "tee", "reserves", "end"],
+  Full: ["title", "landing", "token", "buy", "withdraw", "refused", "check", "chains", "loan", "repay", "lend", "lend-borrow", "lend-repay", "liquidate", "heir", "claim", "heir-agent", "letter", "gift", "gift-claim", "passkey", "v2", "v2-act", "vault", "call", "bids", "agents", "verify", "badge", "nbtc", "tee", "reserves", "end"],
   X: ["title", "token", "buy", "withdraw", "refused", "check", "lend", "tee", "verify", "rest", "end"],
 };
 export const limits = { X: 135, Full: 360 }; // seconds: X allows 2:20 without Premium; the walkthrough aims for 6 min

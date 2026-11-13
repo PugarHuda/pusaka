@@ -796,6 +796,38 @@ ${JSON.stringify(terms, null, 2)}`;
     await h.mark("owner", p.getByText(/^Owned by/).first()); await h.pause(4000);
   },
   // ---------- QA: click-through checks of the remaining owner/lender actions (CLIP_TOKEN = a Pusaka the recorder holds) ----------
+  // Proof of clean: the badge a seller pastes next to a listing anywhere, redrawn from the chains on every view.
+  badge: async (h) => {
+    const { p } = h;
+    await tokenPage(h, process.env.CLIP_BADGE ?? "4");
+    const line = p.locator("p.badge-line");
+    await line.waitFor({ timeout: 60_000 });
+    await h.scrollTo(line); await h.mark("button", line); await h.pause(3500);
+    const url = `${URL}/api/badge?id=${process.env.CLIP_BADGE ?? "4"}&contract=pusaka-btc.testnet&clean=1`;
+    await p.setContent(`<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f1ea;font:22px/1.5 system-ui">
+      <div style="text-align:center"><img id="b" src="${url}" style="height:72px"><p style="margin-top:28px;color:#555">${url.replace(/&/g, "&amp;")}</p></div></body>`);
+    await p.locator("#b").evaluate((img) => img.complete || new Promise((r) => { img.onload = r; img.onerror = r; }));
+    await h.pause(800);
+    await h.mark("badge", p.locator("#b")); await h.pause(6000);
+  },
+  // Inheritance watched by agents: the holder's agent warns, the heir's agent claims (mcp/heir-agents.mjs, run live here).
+  "heir-agent": async (h) => {
+    const { p } = h;
+    const { execFileSync } = await import("node:child_process");
+    const run = (args) => execFileSync(process.execPath, ["mcp/heir-agents.mjs", ...args], { cwd: path.join(import.meta.dirname, "..", ".."),
+      env: { ...process.env, PUSAKA_CONTRACT: "pusaka-btc.testnet" }, encoding: "utf8", timeout: 180_000 }).trim();
+    const holder = run(["holder", "pusaka-w-mvzhtaw8.testnet", "--warn-hours=1000"]);
+    const heir = run(["heir", "pusaka-seller.testnet"]);
+    const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    await p.setContent(`<pre style="font:21px/1.5 Consolas,monospace;padding:40px 52px;margin:0;white-space:pre-wrap;background:#0f1115;color:#e6e6e6;min-height:100vh">` +
+      `<span id="h1">$ node mcp/heir-agents.mjs holder pusaka-w-mvzhtaw8.testnet --warn-hours=1000\n${esc(holder)}</span>\n\n` +
+      `<span id="h2">$ node mcp/heir-agents.mjs heir pusaka-seller.testnet\n${esc(heir)}</span>\n\n` +
+      `<span id="h3" style="color:#9fe6a0">earlier today, with --claim: #2: claimed by pusaka-seller.testnet's agent: {"inherited":"2","owner":"pusaka-seller.testnet"}</span></pre>`);
+    await h.pause(1000);
+    await h.mark("holder", p.locator("#h1")); await h.pause(5500);
+    await h.mark("heir", p.locator("#h2")); await h.pause(4500);
+    await h.mark("claimed", p.locator("#h3")); await h.pause(5000);
+  },
   "qa-list": async (h) => {
     const { p } = h;
     await tokenPage(h); await h.connect(BUYER); await tokenPage(h);
