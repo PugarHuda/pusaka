@@ -389,6 +389,7 @@ const scenes = {
     const offer = p.locator("p").filter({ has: p.getByRole("button", { name: "Accept offer" }) }).first();
     await h.scrollTo(offer); await h.mark("offer", offer); await h.pause(2500);
     await h.approve("accept", offer.getByRole("button", { name: "Accept offer" }));
+    await h.followUps("accept"); // the relayer may decline (throttle): then the app sends it as a normal tx, a second approval
     const actions = p.locator("section.actions");
     await h.status("taken", actions, /Loan taken|rror|fail/i);
     await h.pause(4000);
