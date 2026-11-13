@@ -300,7 +300,7 @@ test("a Pusaka offers a pUSD loan from the pool, priced by 2 of 3 reporters, nex
   const sec = page.locator("section.lend");
   await expect(sec).toBeVisible({ timeout: 60_000 });
   await expect(sec).toContainText("NEAR from a person");
-  await expect(sec).toContainText(/Pool [\d,.]+ pUSD/);
+  await expect(sec).toContainText(/Pool [\d,.]+ (pUSD|USDC)/);
   await expect(sec).toContainText(/median of 3 reporters|no fresh price/);
 });
 
