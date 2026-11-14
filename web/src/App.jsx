@@ -1703,9 +1703,11 @@ function GiftLink({ id, busy, run }) {
   const [open, setOpen] = useState(undefined);
   const [link, setLink] = useState("");
   useEffect(() => { view("gift_of", { token_id: id }).then(setOpen, () => setOpen(null)); }, [id, link]);
-  useEffect(() => { // an open gift made from this browser: show its link again
+  useEffect(() => { // an open gift made in this tab: show its link again; once it's no longer open, forget the key
+    const k0 = `pusaka:gift:${CONTRACT}:${id}`;
+    if (open === null) { try { sessionStorage.removeItem(k0); } catch {} return; }
     if (!open || link) return;
-    try { const k = localStorage.getItem(`pusaka:gift:${CONTRACT}:${id}`); if (k) setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${k}`); } catch {}
+    try { const k = sessionStorage.getItem(k0); if (k) setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${k}`); } catch {}
   }, [open, link, id]);
   if (open === undefined) return null;
   if (open) return <div className="stack">
@@ -1713,7 +1715,7 @@ function GiftLink({ id, busy, run }) {
     <p>This Pusaka is waiting for whoever opens its gift link{link ? "" : " (only you had the link)"}. Until then it can't be sold, lent against or withdrawn from.</p>
     {link && <p className="gift-link"><code>{link}</code> <CopyButton text={link} label="Copy link" what="gift link" /></p>}
     <button type="button" className="secondary" disabled={!!busy} onClick={() => run("cancel-gift", async () => {
-      await call("cancel_gift", { token_id: id }); setLink(""); try { localStorage.removeItem(`pusaka:gift:${CONTRACT}:${id}`); } catch {} return "Gift cancelled. The Pusaka is yours to use again.";
+      await call("cancel_gift", { token_id: id }); setLink(""); try { sessionStorage.removeItem(`pusaka:gift:${CONTRACT}:${id}`); } catch {} return "Gift cancelled. The Pusaka is yours to use again.";
     })}>{busy === "cancel-gift" ? "Cancelling…" : "Cancel gift"}</button>
   </div>;
   return <div className="stack">
@@ -1721,7 +1723,7 @@ function GiftLink({ id, busy, run }) {
     <p className="muted">Send this Pusaka, with its Bitcoin, to someone who has no NEAR account yet: they open the link and claim it, and a new account is made for them. A NEAR linkdrop (NEP-452) built into the contract. Costs 0.25 NEAR; 0.13 of it becomes their first NEAR, enough for their first transactions.</p>
     <button type="button" disabled={!!busy} onClick={() => run("gift", async () => {
       const kp = KeyPair.fromRandom("ed25519");
-      try { localStorage.setItem(`pusaka:gift:${CONTRACT}:${id}`, kp.toString()); } catch {} // the link survives a reload
+      try { sessionStorage.setItem(`pusaka:gift:${CONTRACT}:${id}`, kp.toString()); } catch {} // survives a reload, not the tab: it's the gift's key
       await call("gift", { token_id: id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
       setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${kp.toString()}`);
       return "Gift link made. Anyone with it can claim this Pusaka: send it privately.";
