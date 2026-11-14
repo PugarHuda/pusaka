@@ -244,7 +244,7 @@ docs/PRD.md product requirements and design notes
 ```
 
 Build the contract: `cd contract && cargo near build non-reproducible-wasm --no-abi` → `target/near/pusaka.wasm`.
-Deploy your own: put the contract id in `shared/btc.mjs` (`CONFIG`), then `npm run setup` (creates faucet accounts, deploys, initialises). Moving to mainnet: see [docs/MAINNET.md](docs/MAINNET.md).
+Deploy your own: set `PUSAKA_CONTRACT=<your contract id>` (or edit `deployments/testnet-v2.json`, which `shared/btc.mjs` reads), then `npm run setup` (creates faucet accounts, deploys, initialises). Moving to mainnet: see [docs/MAINNET.md](docs/MAINNET.md).
 
 ## Built with
 

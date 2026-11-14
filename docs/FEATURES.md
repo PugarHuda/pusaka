@@ -70,7 +70,7 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 | A hostile guardian | They can't take anything: an approval only releases the Pusaka to the heir the holder named. They can't approve while the holder is around (`gd4`), a stranger can't approve at all (`gd5`), and a hostile minority can't release it (the threshold); refusing to approve only delays the heir until the backstop. |
 | Guardians collude with the heir while the holder is alive but away | They still have to wait out the full silence first, then the release waits another `RELEASE_WAIT_MS`, and one sign of life from the holder in that time voids every approval (`gd8_the_holder_showing_up_voids_every_approval`); a claim inside the waiting period is refused (`gd7`). |
 
-**Verified live (4 Nov 2026, `node scripts/heir.mjs pusaka-buyer.testnet pusaka-seller.testnet 2 --give-back`):** the holder named an heir with a 10-minute silence; the heir's early claim was refused; the holder [checked in gas-free](https://testnet.near.rocks/tx/BvrzBTo5Ej9bVaw7MhDi3LWx2WYSXJkD9MLD13gmSxa), restarting the clock; after 10 minutes of silence a claim by anyone else was refused and the heir [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn) (history: `HeirSet → StillHere → Inherited`, the Mintbase approval cleared). Deployed at the time: CI's reproducible build of `d90dd3c` (sha256 `fd640732…`, [Ab5153Lm…](https://testnet.near.rocks/tx/Ab5153LmmM4gztjdRqqA1ccwAorCpVTm4k288nXdsb9g)). **Through the web app with a real wallet** (Intear, driven by Playwright: `web/e2e/wallet-qa.mjs`): the holder named an heir, checked in [gas-free](https://testnet.near.rocks/tx/4e2eVr3xLfCrEatxVnYEBcAw9FxxwXXCf4aJKcew2rrQ), checked in again inside the relayer's window with one paid prompt, removed and re-named the heir; after 10 minutes of silence the heir connected and pressed *Claim inheritance*, [relayed gas-free](https://testnet.near.rocks/tx/9ky2ifykN8BppSFr2mEahEXExpZqVveADWeDc1wfBQS7). This run found and fixed three UI bugs: a double wallet prompt when the free check-in was used up, the free/paid choice being made at page load instead of at click, and the result message appearing before the page refreshed. Re-run on the current build (`da6e39f`, where any holder action counts as proof of life): the relayer refused a second free check-in within a tenth of the silence, then [relayed one](https://testnet.near.rocks/tx/6gcNCKkSP9XZpurWXsxoqSX882v9YB8WjSRAAhRwxfcV) a minute later, and the heir [claimed again](https://testnet.near.rocks/tx/4JXv66X9jJ735QyVQSywV8JCeRMKUihnnYJyJXvNF6bu).
+**Verified live (4 Nov 2026, `PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/heir.mjs pusaka-buyer.testnet pusaka-seller.testnet 2 --give-back`):** the holder named an heir with a 10-minute silence; the heir's early claim was refused; the holder [checked in gas-free](https://testnet.near.rocks/tx/BvrzBTo5Ej9bVaw7MhDi3LWx2WYSXJkD9MLD13gmSxa), restarting the clock; after 10 minutes of silence a claim by anyone else was refused and the heir [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn) (history: `HeirSet → StillHere → Inherited`, the Mintbase approval cleared). Deployed at the time: CI's reproducible build of `d90dd3c` (sha256 `fd640732…`, [Ab5153Lm…](https://testnet.near.rocks/tx/Ab5153LmmM4gztjdRqqA1ccwAorCpVTm4k288nXdsb9g)). **Through the web app with a real wallet** (Intear, driven by Playwright: `web/e2e/wallet-qa.mjs`): the holder named an heir, checked in [gas-free](https://testnet.near.rocks/tx/4e2eVr3xLfCrEatxVnYEBcAw9FxxwXXCf4aJKcew2rrQ), checked in again inside the relayer's window with one paid prompt, removed and re-named the heir; after 10 minutes of silence the heir connected and pressed *Claim inheritance*, [relayed gas-free](https://testnet.near.rocks/tx/9ky2ifykN8BppSFr2mEahEXExpZqVveADWeDc1wfBQS7). This run found and fixed three UI bugs: a double wallet prompt when the free check-in was used up, the free/paid choice being made at page load instead of at click, and the result message appearing before the page refreshed. Re-run on the current build (`da6e39f`, where any holder action counts as proof of life): the relayer refused a second free check-in within a tenth of the silence, then [relayed one](https://testnet.near.rocks/tx/6gcNCKkSP9XZpurWXsxoqSX882v9YB8WjSRAAhRwxfcV) a minute later, and the heir [claimed again](https://testnet.near.rocks/tx/4JXv66X9jJ735QyVQSywV8JCeRMKUihnnYJyJXvNF6bu).
 
 ## One NFT, many wallets: how control passes on transfer
 
@@ -463,7 +463,7 @@ BTC deposits are trusted through NEAR's Bitcoin light client. USDC deposits get 
    amount it signs before signing, so `usdc_info.verified` = proven deposits − everything ever signed out: a lower bound a
    buyer or lender can rely on without any EVM RPC.
 
-**Verified live (4 Nov 2026):** 0.01 USDC sent to Pusaka #5 on Base Sepolia ([0xbdf0f548…](https://sepolia.basescan.org/tx/0xbdf0f54808b9950544750853392c6b83913c3dad59e240c0c057acc3164b84b7)) was proven with `node scripts/prove-usdc.mjs`, once Base finalized the block (~70 min): [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m) runs `prove_usdc_deposit` → `v1.signer-prod.testnet.verify_foreign_transaction` → `on_usdc_proven` = `true`, and `usdc_info(5)` shows 0.01 USDC verified on Base.
+**Verified live (4 Nov 2026):** 0.01 USDC sent to Pusaka #5 on Base Sepolia ([0xbdf0f548…](https://sepolia.basescan.org/tx/0xbdf0f54808b9950544750853392c6b83913c3dad59e240c0c057acc3164b84b7)) was proven with `PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/prove-usdc.mjs`, once Base finalized the block (~70 min): [FkQwHG2Z…](https://testnet.near.rocks/tx/FkQwHG2ZQ3EN7B1JD8jeVPqwGDHkqhaJ3iD8W4Pqd71m) runs `prove_usdc_deposit` → `v1.signer-prod.testnet.verify_foreign_transaction` → `on_usdc_proven` = `true`, and `usdc_info(5)` shows 0.01 USDC verified on Base.
 **Second chain (9 Nov 2026):** 20 USDC from Circle's faucet to the same Pusaka on Arbitrum Sepolia
 ([0x3875b06d…](https://sepolia.arbiscan.io/tx/0x3875b06dcbcc206f402020110dc751d6e71946f5c80a9551fbdee9d7a44a7983), log 4)
 was attested by the MPC in 7.3 s once the block was final:
@@ -474,7 +474,7 @@ Only chains the MPC verifies count (Base and Arbitrum; Ethereum L1 isn't among t
 answer: the MPC verified a Base Sepolia USDC transfer ([BKeg9y2v…](https://testnet.near.rocks/tx/BKeg9y2vhjfYKggRj7Y5PLiFgPTsxHmE7havcxaKchk4))
 and test `u1` reproduces its `payload_hash` byte for byte. Hardening: one marker per deposit with no list cap (dust can't
 crowd out deposits), a 0.01 USDC minimum, and proofs are refused for a token that signed on that chain before the counter
-existed. Try: `node scripts/prove-usdc.mjs <payer.testnet> <token_id>`; the relayer's *Prove for free* also proves USDC.
+existed. Try: `PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/prove-usdc.mjs <payer.testnet> <token_id>`; the relayer's *Prove for free* also proves USDC.
 
 ## Deposit prover in a TEE (Phala TDX)
 
@@ -550,12 +550,12 @@ Then the same swap again **through the web app's form**, with a real wallet (Int
 - NEAR settlement: [AaUXakFN…](https://testnet.near.rocks/tx/AaUXakFNoBj8oyNsK1d1mKzVWMfZd2QX527oPTLjVdpa), [Hma9CFKV…](https://testnet.near.rocks/tx/Hma9CFKVQMK9Kfp2CVWKEvbCSqY1UjMZUokGYoHEb85j) and [HUWEnGY7…](https://testnet.near.rocks/tx/HUWEnGY7Q2Vcr9zEJsDzY7gBr9qtYPP46Hh2L3p48c3f)
 - The holder's balance on `usdc.tidepool-sandbox.testnet` afterwards: 29.541855 USDC, the sum of both swaps.
 
-And a third time **by an AI agent over MCP** (`node mcp/swap-agent.mjs pusaka-s-mw5sfoai.testnet 21 <funding_txid>`).
+And a third time **by an AI agent over MCP** (`PUSAKA_CONTRACT=pusaka-btc.testnet node mcp/swap-agent.mjs pusaka-s-mw5sfoai.testnet 21 <funding_txid>`).
 - With outflows off, `pusaka_swap_to_usdc` refused before any quote was opened or anything was signed.
 - With outflows on, it swapped 20,000 sats in testnet4 tx [be9987e9…](https://mempool.space/testnet4/tx/be9987e9557419a565769daa9d0453b3a7ebea1ebaea6219374a31eea025b3b4).
 - `pusaka_swap_status` followed it to `SUCCESS` and read the holder's balance: 44.31897 USDC, i.e. 14.777115 more.
 
-Run it yourself: `node scripts/intents-exit.mjs <holder> <id> <testnet4_funding_txid>`.
+Run it yourself: `PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/intents-exit.mjs <holder> <id> <testnet4_funding_txid>`.
 
 **The proceeds stay inside the NFT (Pusaka v2).** On v2 every NFT has its own keyless NEAR account, so the swap can pay
 *the NFT* instead of a person: the USDC then goes with the Pusaka when it's sold, and leaves only through the current
@@ -575,7 +575,7 @@ Bitcoin inside, for USDC, settled by the Intents verifier. Seller and buyer each
 (`-1 nep171:pusaka-btc.testnet:15, +5 USDC` and the reverse). The seller's `nft_transfer_call` deposits the NFT into the
 verifier, and its `msg` executes both intents in the same transaction with `refund_if_fails`: either the swap settles or
 the NFT comes straight back. The verifier charges no fee on NFTs, and no contract change was needed: the original
-contract, whose code is final, already speaks NEP-171 the way `defuse` expects. Live (`node scripts/intents-nft-sale.mjs
+contract, whose code is final, already speaks NEP-171 the way `defuse` expects. Live (`PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/intents-nft-sale.mjs
 pusaka-buyer.testnet 15 pusaka-s-mw5sfoai.testnet 5`, 10 Nov):
 
 | Step | Transaction |

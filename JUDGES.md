@@ -102,4 +102,4 @@ inside, on every chain. `cd lend && cargo test` runs its 22 attack tests
 | A loan's collateral can't be emptied before or during the loan | `fund_loan`, `accept_loan_offer`, `claim_collateral` | `l*_*`, `o*_*` |
 | An heir can claim only after the holder's silence | `claim_inheritance` | `h*_heir*` |
 | Guardians can only release to the named heir, only after the silence, and anything the holder signs voids their approvals | `set_guardians`, `approve_release`, `claim_inheritance` | `gd1_*`–`gd10_*` |
-| No key on the contract; code changed only after a public, timelocked announcement, and once renounced (done 8 Nov) never again | `contract/src/upgrade.rs` | `up1_*`–`up8_*` |
+| No key on the contract; code changed only after a public, timelocked announcement, and once renounced (done 8 Nov) never again | `contract/src/upgrade.rs` | `up1_*`–`up9_*` |

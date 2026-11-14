@@ -97,8 +97,19 @@ export function nearProvider({ FailoverRpcProvider, JsonRpcProvider }) {
   const downUntil = new Map();
   const networkError = (e) => e?.type === "RetriesExceeded" || e instanceof TypeError || e?.name === "AbortError" || e?.name === "TimeoutError"
     || /\b(429|50\d)\b|fetch|network|timed? ?out|rate.?limit/i.test(String(e?.message ?? e));
+  // At most 8 reads in flight: a page that fires 45 at once used to send them all to a rate-limited RPC before the
+  // first failure marked it down (FastNear answers 429 without CORS headers: one console error per call). Queued
+  // reads pick their endpoint when they start, so they skip one that just failed. (QA 14 Nov)
+  let active = 0;
+  const queue = [];
+  const slot = () => (active < 8 ? (active++, Promise.resolve()) : new Promise((r) => queue.push(r)));
+  const release = () => { const next = queue.shift(); next ? next() : active--; };
   class Failover extends FailoverRpcProvider {
     async withBackoff(getResult) {
+      await slot();
+      try { return await this.tryInOrder(getResult); } finally { release(); }
+    }
+    async tryInOrder(getResult) {
       const now = Date.now();
       const order = this.providers.map((p, i) => i).sort((a, b) => ((downUntil.get(a) ?? 0) > now) - ((downUntil.get(b) ?? 0) > now));
       let last;
@@ -116,7 +127,8 @@ export function nearProvider({ FailoverRpcProvider, JsonRpcProvider }) {
       throw last;
     }
   }
-  return new Failover(NEAR_RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 2, wait: 400, backoff: 2 })));
+  // one attempt per endpoint: the failover across endpoints is the retry
+  return new Failover(NEAR_RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 1, wait: 400, backoff: 2 })));
 }
 export const NEAR_EXPLORER = CONFIG.nearExplorer;
 export const MEMPOOL = `${CONFIG.mempool}/api`;

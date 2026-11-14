@@ -17,6 +17,8 @@ class Fake {
 const p = nearProvider({ FailoverRpcProvider, JsonRpcProvider: Fake });
 const answers = await Promise.all(Array.from({ length: 20 }, () => p.callFunction({ method: "token_info" })));
 assert.ok(answers.every((a) => a.includes("drpc")), `all 20 answered by the next RPC: ${[...new Set(answers)]}`);
+const hits = calls.filter((u) => u.includes("fastnear")).length;
+assert.ok(hits <= 8, `at most 8 parallel reads reach the rate-limited RPC before it's marked down (got ${hits})`);
 calls.length = 0;
 assert.equal(await p.callFunction({ method: "token_info" }), answers[0]);
 assert.deepEqual(calls, [answers[0]], "a rate-limited RPC is skipped for a minute, not asked first again");
