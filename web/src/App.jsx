@@ -1705,7 +1705,8 @@ function GiftLink({ id, busy, run }) {
   useEffect(() => { view("gift_of", { token_id: id }).then(setOpen, () => setOpen(null)); }, [id, link]);
   useEffect(() => { // an open gift made in this tab: show its link again; once it's no longer open, forget the key
     const k0 = `pusaka:gift:${CONTRACT}:${id}`;
-    if (open === null) { try { sessionStorage.removeItem(k0); } catch {} return; }
+    // not while a link made in this tab is shown: gift_of may still be the read from before the gift landed
+    if (open === null) { if (!link) try { sessionStorage.removeItem(k0); } catch {} return; }
     if (!open || link) return;
     try { const k = sessionStorage.getItem(k0); if (k) setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${k}`); } catch {}
   }, [open, link, id]);
@@ -1763,7 +1764,7 @@ function GiftClaim({ secret, accountId }) {
       {!g && !msg && <p className="error">This link opens no gift: it was already claimed or the giver cancelled it.</p>}
       {g && <>
         <p><strong>{g.from}</strong> sent you <a href={`#/pusaka/${g.token_id}`}>Pusaka #{g.token_id}</a>{info && <>, an NFT that controls its own Bitcoin
-          address holding <strong>{btc(Number(info.verified_sats))} BTC</strong> proven on NEAR</>}. Claim it and the NFT, with everything it holds, is yours.</p>
+          address{Number(info.verified_sats) ? <> holding <strong>{btc(Number(info.verified_sats))} BTC</strong> proven on NEAR</> : " (no Bitcoin proven in it yet)"}</>}. Claim it and the NFT, with everything it holds, is yours.</p>
         {accountId && <button disabled={!!busy} onClick={claim("mine", async () => {
           await linkAccount().callFunction({ contractId: CONTRACT, methodName: "claim", args: { account_id: accountId }, gas: 100_000_000_000_000n });
           return `It's yours: Pusaka #${g.token_id} is now held by ${accountId}.`;
@@ -2029,7 +2030,7 @@ function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
     return (
       <section className="actions">
         <h2>Loan</h2>
-        {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka and its {btc(Number(info.verified_sats))} verified BTC as collateral.</p>}
+        {!funded && <p>{isOwner ? "You asked to" : `${loan.borrower} asks to`} {terms}, with this Pusaka{Number(info.verified_sats) ? <> and its {btc(Number(info.verified_sats))} verified BTC</> : " (no BTC verified in it yet)"} as collateral.</p>}
         {px && (() => {
           const st = loanStats(loan, Number(info.verified_sats), px);
           return (<>
@@ -2060,7 +2061,7 @@ function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
             await call("fund_loan", { token_id: id, expected_sign_epoch: info.sign_epoch, principal: loan.principal, repay: loan.repay, duration_ms: loan.duration_ms }, { deposit: BigInt(loan.principal) });
             return "Loan funded. The NEAR went to the borrower.";
           })}
-          <p className="muted">If {near(loan.repay)} NEAR isn't repaid in time, you can take the Pusaka and the {btc(Number(info.verified_sats))} verified BTC inside it. While the loan runs, nobody can withdraw, sell or move it.</p>
+          <p className="muted">If {near(loan.repay)} NEAR isn't repaid in time, you can take the Pusaka{Number(info.verified_sats) ? <> and the {btc(Number(info.verified_sats))} verified BTC inside it</> : " (it has no BTC verified inside yet)"}. While the loan runs, nobody can withdraw, sell or move it.</p>
         </>}
         {funded && accountId !== loan.lender && act("repay", `Repay ${near(loan.repay)} NEAR`, "Repaying…", async () => {
           await call("repay_loan", { token_id: id }, { deposit: BigInt(loan.repay) });
