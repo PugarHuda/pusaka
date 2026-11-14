@@ -165,7 +165,9 @@ an agent keeps alive forever would never pass on. The heir's agent watches every
 ones whose holder has gone silent, gas-free. Live 13 Nov: it found classic #2 claimable (its holder silent since
 9 Nov) and claimed it for pusaka-seller.testnet.
 
-**The heir's agent in a TEE** (`shade/agent.mjs`, Phala TDX, attestation checked on-chain by `pusaka-agent.testnet`).
+## The heir's agent in a TEE
+
+`shade/agent.mjs`, Phala TDX, attestation checked on-chain by `pusaka-agent.testnet`).
 At boot the agent makes a key that never leaves the enclave and publishes its public half at `GET /`. An heir adds it to
 their own account as a function-call key limited to `claim_inheritance` and is listed in `HEIR_ACCOUNTS`; from then on
 the claim is made from attested code the moment the holder's silence runs out, after checking every condition

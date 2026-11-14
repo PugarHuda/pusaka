@@ -16,7 +16,7 @@ Three things to check, in this order:
 3. **It passes on, with no custodian.** If the holder goes silent, the named heir claims the NFT and every Bitcoin in
    it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn). A will
    executed by attested code: an agent in a TEE claims for the heir with a key that never leaves the enclave and can
-   only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR)).
+   only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR); [check the key is the enclave's](docs/FEATURES.md#the-heirs-agent-in-a-tee)).
    Failure cases, each with its test: a guardian loses their key, a guardian turns hostile, the holder is alive but
    offline ([table](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)). Watch the next one happen during judging:
 
