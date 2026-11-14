@@ -141,7 +141,7 @@ test("live prices reach the browser and show dollar values", async ({ page, requ
 
 test("home shows total BTC verified and the social card is served", async ({ page, request }) => {
   await page.goto("/#/");
-  await expect(page.locator(".reserves")).toContainText(/BTC verified on NEAR across \d+ Pusaka/, { timeout: 30_000 });
+  await expect(page.locator(".reserves")).toContainText(/BTC verified on NEAR in the \d+ Smart Pusakas that hold any/, { timeout: 30_000 });
   const og = await request.get("/og.png");
   expect(og.status()).toBe(200);
   expect(og.headers()["content-type"]).toContain("image/png");
