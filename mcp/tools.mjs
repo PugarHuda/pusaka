@@ -41,6 +41,7 @@ const toNear = (y) => Number(BigInt(y) / 10n ** 18n) / 1e6;
 //   PUSAKA_ALLOW_OUTFLOWS=1   PUSAKA_ALLOWED_RECIPIENTS=alice.testnet,tb1q…,0xabc…
 const ALLOWED = (process.env.PUSAKA_ALLOWED_RECIPIENTS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 async function outflow(to, what = `move a Pusaka or its assets to ${to}`) {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   if (process.env.PUSAKA_ALLOW_OUTFLOWS !== "1") throw new Error("Outflows are off: set PUSAKA_ALLOW_OUTFLOWS=1 (and ideally PUSAKA_ALLOWED_RECIPIENTS) to let this agent move a Pusaka or its assets.");
   if (ALLOWED.length && !ALLOWED.includes(String(to).trim().toLowerCase())) throw new Error(`${to} isn't in PUSAKA_ALLOWED_RECIPIENTS.`);
   await confirm(`The agent wants to ${what}.`);
@@ -62,6 +63,7 @@ Account ${ACCOUNT_ID}, contract ${CONTRACT} on ${NETWORK}.`,
 const CAP = toYocto(process.env.PUSAKA_MAX_SPEND_NEAR ?? "5");
 let spent = 0n;
 async function spend(amount, what, { confirmed = false } = {}) {
+  if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act."); // before reserving any cap
   if (spent + amount > CAP) {
     throw new Error(`${what} needs ${toNear(amount)} NEAR but the session cap leaves ${toNear(CAP - spent)} NEAR (PUSAKA_MAX_SPEND_NEAR).`);
   }
@@ -155,7 +157,7 @@ export const READ_TOOLS = new Set(["pusaka_overview", "pusaka_inspect", "pusaka_
 const OUTFLOW_TOOLS = new Set(["pusaka_sell_into_bid", "pusaka_list", "pusaka_request_loan", "pusaka_accept_loan_offer", "pusaka_give", "pusaka_gift_link", "pusaka_set_heir", "pusaka_set_guardians", "pusaka_withdraw_btc", "pusaka_withdraw_eth", "pusaka_withdraw_sol", "pusaka_withdraw_near", "pusaka_withdraw_nbtc", "pusaka_swap_to_usdc", "pusaka_account_send", "pusaka_set_agent", "pusaka_agent_send", "pusaka_lend_borrow"]); // borrow pledges the NFT to the pool
 
 export function createServer({ readOnly = false } = {}) {
-  const server = new McpServer({ name: "pusaka", version: "1.0.0" });
+  const server = new McpServer({ name: "pusaka", version: "1.1.2" });
   // MCP tool annotations: hosts can auto-allow read-only tools and warn before destructive ones
   const reg = (name, config, cb) => (readOnly && !READ_TOOLS.has(name) ? null : server.registerTool(name, { ...config,
     annotations: { readOnlyHint: READ_TOOLS.has(name) || name === "pusaka_gift_preview", destructiveHint: OUTFLOW_TOOLS.has(name), openWorldHint: true } }, cb));
@@ -444,9 +446,8 @@ reg("pusaka_swap_to_usdc", {
 }, tool(async ({ token_id, funding_txid, sats, into_nft }) => {
   if (NETWORK !== "testnet") throw new Error("Executed swaps run on testnet only (Tidepool); on mainnet use pusaka_inspect's exit quote.");
   const FEE = 500;
-  if (into_nft && !IS_SIBLING) throw new Error("into_nft needs Pusaka v2 (PUSAKA_CONTRACT=pusaka-v2.testnet): only v2 NFTs have their own account.");
   // the payee is settled first, so the outflow gate (allowlist + confirmation) checks and names the account actually paid
-  const recipient = into_nft ? await view("account_of", { token_id }) : ACCOUNT_ID;
+  const recipient = into_nft ? await view("account_of", { token_id }).catch(() => { throw new Error("into_nft needs a Smart Pusaka (pusaka-v2.testnet, the default): only those NFTs have their own account."); }) : ACCOUNT_ID;
   if (!recipient) throw new Error(`No account for Pusaka #${token_id}`);
   // the Pusaka's BTC leaves it either way: an outflow, put to the person before any quote
   await outflow(recipient, `swap ${sats} sats from Pusaka #${token_id} for USDC paid to ${into_nft ? `the NFT's own account ${recipient} (it stays with the NFT)` : recipient} on NEAR, at a live NEAR Intents quote with at most 1% slippage (Tidepool testnet)`);
@@ -685,7 +686,8 @@ reg("pusaka_lend_pool", {
 }, tool(async ({ token_id, contract = CONTRACT }) => {
   const [pool, loans, cfg] = await Promise.all([lendView("pool"), lendView("loans", { limit: 100 }), lendView("config")]);
   if (!token_id) return { pool, config: cfg, loans };
-  const info = await provider.callFunction({ contractId: contract, method: "token_info", args: { token_id } });
+  const info = await provider.callFunction({ contractId: contract, method: "token_info", args: { token_id } }).catch(() => null);
+  if (!info) throw new Error(`No Pusaka #${token_id} on ${contract}`);
   const loan = loans.find((l) => l.loan.nft === contract && l.loan.token_id === token_id) ?? null;
   const max = pool.price ? Math.floor(Number(info.verified_sats) * Number(pool.price.low) / 1e8 * cfg.max_ltv_bps / 10_000) : null;
   return { pool, loan, verified_sats: Number(info.verified_sats), max_borrow_usdc: max === null ? null : max / 1e6 };
@@ -693,27 +695,31 @@ reg("pusaka_lend_pool", {
 
 reg("pusaka_lend_borrow", {
   description: "Holder: borrow the pool's USDC against a Pusaka (up to the pool's max loan-to-value, 79.5% on testnet, of its proven BTC's value at the pool's low price). The NFT goes to the pool, which holds it until repaid; nobody can ask for a Bitcoin signature meanwhile. If the pool refuses (stale price, over the limit, not enough cash) the NFT comes straight back and the refusal reason is returned.",
-  inputSchema: { token_id: z.string(), pusd: z.number().positive(), contract: z.string().optional() },
-}, tool(async ({ token_id, pusd, contract = CONTRACT }) => {
+  inputSchema: { token_id: z.string(), usdc: z.number().positive().optional(), pusd: z.number().positive().optional(), contract: z.string().optional() },
+}, tool(async ({ token_id, usdc, pusd, contract = CONTRACT }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
+  usdc ??= pusd; // pusd: the old name, kept as an alias
+  if (!usdc) throw new Error("usdc: how much USDC to borrow");
+  await confirm(`The agent wants to pledge Pusaka #${token_id} (and the Bitcoin it controls) to the USDC pool for ${usdc} USDC; it is liquidated if its loan-to-value reaches 80%.`);
   await pusdReady(0n);
   const o = await account.callFunctionRaw({ contractId: contract, methodName: "nft_transfer_call", deposit: 1n, gas: teraToGas(300),
-    args: { receiver_id: LEND, token_id, msg: JSON.stringify({ borrow: String(Math.round(pusd * 1e6)) }) } });
+    args: { receiver_id: LEND, token_id, msg: JSON.stringify({ borrow: String(Math.round(usdc * 1e6)) }) } });
   const ev = lendEvents(o), no = ev.find((e) => e.event === "borrow_refused");
   return { borrowed: !no, refused: no?.data[0] ?? null, loan: ev.find((e) => e.event === "borrowed")?.data[0]?.loan ?? null, tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
 reg("pusaka_lend_repay", {
-  description: "Anyone: repay a pool loan in full (debt now plus a cent; the rest is refunded). The NFT goes back to the borrower; the interest goes to the pool's lenders. The repayer needs the pool's USDC (Circle testnet faucet, network NEAR); with the old pUSD pool the faucet topped it up.",
+  description: "Anyone: repay a pool loan in full (debt now plus a cent; the rest is refunded). The NFT goes back to the borrower; the interest goes to the pool's lenders. The repayer needs the pool's USDC (Circle testnet faucet, network NEAR).",
   inputSchema: { loan_id: z.string() },
 }, tool(async ({ loan_id }) => {
   if (!account) throw new Error("Read-only: set PUSAKA_ACCOUNT_ID and PUSAKA_PRIVATE_KEY to act.");
   const l = await lendView("loan", { loan_id });
   if (!l) throw new Error(`No open loan ${loan_id}.`);
   const pay = BigInt(l.debt) + 10_000n;
+  await confirm(`The agent wants to repay pool loan ${loan_id}, paying ${Number(pay) / 1e6} USDC.`);
   await pusdReady(pay);
   const o = await account.callFunctionRaw({ contractId: (await lendView("config")).stable, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(200), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ repay: Number(loan_id) }) } });
-  return { debt_pusd: Number(l.debt) / 1e6, events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
+  return { debt_usdc: Number(l.debt) / 1e6, events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
 }));
 
 reg("pusaka_lend_liquidate", {
@@ -725,6 +731,7 @@ reg("pusaka_lend_liquidate", {
   if (!l) throw new Error(`No open loan ${loan_id}.`);
   if (!l.liquidatable) throw new Error(`Loan ${loan_id} is healthy (loan-to-value ${l.ltv_bps === null ? "unknown: stale price" : l.ltv_bps / 100 + "%"}); it can't be liquidated.`);
   const pay = BigInt(Math.max(Number(l.debt), Math.ceil(Number(l.value) * 0.95))) + 1_000_000n;
+  await confirm(`The agent wants to liquidate pool loan ${loan_id}, paying up to ${Number(pay) / 1e6} USDC for the Pusaka.`);
   await pusdReady(pay);
   const o = await account.callFunctionRaw({ contractId: (await lendView("config")).stable, methodName: "ft_transfer_call", deposit: 1n, gas: teraToGas(250), args: { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ liquidate: Number(loan_id) }) } });
   return { events: lendEvents(o).map((e) => e.event), tx: o.transaction.hash, explorer: `${NEAR_EXPLORER}/tx/${o.transaction.hash}` };
@@ -785,7 +792,9 @@ reg("pusaka_market_book", {
   inputSchema: { token_id: z.string().optional() },
 }, tool(async ({ token_id }) => {
   const [bids, offers, loans] = await Promise.all([mview("bids", { limit: 100 }), mview("offers", { limit: 100 }), mview("loans", { limit: 100 })]);
-  const sats = token_id ? BigInt((await view("token_info", { token_id })).verified_sats) : null;
+  const ti = token_id ? await view("token_info", { token_id }) : null;
+  if (token_id && !ti) throw new Error(`No Pusaka #${token_id}`);
+  const sats = ti ? BigInt(ti.verified_sats) : null;
   return { market: MARKET,
     bids: bids.map((b) => ({ bid_id: b.id, bidder: b.bidder, near_per_10k_sats: toNear(BigInt(b.price_per_sat) * 10_000n), sats_range: [Number(b.min_sats), Number(b.max_sats)],
       ...(sats != null && { pays_for_this_pusaka_near: sats >= BigInt(b.min_sats) && sats <= BigInt(b.max_sats) ? toNear(sats * BigInt(b.price_per_sat)) : null }) })),
@@ -1036,13 +1045,17 @@ const short = (e) => {
   }
 };
 
+/** Who holds the NFT after this event, if it moved (v2 adds BTC-settled sales and vault clawbacks). */
+const newOwner = (e) => e.kind === "Mint" ? e.owner
+  : ["Sale", "Transfer", "Inherited", "BtcSale"].includes(e.kind) || (e.kind === "VaultClawback" && e.moved) ? e.to
+  : e.kind === "LoanDefaulted" ? e.lender : null;
+
 /** Walks a token's on-chain history, tracking who held it, so each loan is pinned on the borrower of the day. */
 function walk(info) {
   let owner = null;
   const loans = [];
   for (const { at_ms, event: e } of info.history) {
-    if (e.kind === "Mint") owner = e.owner;
-    if (["Sale", "Transfer", "Inherited"].includes(e.kind)) owner = e.to;
+    if (newOwner(e) && e.kind !== "LoanDefaulted") owner = newOwner(e);
     let open = loans.findLast((l) => l.outcome === "open");
     if (e.kind === "LoanFunded" || e.kind === "LoanOfferAccepted") {
       // a new offer taken while a loan is open is a refinance: the new lender paid the old one in full
@@ -1064,12 +1077,13 @@ reg("pusaka_history", {
   if (!info) throw new Error(`No Pusaka #${token_id}`);
   const holders = [];
   for (const { event: e } of info.history) {
-    const to = e.kind === "Mint" ? e.owner : ["Sale", "Transfer", "Inherited"].includes(e.kind) ? e.to : e.kind === "LoanDefaulted" ? e.lender : null;
+    const to = newOwner(e);
     if (to && holders.at(-1) !== to) holders.push(to);
   }
   return {
     token_id, owner: info.token.owner_id, holders,
     sales_near: info.history.filter((h) => h.event.kind === "Sale").map((h) => toNear(h.event.price)),
+    sales_btc_sats: info.history.filter((h) => h.event.kind === "BtcSale").map((h) => Number(h.event.sats)),
     loans: walk(info),
     timeline: info.history.map((h) => ({ at: new Date(Number(h.at_ms)).toISOString(), what: short(h.event), event: h.event })),
     note: "the contract keeps the latest 32 events per token; older ones are in its transaction logs",

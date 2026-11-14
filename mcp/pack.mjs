@@ -26,7 +26,7 @@ if (left.length) throw new Error(`still importing @pusaka/*: ${left}`);
 
 const mcpPkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "package.json"), "utf8"));
 const { "@pusaka/shared": _, ...deps } = { ...sharedPkg.dependencies, ...mcpPkg.dependencies };
-const version = process.env.PUSAKA_MCP_VERSION ?? "1.1.1"; // 1.1.1: pool tools say Circle USDC (max_borrow_usdc); 1.1.0: USDC pool tools, Clean to buy in verify, exchange_ready
+const version = process.env.PUSAKA_MCP_VERSION ?? "1.1.2"; // 1.1.2: QA fixes (spend cap, v2 ownership events, into_nft, USDC pool confirmations, clearer errors); // 1.1.1: pool tools say Circle USDC (max_borrow_usdc); 1.1.0: USDC pool tools, Clean to buy in verify, exchange_ready
 fs.writeFileSync(path.join(DIST, "package.json"), JSON.stringify({
   name: "pusaka-mcp",
   version,
@@ -57,7 +57,7 @@ exactly how much Bitcoin a Pusaka holds before it buys or lends against it.
 Without a key the read tools work (\`pusaka_overview\`, \`pusaka_inspect\`, \`pusaka_loan_offers\`, …). With one,
 every spend is capped by \`PUSAKA_MAX_SPEND_NEAR\` (default 5), purchases by a max price, loans by a max LTV; moving a
 Pusaka or its assets out needs \`PUSAKA_ALLOW_OUTFLOWS=1\` (ideally with \`PUSAKA_ALLOWED_RECIPIENTS\`).
-Network: NEAR testnet (contract \`pusaka-btc.testnet\`). Source: https://github.com/PugarHuda/pusaka/tree/main/mcp
+Network: NEAR testnet (contract \`pusaka-v2.testnet\`; \`PUSAKA_CONTRACT=pusaka-btc.testnet\` for the frozen classic one). Source: https://github.com/PugarHuda/pusaka/tree/main/mcp
 `);
 fs.writeFileSync(path.join(DIST, "server.json"), JSON.stringify({
   $schema: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
@@ -70,7 +70,11 @@ fs.writeFileSync(path.join(DIST, "server.json"), JSON.stringify({
     environmentVariables: [
       { name: "PUSAKA_ACCOUNT_ID", description: "NEAR account the agent acts as (optional: read-only without it)", isRequired: false },
       { name: "PUSAKA_PRIVATE_KEY", description: "Its ed25519 key", isRequired: false, isSecret: true },
-      { name: "PUSAKA_MAX_SPEND_NEAR", description: "Spend cap per call in NEAR (default 5)", isRequired: false },
+      { name: "PUSAKA_MAX_SPEND_NEAR", description: "Spend cap per session in NEAR (default 5)", isRequired: false },
+      { name: "PUSAKA_CONTRACT", description: "Pusaka contract (default pusaka-v2.testnet; pusaka-btc.testnet for the classic one)", isRequired: false },
+      { name: "PUSAKA_ALLOW_OUTFLOWS", description: "Set to 1 to let the agent move a Pusaka or its assets out", isRequired: false },
+      { name: "PUSAKA_ALLOWED_RECIPIENTS", description: "Comma-separated accounts or addresses outflows may go to", isRequired: false },
+      { name: "PUSAKA_CONFIRM", description: "off: no human confirmation even when the host supports elicitation (caps still apply)", isRequired: false },
     ],
   }],
   remotes: [{ type: "streamable-http", url: "https://pusaka-two.vercel.app/api/mcp" }],

@@ -445,7 +445,7 @@ export async function prices() {
     }
   };
   const [btc, ref, cg] = await Promise.all([
-    get("https://mempool.space/api/v1/prices", "mempool.space"),
+    get("https://mempool.space/api/v1/prices", "mempool.space").catch((e) => ({ down: e })),
     get("https://api.ref.finance/list-token-price", "Rhea"),
     // independent second source; a lender's LTV guard shouldn't rest on one HTTP API
     fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,near,ethereum&vs_currencies=usd", { signal: AbortSignal.timeout(8000) })
@@ -453,6 +453,9 @@ export async function prices() {
   ]);
   const near = Number(ref["wrap.near"]?.price);
   const eth = Number(ref[WETH_ON_NEAR]?.price);
+  // mempool.space down: CoinGecko's BTC price stands in, marked as not cross-checked (guards that need two sources still refuse)
+  if (btc?.down && !(cg?.bitcoin?.usd && near)) throw btc.down; // no stand-in either: name the source that is down
+  if (!btc?.USD && cg?.bitcoin?.usd && near) return { btcUsd: cg.bitcoin.usd, nearUsd: near, ethUsd: eth || cg.ethereum?.usd || null, at: Date.now(), crossChecked: false, source: "CoinGecko (mempool.space unavailable)" };
   if (!btc?.USD || !near) throw new Error("price sources unavailable");
   return crossCheck({ btcUsd: btc.USD, nearUsd: near, ethUsd: eth || null, at: btc.time * 1000 }, cg);
 }
