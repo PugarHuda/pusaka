@@ -68,7 +68,7 @@ export function LendPanel({ id, info, accountId, isOwner, onDone }) {
             return callRaw("ft_transfer_call", { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ repay: Number(loan.loan.id) }) }, { receiver: USD, deposit: 1n, tgas: 200 });
           }, `Repaid: the Pusaka is back with ${loan.loan.borrower}.`)}>Repay {usd(loan.debt)}</button>
           {loan.liquidatable && <button className="secondary" disabled={busy} onClick={() => run(async () => {
-            const pay = BigInt(Math.max(Number(loan.debt), Math.ceil(Number(loan.value) * 0.95))) + BigInt(U);
+            const pay = BigInt(Math.max(Number(loan.debt), Math.ceil(Number(loan.value) * Number(cfg.liq_price_bps ?? 9500) / 10_000))) + BigInt(U);
             await ensureUsd(USD, accountId, pay);
             return callRaw("ft_transfer_call", { receiver_id: LEND, amount: String(pay), msg: JSON.stringify({ liquidate: Number(loan.loan.id) }) }, { receiver: USD, deposit: 1n, tgas: 250 });
           }, "Liquidated: the Pusaka and its Bitcoin are yours; the borrower got the rest.")}>Liquidate</button>}

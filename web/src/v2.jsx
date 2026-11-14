@@ -58,7 +58,7 @@ function V2List({ accountId }) {
     <section className="mine wide">
       <h1>Smart Pusakas</h1>
       <Intro />
-      {accountId ? <button onClick={mint}>Mint a Smart Pusaka</button> : <button onClick={() => connector.connect()}>Connect NEAR wallet to mint</button>}
+      {accountId ? <button disabled={msg.endsWith("…")} onClick={mint}>Mint a Smart Pusaka</button> : <button onClick={() => connector.connect()}>Connect NEAR wallet to mint</button>}
       {msg && <p className="muted" role="status">{msg}</p>}
       {!toks ? <p className="muted">Reading {V2}…</p> : toks.error ? <p className="error">Couldn't read {V2}: {toks.error}</p> : (
         <ul className="card-grid v2-grid">
@@ -319,7 +319,7 @@ function BtcSale({ id, sale, accountId, reload }) {
         {reserved ? <> Reserved by <strong>{sale.buyer}</strong>: pay by {new Date(Number(sale.reserved_until_ms)).toLocaleString()}, proven by {new Date(Number(sale.proof_until_ms ?? sale.reserved_until_ms)).toLocaleString()}.</> : " Open: reserve it to buy."}</p>
       {reserved && accountId === sale.buyer && <p>Pay {Number(sale.price_sats).toLocaleString()} sats to that script in one Bitcoin transaction that also has an
         OP_RETURN output carrying <code>{sale.op_return}</code>. Once it confirms and NEAR's light client has the block, anyone submits
-        <code> prove_btc_purchase</code> with its proof and the Pusaka is yours (find the txid on <a href={EXPLORER} target="_blank" rel="noreferrer">a Bitcoin explorer</a>).</p>}
+        <code> prove_btc_purchase</code> with its proof (this app has no button for it yet: <code>node scripts/v2-bitcoin.mjs</code> does it; don't pay unless you or someone can run it before the deadline) and the Pusaka is yours (find the txid on <a href={EXPLORER} target="_blank" rel="noreferrer">a Bitcoin explorer</a>).</p>}
       {!reserved && accountId && accountId !== sale.seller && <button disabled={busy} onClick={() => act(async () => {
         const t = await view("token_info", { token_id: id });
         if (!seen || t.sign_epoch !== seen.epoch) throw new Error(`Something was signed for this Pusaka since you opened the page (verified sats now ${Number(t.verified_sats).toLocaleString()}${seen ? `, were ${Number(seen.sats).toLocaleString()}` : ""}). Nothing was reserved: reload and check before paying a bond.`);

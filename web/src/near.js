@@ -41,7 +41,8 @@ export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100, rec
     }],
   });
   forgetViews();
-  const failure = outcome?.status?.Failure ?? outcome?.receipts_outcome?.find((r) => r.outcome.status.Failure)?.outcome.status.Failure;
+  // the transaction's own result decides (a failed detached refund doesn't undo a sale); without one, any failed receipt
+  const failure = outcome?.status ? outcome.status.Failure : outcome?.receipts_outcome?.find((r) => r.outcome.status.Failure)?.outcome.status.Failure;
   if (failure) throw new Error(contractError(failure));
   return outcome;
 }
@@ -50,7 +51,7 @@ export async function callRaw(method, args = {}, { deposit = 0n, tgas = 100, rec
 function contractError(f) {
   const s = JSON.stringify(f);
   const panic = s.match(/Smart contract panicked: ([^"\\]+)/)?.[1];
-  return panic ? explain(panic.trim()) : s.match(/"(\w+Error[^"]*)"/)?.[1] ?? "The transaction failed on NEAR.";
+  return panic ? explain(panic.trim()) : s.match(/"ExecutionError":"([^"]+)"/)?.[1] ?? s.match(/"(\w+Error[^"]*)"/)?.[1] ?? "The transaction failed on NEAR.";
 }
 
 export const yocto = (near) => BigInt(Math.round(Number(near) * 1e6)) * 10n ** 18n;
@@ -95,7 +96,7 @@ export async function callGasless(method, args = {}) {
   forgetViews();
   const body = await r.json().catch(() => ({}));
   if (r.status === 429) return fallback(); // relayer's free quota used up: the user pays their own gas
-  if (!r.ok) throw new Error(body.error ?? `relayer answered ${r.status}`);
+  if (!r.ok) throw new Error(explain(String(body.error ?? `relayer answered ${r.status}`)));
   return { gasless: true, tx: body.tx };
 }
 

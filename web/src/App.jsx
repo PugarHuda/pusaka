@@ -1043,7 +1043,7 @@ function ProveDeposits({ t, accountId, onDone }) {
       {todo.length > 0 && <>
         <p>{sum(todo).toLocaleString()} sats are confirmed on Bitcoin but not proven on NEAR yet.</p>
         <span className="row">
-          <button className="ghost" disabled={busy} onClick={proveFree}>{busy === "free" ? "Proving with the light client…" : "Prove for free"}</button>
+          <button className="ghost" disabled={busy} onClick={() => proveFree()}>{busy === "free" ? "Proving with the light client…" : "Prove for free"}</button>
           {accountId && <button className="link" disabled={!!busy} onClick={prove}>or prove from my wallet</button>}
         </span>
         <p className="muted">Anyone can prove a deposit. "For free" uses Pusaka's relayer, which pays the NEAR gas.</p>
@@ -1703,13 +1703,17 @@ function GiftLink({ id, busy, run }) {
   const [open, setOpen] = useState(undefined);
   const [link, setLink] = useState("");
   useEffect(() => { view("gift_of", { token_id: id }).then(setOpen, () => setOpen(null)); }, [id, link]);
+  useEffect(() => { // an open gift made from this browser: show its link again
+    if (!open || link) return;
+    try { const k = localStorage.getItem(`pusaka:gift:${CONTRACT}:${id}`); if (k) setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${k}`); } catch {}
+  }, [open, link, id]);
   if (open === undefined) return null;
   if (open) return <div className="stack">
     <h2>Gift link open</h2>
     <p>This Pusaka is waiting for whoever opens its gift link{link ? "" : " (only you had the link)"}. Until then it can't be sold, lent against or withdrawn from.</p>
     {link && <p className="gift-link"><code>{link}</code> <CopyButton text={link} label="Copy link" what="gift link" /></p>}
     <button type="button" className="secondary" disabled={!!busy} onClick={() => run("cancel-gift", async () => {
-      await call("cancel_gift", { token_id: id }); setLink(""); return "Gift cancelled. The Pusaka is yours to use again.";
+      await call("cancel_gift", { token_id: id }); setLink(""); try { localStorage.removeItem(`pusaka:gift:${CONTRACT}:${id}`); } catch {} return "Gift cancelled. The Pusaka is yours to use again.";
     })}>{busy === "cancel-gift" ? "Cancelling…" : "Cancel gift"}</button>
   </div>;
   return <div className="stack">
@@ -1717,6 +1721,7 @@ function GiftLink({ id, busy, run }) {
     <p className="muted">Send this Pusaka, with its Bitcoin, to someone who has no NEAR account yet: they open the link and claim it, and a new account is made for them. A NEAR linkdrop (NEP-452) built into the contract. Costs 0.25 NEAR; 0.13 of it becomes their first NEAR, enough for their first transactions.</p>
     <button type="button" disabled={!!busy} onClick={() => run("gift", async () => {
       const kp = KeyPair.fromRandom("ed25519");
+      try { localStorage.setItem(`pusaka:gift:${CONTRACT}:${id}`, kp.toString()); } catch {} // the link survives a reload
       await call("gift", { token_id: id, public_key: kp.getPublicKey().toString() }, { deposit: GIFT_DEPOSIT });
       setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${kp.toString()}`);
       return "Gift link made. Anyone with it can claim this Pusaka: send it privately.";
@@ -1764,11 +1769,23 @@ function GiftClaim({ secret, accountId }) {
         <form className="stack" onSubmit={claim("new", async () => {
           const kp = KeyPair.fromRandom("ed25519");
           const id = `${name.trim().toLowerCase()}${suffix}`;
-          await linkAccount().callFunction({ contractId: CONTRACT, methodName: "create_account_and_claim",
-            args: { new_account_id: id, new_public_key: kp.getPublicKey().toString() }, gas: 100_000_000_000_000n });
-          const owner = (await view("token_info", { token_id: g.token_id })).token.owner_id;
-          if (owner !== id) throw new Error(`${id} couldn't be created (taken?). The link still works: try another name.`);
+          // the key is shown before the claim: if a read times out after the account was made, the key must not be lost
           setNewKey({ id, key: kp.toString() });
+          const exists = () => provider.viewAccount({ accountId: id, blockQuery: { finality: "final" } }).then(() => true, () => false);
+          try {
+            await linkAccount().callFunction({ contractId: CONTRACT, methodName: "create_account_and_claim",
+              args: { new_account_id: id, new_public_key: kp.getPublicKey().toString() }, gas: 100_000_000_000_000n });
+          } catch (err) {
+            if (await exists()) return `${id} exists: keep the key below, then check that it holds Pusaka #${g.token_id}.`;
+            setNewKey(null);
+            throw err;
+          }
+          const owner = (await view("token_info", { token_id: g.token_id }).catch(() => null))?.token.owner_id;
+          if (owner !== id) {
+            if (await exists()) return `Created ${id}. Keep the key below; Pusaka #${g.token_id} should show as yours in a few seconds.`;
+            setNewKey(null);
+            throw new Error(`${id} couldn't be created (taken?). The link still works: try another name.`);
+          }
           return `Created ${id} and gave it Pusaka #${g.token_id}.`;
         })}>
           <h2>{accountId ? "Or claim it as a new account" : "Claim it: no wallet needed"}</h2>
@@ -2175,13 +2192,34 @@ function OwnerForms({ t, busy, run, status, market }) {
       try { script = scriptHex(to); } catch { // checked before anything is signed
         throw new Error(`That isn't a Bitcoin ${NETWORK} address. It should start with ${BTC_PREFIX}.`);
       }
-      const ins = [...bal.spendable].sort((a, b) => b.value - a.value).slice(0, 8);
+      // a signature made but never broadcast (explorer down, tab closed, wallet timeout) would leave its inputs signed for
+      // and uncounted: it is kept in this browser until it's sent, and the next Withdraw sends it first (QA 14 Nov)
+      const store = `pusaka:unsent:${CONTRACT}:${id}`;
+      const keep = (v) => { try { v ? localStorage.setItem(store, JSON.stringify(v)) : localStorage.removeItem(store); } catch {} };
+      const saved = (() => { try { return JSON.parse(localStorage.getItem(store)); } catch { return null; } })();
+      if (saved) {
+        keep(null);
+        let sent;
+        try { sent = await broadcast(finalize(saved.signed, saved.values).toHex()); }
+        catch (err) { throw new Error(`A withdrawal you signed earlier couldn't be sent (${err.message}); it has been cleared, so Withdraw again.`); }
+        return <>Sent the withdrawal you had signed earlier. <a href={`${EXPLORER}/tx/${sent}`} target="_blank" rel="noreferrer">View the Bitcoin transaction</a></>;
+      }
+      // only the inputs it needs (largest first, at most 8), with a fee of at least about 1 sat/vB
+      const ins = [];
+      let fee = FEE;
+      for (const u of [...bal.spendable].sort((a, b) => b.value - a.value).slice(0, 8)) {
+        ins.push(u);
+        fee = Math.max(FEE, 130 + 68 * ins.length);
+        if (ins.reduce((s, x) => s + x.value, 0) >= sats + fee) break;
+      }
       const signed = await call("withdraw", {
         token_id: id,
         utxos: ins.map((u) => ({ txid: u.txid, vout: u.vout, value: String(u.value) })),
-        to_script_hex: script, amount_sat: String(sats), fee_sat: String(FEE),
+        to_script_hex: script, amount_sat: String(sats), fee_sat: String(fee),
       }, { deposit: WITHDRAW_DEPOSIT, tgas: 300 });
+      keep({ signed, values: ins.map((u) => u.value) });
       const txid = await broadcast(finalize(signed, ins.map((u) => u.value)).toHex());
+      keep(null);
       return <>Sent. <a href={`${EXPLORER}/tx/${txid}`} target="_blank" rel="noreferrer">View the Bitcoin transaction</a></>;
     });
   }
