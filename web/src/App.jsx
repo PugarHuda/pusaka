@@ -2092,7 +2092,7 @@ function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
         {act("buy", `Buy for ${near(now)} NEAR`, "Buying…", async () => {
           // A Dutch auction price only falls, so paying today's price always covers it; the rest is refunded.
           await call("buy", { token_id: id, expected_sign_epoch: info.sign_epoch }, { deposit: BigInt(now) });
-          return `You own Pusaka #${id} and the ${btc(Number(info.verified_sats))} BTC inside it.`;
+          return Number(info.verified_sats) ? `You own Pusaka #${id} and the ${btc(Number(info.verified_sats))} BTC inside it.` : `You own Pusaka #${id}.`;
         })}
         {px && Number(info.verified_sats) > 0 && (() => {
           const paid = Number(BigInt(now) / 10n ** 18n) / 1e6 * px.nearUsd;

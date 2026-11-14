@@ -9,6 +9,10 @@
 //   node wallet-qa.mjs <profileDir> offer <account> <id>              post a standing loan offer through the form, then cancel it
 //   node wallet-qa.mjs <profileDir> remind <account> <id>             the loan/heir calendar reminder on token id, downloaded and read back
 //   node wallet-qa.mjs <profileDir> accept|refinance <account> <id>   as the holder, take the first loan offer shown (gas-free) or refinance with it
+//   node wallet-qa.mjs <profileDir> sell <account> <id>               Sell form checks, list at 0.02 NEAR, cancel; QA_DUTCH=0.03,0.01,0.1 then leaves a Dutch auction on
+//   node wallet-qa.mjs <profileDir> buy <account> <id>                from the market card to the token page, Buy (QA_MOBILE=1: 390x844)
+//   node wallet-qa.mjs <profileDir> btc-sell <account> <id> <tb1addr>  v2: list for 1,000 sats through "Sell it for Bitcoin"
+//   node wallet-qa.mjs <profileDir> btc-reserve <account> <id>        v2: reserve the Bitcoin sale (0.1 NEAR bond) and read the instructions
 import fs from "node:fs";
 import { chromium } from "playwright";
 const [profile, step, keyFile, arg2] = process.argv.slice(2);
@@ -38,7 +42,8 @@ const switchTo = async (who) => {
     for (const fr of p.frames()) { const b = fr.getByText("Web", { exact: true }); if (await b.count()) { await b.first().click(); break; } }
     const w = await pop;
     await w.waitForLoadState(); await w.waitForTimeout(4000);
-    if (!(await w.innerText("body")).includes(who)) { // already selected when it's the wallet's only account
+    // already selected when it's the wallet's only account; with two, the other one may be named on the page and still selected
+    if (!(await w.innerText("body")).includes(who) || await w.getByText("Selected Account").count()) {
       await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
       await w.getByText(who, { exact: true }).last().click();
       await w.waitForTimeout(1000);
@@ -388,6 +393,101 @@ try {
     const text = fs.readFileSync(await d.path(), "utf8");
     console.log(`downloaded ${d.suggestedFilename()}:`, text.replace(/\r\n /g, "").split("\r\n").filter((l) => /^(SUMMARY|DTSTART|TRIGGER|UID)/.test(l)).join(" | "));
     console.log("google:", decodeURIComponent(await r.getByRole("link", { name: "Google Calendar" }).getAttribute("href")).slice(0, 160));
+  }
+  // sell / buy / btc-sell / btc-reserve: one page at a time, a screenshot per step (${profile}-<step>-<n>.png), and each
+  // NEAR tx hash the wallet gets back from its RPC printed (QA 14 Nov). QA_MOBILE=1 runs them at 390x844.
+  if (["sell", "buy", "btc-sell", "btc-reserve"].includes(step)) {
+    const [who, id] = [keyFile, arg2];
+    if (process.env.QA_MOBILE) await p.setViewportSize({ width: 390, height: 844 });
+    let n = 0;
+    const snap = async (what, page = p) => { const f = `${profile}-${step}${process.env.QA_MOBILE ? "-mobile" : ""}-${++n}.png`; await page.screenshot({ path: f }); console.log(`  screenshot ${what}: ${f}`); };
+    ctx.on("response", async (r) => {
+      if (r.request().method() !== "POST") return;
+      const o = await r.json().catch(() => null);
+      if (r.url().endsWith("/api/relay")) return console.log(`  relayer (${r.status()}): ${JSON.stringify(o).slice(0, 160)}`);
+      const res = o?.result, h = res?.transaction?.hash ?? res?.transaction_outcome?.id;
+      if (h) console.log(`  tx ${h} ${res.status?.Failure ? "FAILED " + JSON.stringify(res.status.Failure).slice(0, 160) : "ok"}`);
+    });
+    const actions = p.locator("section.actions");
+    const sign = async (label, click, status = actions.getByRole("status")) => {
+      const wp = ctx.waitForEvent("page", { timeout: 30_000 });
+      const t0 = Date.now();
+      await click();
+      const w = await wp; await w.waitForLoadState(); await w.waitForTimeout(4000);
+      await snap(`${label}: wallet`, w);
+      await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+      // a gas-free call the relayer turns down (quota) falls back to a normal one: a second wallet prompt, approved too
+      for (let i = 0; i < 90 && !(await status.count()); i++) {
+        await p.waitForTimeout(1000);
+        for (const w2 of ctx.pages().filter((x) => x !== p && x !== w && !x.isClosed())) {
+          const b = w2.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ });
+          if (await b.count().catch(() => 0)) { await snap(`${label}: second wallet prompt`, w2); await b.first().click().catch(() => {}); console.log("  approved a second wallet prompt"); }
+        }
+      }
+      await p.waitForTimeout(2000);
+      console.log(`${label} -> [${(await status.allInnerTexts()).join(" ").replace(/\s+/g, " ")}] in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+      await snap(label);
+    };
+    const v2 = step.startsWith("btc");
+    await p.goto(`https://pusaka-two.vercel.app/#/${v2 ? "v2" : "pusaka"}/${id}`);
+    await p.waitForTimeout(6000);
+    await switchTo(who);
+    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    if (step === "sell") { // form checks, fixed price listed and cancelled, then (QA_DUTCH=price,floor,hours) a Dutch auction left on
+      const form = p.locator("form").filter({ has: p.getByRole("heading", { name: "Sell", exact: true }) });
+      await form.waitFor({ timeout: 40_000 });
+      const [price, floor, hours] = await form.locator("input").all();
+      for (const v of ["", "0"]) {
+        await price.fill(v);
+        console.log(`price "${v}": form says "${await price.evaluate((e) => e.validationMessage)}"`);
+      }
+      await price.fill("0.02"); await floor.fill("");
+      await snap("sell form");
+      await sign("list fixed 0.02", () => form.getByRole("button", { name: "List for sale" }).click());
+      console.log("listed view:", (await actions.innerText()).replace(/\s+/g, " ").slice(0, 200));
+      console.log("own listing has a Buy button:", (await actions.getByRole("button", { name: /^Buy for/ }).count()) > 0);
+      await sign("cancel listing", () => actions.getByRole("button", { name: "Cancel listing" }).click());
+      console.log("after cancel:", (await actions.innerText()).replace(/\s+/g, " ").slice(0, 120));
+      if (process.env.QA_DUTCH) {
+        const [pr, fl, hr] = process.env.QA_DUTCH.split(",");
+        await price.fill(pr); await floor.fill(fl); await hours.fill(hr);
+        await sign(`list Dutch ${pr} -> ${fl} over ${hr} h`, () => form.getByRole("button", { name: "List for sale" }).click());
+        console.log("listed view:", (await actions.innerText()).replace(/\s+/g, " ").slice(0, 240));
+      }
+    }
+    if (step === "buy") { // from the market to the token page, then Buy
+      await p.goto("https://pusaka-two.vercel.app/#/market");
+      const card = p.locator(`a.piece[href$="#/pusaka/${id}"]`).first();
+      await card.waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      console.log("market card:", (await card.innerText()).replace(/\s+/g, " ").slice(0, 160));
+      await snap("market card");
+      await card.click();
+      const buy = actions.getByRole("button", { name: /^Buy for/ });
+      await buy.waitFor({ timeout: 40_000 });
+      await buy.scrollIntoViewIfNeeded();
+      console.log("button:", await buy.innerText(), "| in viewport:", await buy.isVisible());
+      await snap("token page");
+      await sign(`buy #${id}`, () => buy.click());
+      console.log("owner line:", await p.getByText(/^Owned by/).innerText().catch(() => "?"));
+    }
+    if (step === "btc-sell") { // list for 1,000 sats paid to process.argv[6] (a tb1 address), from the v2 form
+      const form = p.locator("form").filter({ has: p.getByRole("heading", { name: "Sell it for Bitcoin" }) });
+      await form.waitFor({ timeout: 60_000 });
+      await form.getByLabel("Price").fill("1000");
+      await form.getByLabel(/^Paid to/).fill(process.argv[6]);
+      const sale = p.locator("h2", { hasText: "For sale for Bitcoin" }).locator("xpath=following-sibling::*[1]");
+      await sign("list for 1,000 sats", () => form.getByRole("button", { name: "List for Bitcoin" }).click(), p.getByRole("status").last());
+      await p.waitForTimeout(4000);
+      console.log("sale:", (await sale.innerText()).replace(/\s+/g, " ").slice(0, 300));
+    }
+    if (step === "btc-reserve") { // as the buyer: reserve; the seller's view is read from the same page after
+      const sale = p.locator("h2", { hasText: "For sale for Bitcoin" }).locator("xpath=following-sibling::*[1]");
+      const reserve = p.getByRole("button", { name: /^Reserve to buy with Bitcoin/ });
+      await reserve.waitFor({ timeout: 60_000 });
+      await sign("reserve", () => reserve.click(), sale.getByRole("status"));
+      console.log("sale:", (await sale.innerText()).replace(/\s+/g, " ").slice(0, 600));
+    }
   }
   if (step === "judge") {
     const [buyId, lendId] = [keyFile, arg2];
