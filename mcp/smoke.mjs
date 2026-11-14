@@ -6,6 +6,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import fs from "node:fs";
 import path from "node:path";
 import { KeyPair } from "near-api-js";
+import { CONTRACT } from "@pusaka/shared";
+import { viewFinal } from "@pusaka/shared/audit";
 
 const id = process.argv[2] ?? "pusaka-buyer.testnet";
 const keyFile = path.join(import.meta.dirname, "..", ".keys", `${id}.json`);
@@ -31,10 +33,15 @@ await show("pusaka_inspect", { token_id: "1" });
 // either refusal stops the agent before it signs: LTV above the cap, or no second price source to check it against
 const LTV_REFUSED = /Loan-to-value .* is above|could not be cross-checked/;
 const refused = (r, why) => { if (!r.isError || !why.test(r.content[0].text)) throw new Error(`expected a refusal matching ${why}`); };
-// Guard: #1 asks for a loan at well under 2% LTV; an agent capped at 0.1% must refuse.
-refused(await show("pusaka_fund_loan", { token_id: "25", max_ltv: 0.001 }), LTV_REFUSED); // #25 keeps an open loan request
-// Guard: price cap. #4 is listed at 0.5 NEAR; an agent capped at 0.1 must refuse.
-refused(await show("pusaka_buy", { token_id: "4", max_price_near: 0.1 }), /above your max/);
+// The live stock changes as people trade: find a Pusaka asking for a loan and one for sale above 0.1 NEAR now.
+const rpcView = (method, args) => viewFinal(method, args, CONTRACT); // with the shared RPC failover
+const infos = [];
+for (const t of await rpcView("nft_tokens", { from_index: "0", limit: 100 })) infos.push(await rpcView("token_info", { token_id: t.token_id }).catch(() => null));
+const asking = infos.find((i) => i?.loan && !i.loan.lender && Number(i.verified_sats) > 0), forSale = infos.find((i) => i?.listing && BigInt(i.listing.price) > 10n ** 23n);
+// Guard: an open loan request; an agent capped at 0.1% LTV must refuse.
+if (asking) refused(await show("pusaka_fund_loan", { token_id: asking.token.token_id, max_ltv: 0.001 }), LTV_REFUSED); else console.log("(no open loan request right now: LTV guard skipped)");
+// Guard: price cap; an agent capped at 0.1 NEAR must refuse a listing above it.
+if (forSale) refused(await show("pusaka_buy", { token_id: forSale.token.token_id, max_price_near: 0.1 }), /above your max/); else console.log("(nothing for sale above 0.1 NEAR right now: price guard skipped)");
 // Guard: outflows (give, withdraw_*) are off unless the operator opts in.
 refused(await show("pusaka_give", { token_id: "4", to: "pusaka-seller.testnet" }), /Outflows are off/);
 await show("pusaka_loan_offers");

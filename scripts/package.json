@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "demo": "node -e \"process.env.PUSAKA_CONTRACT ??= 'pusaka-btc.testnet'; import('./demo.mjs')\"",
+    "demo": "node -e \"process.env.PUSAKA_CONTRACT ??= 'pusaka-btc.testnet'; import('./demo.mjs')\" --",
     "setup": "node setup.mjs"
   },
   "keywords": [],

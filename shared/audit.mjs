@@ -74,6 +74,9 @@ export async function auditContract(contract = CONTRACT) {
   const up = await viewFinal("upgrade_status", {}, contract).catch(() => ({}));
   return [
     { ok: full === 0, what: "nobody holds a full-access key to the contract", detail: `${contract}: ${full} full-access key(s)` },
-    { ok: !!up.renounced, what: "the contract's code can never change", detail: up.renounced ? "upgrades renounced" : "upgrades still possible" },
+    up.renounced
+      ? { ok: true, what: "the contract's code can never change", detail: "upgrades renounced" }
+      : { ok: !!up.admin && Number(up.delay_ms) >= 600_000, what: "new code only after a public, timelocked announcement",
+          detail: up.admin ? `changes only via ${up.admin}, deployable ${Number(up.delay_ms) / 60_000} min after it announces the code's sha256` : "no upgrade admin or timelock" },
   ];
 }

@@ -87,7 +87,7 @@ maps each attack to its tests (`t1_…` to `t5_…`, loans `l…`/`o…`, heir `
 
 Open https://pusaka-two.vercel.app, connect any NEAR testnet wallet, and follow the README's
 [try it](README.md#try-it-in-two-minutes-testnet-wallet-only) steps: buy a Pusaka (its BTC moves to you), lend against one, or take the
-standing loan offer on the home page gas-free. `#/mine` shows what you hold.
+standing loan offer on the market page (`#/market`) gas-free. `#/mine` shows what you hold.
 Any token page also offers **Circle testnet USDC from the pool** (`pusaka-lend.testnet`): borrow up to 79.5% of the
 proven BTC's value at a 2-of-3 reporter price (tight on testnet so a real price move can trigger a real liquidation;
 mainnet 50/80), repay any time, and see **Clean to buy**: whether anything the seller signed could still move what's

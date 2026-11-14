@@ -60,7 +60,8 @@ if (bal.safe + bal.pending < 2000 && Number(info.verified_sats) < 2000) {
   console.log(`   → open https://coinfaucet.eu/en/btc-testnet/ and send to ${addr}`);
   console.log(`   waiting up to ${waitMin} min for the deposit (--wait <min> to wait longer); then a Pusaka that already holds proven BTC is bought instead`);
   const until = Date.now() + waitMin * 60_000;
-  while ((bal = await balances(addr, info.signed_outpoints)).safe + bal.pending < 2000 && Date.now() < until) await sleep(5000);
+  // an explorer hiccup (rate limit, TLS) is one missed poll, not the end of the demo
+  while ((bal = await balances(addr, info.signed_outpoints).catch(() => bal)).safe + bal.pending < 2000 && Date.now() < until) await sleep(5000);
   if (bal.safe + bal.pending < 2000) {
     // No BTC sent (an automated run can't use a faucet): take a stocked Pusaka from the market, so every later step still runs on real BTC.
     const n = Number(await view("nft_total_supply"));

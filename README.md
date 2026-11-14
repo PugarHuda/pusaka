@@ -95,7 +95,7 @@ Requirements: Node 22+, and Rust + `cargo-near` only to rebuild the contract.
 ```sh
 cd contract && cargo test          # 376 passed (~4 min cold): every threat-model attack has a test
 npm install && npm run demo        # mint, prove a BTC deposit, sell, withdraw, lend, foreclose (~5 min, testnet)
-npm run e2e -w web                 # 115 UI tests on 5 browsers/devices + 45 checks against the live app
+npx playwright install && npm run e2e -w web   # 115 UI tests on 5 browsers/devices + 45 live checks (~500 MB of browsers, 15+ min)
 npm run dev                        # the web app at http://localhost:5173
 ```
 
