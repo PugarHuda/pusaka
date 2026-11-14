@@ -86,7 +86,7 @@ Every README claim has a tx or a test. `verify.mjs` re-checks 56 tx and the bala
 Round 1 (A1–A18): 16 fixed and verified; A16 (typecheck) not added, with a stated reason; A17 = B9. The details are in this file's git history (`git log -p docs/reports/01-tech-lead.md`).
 
 ## Gaps per area (short)
-- **Smart contract**: no new gaps. 225 tests, 0 warnings, code final. Coverage not measured (known issue in 05).
+- **Smart contract**: no new gaps. 225 tests at the time (8 Nov; 375 with 96% line coverage by 14 Nov), 0 warnings, code final.
 - **Frontend/dApp**: connect/disconnect, the no-wallet flow, RPC down, both BTC explorers down, and offline are all tested in `ui.spec` (5 browsers). Account switching and wallet rejection are only tested manually (`wallet-qa.mjs`), because there is no injected provider for NEAR wallets. Network switching does not apply: the app is testnet only.
 - **Integration**: NEAR RPC and Esplora have failover + cooldown + timeout (unit tests). 1Click has a 30 s timeout and an honest fallback.
 - **Web3 UX**: contract panic → sentence (`errors.js`), explorer links in History, gas-free through the relayer, 429 explained.

@@ -81,12 +81,12 @@ Scanners were rerun on all components.
 
 Exploit PoC: every threat model row has a test that tries the attack and checks that it fails (375 tests, including fuzz and invariant).
 
-## Round 4 (13 Nov): pUSD pool (`lend/`, `pusaka-lend.testnet`)
+## Round 4 (13 Nov): USDC pool (`lend/`, `pusaka-lend.testnet`; started on pUSD, moved to Circle USDC on 13 Nov)
 | Threat | Defense | Test |
 |---|---|---|
 | One reporter lies to liquidate everyone | median of 3 reports; quorum of 2 | `a_lying_reporter_is_outvoted_by_the_median` |
 | With 2 reports, one source shifts the price (automated review finding) | borrowing uses the lower middle value, liquidation the upper middle value; a difference > 5% means there is no price | `with_two_reports_one_source_cannot_move_the_price_either_way` |
-| Liquidation at a stale price | reports > 1 hour old don't count; without a quorum `StalePrice` | `nobody_is_liquidated_on_a_stale_price`, `a_stale_price_blocks_borrowing` |
+| Liquidation at a stale price | reports > 2 hours old don't count (deployed config; 1 hour in the unit tests); without a quorum `StalePrice` | `nobody_is_liquidated_on_a_stale_price`, `a_stale_price_blocks_borrowing` |
 | A liquidator takes the BTC too cheaply | pays at least max(debt, 95% of the BTC value); the rest goes to the borrower (`owed` if not registered) | `a_liquidator_cannot_take_the_bitcoin_for_less_than_the_floor`, `liquidation_repays_the_pool_and_pays_the_borrower_the_rest` |
 | An approved account pledges someone else's Pusaka | `sender_id == previous_owner_id` | `an_approved_account_cannot_borrow_against_someone_elses_pusaka` |
 | Fake NFT / fake token | the list of NFT and stablecoin contracts is fixed at init | `an_nft_from_another_contract_is_returned`, `another_token_cannot_be_passed_off_as_the_stablecoin` |

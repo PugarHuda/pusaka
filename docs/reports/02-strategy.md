@@ -119,7 +119,7 @@ The comparison table in the README has been sharpened for this (column "BTC/EVM 
 2. 2–2.5 minute video + X post (user). Opening line: "Native BTC, proven by a light client". Show real screens + explorer, not animation.
 3. ~~Align the test counts~~: done (375 in all documents).
 4. ~~"What's real / not" box~~: done, at the top of the README.
-5. ~~`verify.mjs` checks v2~~: done. Delete the v2 key on 13 Nov.
+5. ~~`verify.mjs` checks v2~~: done. ~~Delete the v2 key~~: done 14 Nov (`6PrDXyqq…`).
 6. Mainnet (user, needs funds) is the only way to catch Contri, Hallmark and Warrant on "impact".
 
 ## 4. Honest: parity, what to catch up on, gaps
@@ -145,7 +145,7 @@ The comparison table in the README has been sharpened for this (column "BTC/EVM 
 ## 5. Real differentiators that are hard to copy
 1. **Trust & verification: a Bitcoin light client inside the contract.** `verified_sats` = proven deposits minus every output the contract has ever signed. Buyers, lenders, and agents only need to read the contract, not an indexer or an oracle. To copy this, a competitor needs to understand Bitcoin Merkle proofs, confirmations, and change (proposal 5).
 2. **Composability: one NFT, five chains, one transaction.** BTC (MPC secp256k1), ETH + USDC on 3 EVMs (USDC checked through MPC foreign-tx verification), SOL (ed25519), a NEAR account + nBTC (Omni) + stake. All of it moves together with `nft_transfer`.
-3. **Credit on top of BTC without a bridge, usable by AI agents.** BTC-backed loans, a standing offer market, refinancing, and Dutch auctions. An MCP server with 43 tools, spending guards and elicitation, so agents that act stay under human control.
+3. **Credit on top of BTC without a bridge, usable by AI agents.** BTC-backed loans, a standing offer market, refinancing, and Dutch auctions. An MCP server with 61 tools, spending guards and elicitation, so agents that act stay under human control.
 
 ## 6. Positioning
 > For **Bitcoin holders** who want to sell, borrow against, or pass on their BTC **without a bridge or custodian**, **Pusaka** is **a NEAR NFT that owns a real Bitcoin address**, with a balance **proven on-chain by NEAR's Bitcoin light client** that moves with the NFT in a single transaction. **Unlike** LBTC/tBTC, which wrap BTC behind a signer consortium, or ERC-6551 NFT wallets, which the seller can drain before the sale is final.

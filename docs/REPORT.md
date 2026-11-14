@@ -35,7 +35,7 @@ Chain Signatures: Deep → + staking FunctionCall · Light client: Medium → De
 NFT-owned NEAR staking (`#/pusaka/2`), free change proof (`#/pusaka/10`), token page title before JS (LCP 8.4 → 2.7 s), human-readable contract errors, `.env.example`, `cargo audit` in CI.
 
 ## 7. Testing
-Contract 375 × 2 (including fuzz + invariant) · Node unit 12 files · Playwright `ui.spec` 95 (5 projects) + `live.spec` 40 · `verify.mjs` 8 checks · MCP smoke. Bugs found by tests: 10 (`06-qa.md`). Production mobile Lighthouse: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
+Contract 375 × 2 (including fuzz + invariant) · Node unit 14 files in CI · Playwright `ui.spec` 115 (5 projects) + `live.spec` 45 · `verify.mjs` 8 checks · MCP smoke. Bugs found by tests: 10 (`06-qa.md`). Production mobile Lighthouse: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
 
 ## 8. Links
 Demo: https://pusaka-two.vercel.app · Contract: https://testnet.near.rocks/account/pusaka-btc.testnet · Repo: https://github.com/PugarHuda/pusaka · Video & deck: not yet (script + outline in `07-submission.md`).

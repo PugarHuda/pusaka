@@ -122,7 +122,7 @@ only the pool account can call and only while the pool is empty (no loan, no sha
   `report_price` on this contract. On testnet all three reporters are ours: the quorum guards against a bad source,
   not against us.
 - **Liquidation pays the borrower**: the liquidator pays max(debt, 95% of the BTC's value); the pool takes the debt,
-  the borrower the rest (claimable if they can't receive pUSD), the liquidator the NFT and with it the Bitcoin key.
+  the borrower the rest (claimable if they can't receive the stablecoin), the liquidator the NFT and with it the Bitcoin key.
 - **Lenders** hold shares; interest repaid raises every share's value; `withdraw` while the cash is there.
 - **The stablecoin** is any NEP-141 fixed in the config: Circle's testnet USDC now (from faucet.circle.com, network
   NEAR); `pusaka-usd.testnet` (pUSD, a faucet test token) before 13 Nov ~12:40 local.
@@ -221,8 +221,8 @@ afterwards, so its `GET /` can no longer be read: the tx's key and the function-
 
 The contract above is final. New features run in a second deployment, **[`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet)**:
 the same contract plus `contract/src/v2.rs`, upgraded only through the DAO (`pusaka-council.sputnikv2.testnet`, 2 of 3
-votes, our own accounts) and a 10-minute timelock. **Until 13 Nov the account also still has its deploy key**; it is
-deleted on 13 Nov and `verify.mjs` reports it until then. What v2 adds, each live on testnet with tx hashes in
+votes, our own accounts) and a 10-minute timelock. **The deploy key was deleted on 14 Nov** (tx `6PrDXyqq…`):
+the account has no keys, and `verify.mjs` checks it. What v2 adds, each live on testnet with tx hashes in
 **[docs/V2.md](V2.md)**:
 
 - **Its own NEAR account** (`0s…`, NEP-616 + NEP-591): keyless, obeys only the current holder, frozen while the NFT is for sale. Plus a readable name, `t<id>.pusaka-v2.testnet`.
