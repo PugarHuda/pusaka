@@ -180,11 +180,24 @@ export async function relay(b64) {
     if (allowed) lastRelay.set(k, Date.now());
   }
   if (fc.methodName === "accept_loan_offer") allowed = allowed && acceptWouldSucceed(info, await offerById(c, args.offer_id), who, args);
+  // owner calls: only what the contract would accept, with exactly its argument names (QA 14 Nov: otherwise a holder
+  // could make the relayer pay for calls that panic)
+  const ARGS = { list: ["token_id", "price", "floor", "duration_ms"], cancel_listing: ["token_id"], request_loan: ["token_id", "principal", "repay", "duration_ms"], cancel_loan_request: ["token_id"] };
+  if (allowed && ARGS[fc.methodName]) {
+    if (Object.keys(args).some((k) => !ARGS[fc.methodName].includes(k))) throw Object.assign(new Error(`${fc.methodName} takes only ${ARGS[fc.methodName].join(", ")}`), { status: 400 });
+    const free = !info.listing && !info.loan && !info.pending;
+    allowed = { list: free && /^\d+$/.test(String(args.price ?? "")), cancel_listing: !!info.listing, request_loan: free, cancel_loan_request: !!info.loan && !info.loan.lender }[fc.methodName];
+  }
   if (!allowed) throw Object.assign(new Error(`${who} can't ${fc.methodName} Pusaka #${args.token_id}`), { status: 403 });
   // the same signed delegate posted N times in parallel would pass every check above N times
   const key = `${who}:${sd.delegateAction.nonce}`;
   if (inFlight.has(key)) throw Object.assign(new Error("this signed action is already being relayed"), { status: 409 });
+  // parallel delegates with different nonces all pass the checks above before the first lands; each failed one costs
+  // the relayer gas. ponytail: per instance; a shared store (SET NX with a TTL) is the upgrade path.
+  const once = `once:${slot}:${fc.methodName}`;
+  if (Date.now() - (lastRelay.get(once) ?? 0) < 30_000) throw tooSoon(`${fc.methodName} on Pusaka #${args.token_id} was just relayed; it lands in a few seconds`);
   inFlight.add(key);
+  lastRelay.set(once, Date.now());
   if (THROTTLED.has(fc.methodName)) lastRelay.set(slot, Date.now()); // reserve before awaiting
   let res;
   try {

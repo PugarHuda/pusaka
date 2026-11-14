@@ -8,6 +8,7 @@ import { body } from "./_relayer.mjs";
 const HOSTS = [process.env.HOLDER_RECIPIENT ?? "pusaka-two.vercel.app", process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL].filter(Boolean);
 
 export default async function handler(req, res) {
+  res.setHeader("cache-control", "no-store"); // the open action returns the holder's letter
   if (req.method !== "POST") return res.status(405).json({ error: "POST {token_id, auth}" });
   const host = req.headers.host;
   const recipient = HOSTS.includes(host) ? host : HOSTS[0];

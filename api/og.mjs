@@ -7,6 +7,8 @@ import { card, tokenId } from "./_card.mjs";
 
 const FONT = path.join(import.meta.dirname, "fonts", "Inter.ttf");
 const esc = (s) => String(s).replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// the token image goes into an href: only the contract-drawn kind (a base64 SVG data URI) is used
+const SVG_DATA = /^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/;
 
 export function cardSvg(c) {
   const pill = 30 * 0.56 * c.status.length + 56;
@@ -18,7 +20,7 @@ export function cardSvg(c) {
 <clipPath id="r"><rect x="72" y="95" width="440" height="440" rx="40"/></clipPath>
 </defs>
 <rect width="1200" height="630" fill="#eef0f8"/><rect width="1200" height="630" fill="url(#a)"/><rect width="1200" height="630" fill="url(#b)"/><rect width="1200" height="630" fill="url(#c)"/>
-${c.image ? `<image x="72" y="95" width="440" height="440" clip-path="url(#r)" xlink:href="${c.image}" href="${c.image}"/>` : ""}
+${SVG_DATA.test(c.image ?? "") ? `<image x="72" y="95" width="440" height="440" clip-path="url(#r)" xlink:href="${c.image}" href="${c.image}"/>` : ""}
 <g font-family="Inter" fill="#0d0d0a">
 <text x="580" y="190" font-size="30" fill="#5f6064">Pusaka, an NFT that holds real Bitcoin</text>
 <text x="576" y="290" font-size="92" font-weight="700" letter-spacing="-3">Pusaka #${esc(c.id)}</text>
@@ -44,6 +46,7 @@ export default async function handler(req, res) {
     res.setHeader("cache-control", "public, s-maxage=600, stale-while-revalidate=86400");
     res.status(200).send(Buffer.from(cardPng(c)));
   } catch (e) {
-    res.status(502).json({ error: "couldn't draw the card", detail: String(e.message ?? e).slice(0, 160) });
+    console.error("og", String(e.message ?? e).slice(0, 160));
+    res.status(502).json({ error: "couldn't draw the card" });
   }
 }

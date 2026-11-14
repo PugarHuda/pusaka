@@ -51,6 +51,7 @@ export default async function handler(req, res) {
     res.status(200).json(last);
   } catch (e) {
     if (last && Date.now() - last.fetchedAt < STALE_MS) return res.setHeader("cache-control", "no-store").status(200).json({ ...last, stale: true, error: e.message });
-    res.setHeader("cache-control", "no-store").status(502).json({ error: e.message });
+    console.error("prices", String(e.message ?? e).slice(0, 200));
+    res.setHeader("cache-control", "no-store").status(502).json({ error: "price sources unavailable" });
   }
 }

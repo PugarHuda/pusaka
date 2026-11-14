@@ -64,6 +64,7 @@ export default async function handler(req, res) {
     const out = await verifiedCompletion([{ role: "system", content: SYSTEM }, { role: "user", content: JSON.stringify(f.data) }]);
     res.status(200).json({ id: Number(id), contract: c, facts: f.data, ...out });
   } catch (e) {
-    res.status(502).json({ error: String(e.message ?? e).slice(0, 300) });
+    console.error("appraise", String(e.message ?? e).slice(0, 300));
+    res.status(502).json({ error: "The appraisal couldn't be completed or verified right now; try again in a minute." });
   }
 }

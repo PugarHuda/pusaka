@@ -31,7 +31,8 @@ if (launched) {
     tg.expand();
 
     const theme = () => {
-      const p = tg.themeParams ?? {}, root = document.documentElement;
+      // colours only: the params come from the launch link, so a crafted one mustn't inject url(...) or anything else
+      const p = Object.fromEntries(Object.entries(tg.themeParams ?? {}).filter(([, v]) => /^#[0-9a-f]{3,8}$/i.test(String(v)))), root = document.documentElement;
       root.dataset.theme = tg.colorScheme === "dark" ? "dark" : "light";
       for (const [v, k] of [["--paper", "bg_color"], ["--card", "bg_color"], ["--panel", "secondary_bg_color"],
         ["--ink", "text_color"], ["--ink-soft", "hint_color"], ["--lav-ink", "link_color"]]) {
