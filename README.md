@@ -35,7 +35,7 @@ git clone https://github.com/PugarHuda/pusaka && cd pusaka
 npm install && node scripts/verify.mjs        # every claim here, checked against NEAR, its MPC, its light client and Bitcoin
 node scripts/mainnet-proof.mjs                # the same proof, accepted by NEAR's *mainnet* Bitcoin light client (free view call)
 ```
-Then open **https://pusaka-two.vercel.app/#/market**. Judges: [JUDGES.md](JUDGES.md) is the shortest path (3-minute check, 10-minute tour).
+Then open **https://pusaka-two.vercel.app/#/market**; how it works and a glossary are at [#/docs](https://pusaka-two.vercel.app/#/docs). Judges: [JUDGES.md](JUDGES.md) is the shortest path (3-minute check, 10-minute tour).
 
 | | |
 |---|---|
@@ -52,7 +52,7 @@ More screenshots (lending pool, proof trail, exchange check, Smart Pusaka, reser
 
 > **Run by us on testnet:** the three price reporters, the gas relayer, and the 3-account DAO that can upgrade
 > `pusaka-v2.testnet`. **Nobody can change** the classic `pusaka-btc.testnet`.
-> - **Real, on NEAR testnet, every claim with a tx hash** (200 of them, all checked by `verify.mjs`).
+> - **Real, on NEAR testnet, every claim with a tx hash** (201 of them, all checked by `verify.mjs`).
 > - **Mainnet:** not deployed (needs funds; `docs/MAINNET.md`), but `scripts/mainnet-proof.mjs` shows Pusaka's proof
 >   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
 > - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`

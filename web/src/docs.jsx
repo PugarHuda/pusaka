@@ -120,7 +120,7 @@ const SECTIONS = [
       whitelists, reserve audits.</p>
   </>],
   ["btc", "Buying with Bitcoin", <>
-    <p>A buyer reserves the sale on NEAR (0.1 NEAR bond, back on purchase), pays on Bitcoin with the reservation's OP_RETURN, and
+    <p>A buyer reserves the sale on NEAR (0.1 NEAR bond, back on purchase; refused if anything was signed since they looked), pays on Bitcoin with the reservation's OP_RETURN, and
       anyone proves the payment with NEAR's Bitcoin light client; then the NFT moves. A payment can buy only once, and only for the
       reservation it names.</p>
   </>],
