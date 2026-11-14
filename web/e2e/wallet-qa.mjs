@@ -12,7 +12,8 @@
 //   node wallet-qa.mjs <profileDir> sell <account> <id>               Sell form checks, list at 0.02 NEAR, cancel; QA_DUTCH=0.03,0.01,0.1 then leaves a Dutch auction on
 //   node wallet-qa.mjs <profileDir> buy <account> <id>                from the market card to the token page, Buy (QA_MOBILE=1: 390x844)
 //   node wallet-qa.mjs <profileDir> btc-sell <account> <id> <tb1addr>  v2: list for 1,000 sats through "Sell it for Bitcoin"
-//   node wallet-qa.mjs <profileDir> btc-reserve <account> <id>        v2: reserve the Bitcoin sale (0.1 NEAR bond) and read the instructions
+//   node wallet-qa.mjs <profileDir> btc-reserve <account> <id> [seller] v2: reserve the Bitcoin sale (0.1 NEAR bond), read the instructions, then the seller's view
+//   node wallet-qa.mjs <profileDir> btc-view <account> <id>           v2: what that account sees of the Bitcoin sale
 import fs from "node:fs";
 import { chromium } from "playwright";
 const [profile, step, keyFile, arg2] = process.argv.slice(2);
@@ -396,7 +397,7 @@ try {
   }
   // sell / buy / btc-sell / btc-reserve: one page at a time, a screenshot per step (${profile}-<step>-<n>.png), and each
   // NEAR tx hash the wallet gets back from its RPC printed (QA 14 Nov). QA_MOBILE=1 runs them at 390x844.
-  if (["sell", "buy", "btc-sell", "btc-reserve"].includes(step)) {
+  if (["sell", "buy", "btc-sell", "btc-reserve", "btc-view"].includes(step)) {
     const [who, id] = [keyFile, arg2];
     if (process.env.QA_MOBILE) await p.setViewportSize({ width: 390, height: 844 });
     let n = 0;
@@ -481,12 +482,25 @@ try {
       await p.waitForTimeout(4000);
       console.log("sale:", (await sale.innerText()).replace(/\s+/g, " ").slice(0, 300));
     }
+    if (step === "btc-view") { // what this account sees of the Bitcoin sale, read after the page has settled
+      const sale = p.locator("h2", { hasText: "For sale for Bitcoin" }).locator("xpath=following-sibling::*[1]");
+      await sale.waitFor({ timeout: 60_000 }); await p.waitForTimeout(8000);
+      console.log(`${who} sees:`, (await sale.innerText()).replace(/\s+/g, " ").slice(0, 700));
+      await snap("sale");
+    }
     if (step === "btc-reserve") { // as the buyer: reserve; the seller's view is read from the same page after
       const sale = p.locator("h2", { hasText: "For sale for Bitcoin" }).locator("xpath=following-sibling::*[1]");
       const reserve = p.getByRole("button", { name: /^Reserve to buy with Bitcoin/ });
       await reserve.waitFor({ timeout: 60_000 });
       await sign("reserve", () => reserve.click(), sale.getByRole("status"));
       console.log("sale:", (await sale.innerText()).replace(/\s+/g, " ").slice(0, 600));
+      if (process.argv[6]) { // the seller (argv[6]) looks at it while it's reserved
+        await switchTo(process.argv[6]);
+        await p.reload(); await sale.waitFor({ timeout: 60_000 }); await p.waitForTimeout(4000);
+        console.log(`seller ${process.argv[6]} sees:`, (await sale.innerText()).replace(/\s+/g, " ").slice(0, 300));
+        console.log("seller has an End button:", (await p.getByRole("button", { name: "End the Bitcoin listing" }).count()) > 0);
+        await snap("seller view while reserved");
+      }
     }
   }
   if (step === "judge") {
