@@ -158,6 +158,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--ink); background
 .docs article + article { border-top: 1px solid var(--line); padding-top: 1.8rem; }
 .docs article h2 { font: 400 1.65rem/1.2 var(--serif); letter-spacing: -0.01em; margin: 0 0 0.7rem; }
 .docs article p { margin: 0 0 0.9rem; }
+.docs article ol { margin: 0 0 0.9rem; padding-left: 1.3rem; }
+.docs article li { margin-bottom: 0.5rem; }
+.glossary { margin: 0; }
+.glossary div { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0.15rem 0 0; color: var(--ink-soft); }
 @media (max-width: 900px) {
   .docs-body { grid-template-columns: 1fr; gap: 1.5rem; }
   .toc { position: static; }

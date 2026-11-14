@@ -3,7 +3,64 @@ import { useEffect, useState } from "react";
 // #/docs: how Pusaka works. The product pages stay short; the explanations live here. Loaded on demand.
 const REPO = "https://github.com/PugarHuda/pusaka/blob/main";
 
+// Terms used across the app, in plain words.
+const TERMS = [
+  ["NFT (NEP-171)", "A unique token on NEAR. Each Pusaka is one; whoever holds it controls what's inside."],
+  ["Chain Signatures", "NEAR's way for a contract to sign transactions on other chains (Bitcoin, Ethereum, Solana) with keys held by NEAR's MPC network."],
+  ["MPC network", "A group of independent NEAR nodes that hold a key between them; no single node can sign alone. They sign only what the Pusaka contract asks for."],
+  ["Bitcoin light client", "A NEAR contract (btc-client-v4.testnet; btc-client.bridge.near on mainnet) that follows Bitcoin's block headers, so a contract can check a Bitcoin transaction really happened."],
+  ["Proving a deposit", "Showing the light client a deposit's merkle proof. Once it accepts, the sats count as verified on NEAR."],
+  ["verified_sats", "The Bitcoin inside a Pusaka as NEAR knows it: every proven deposit minus every output the contract ever signed away. Prices, loans and badges use this number."],
+  ["sats / UTXO", "1 BTC = 100,000,000 sats. A UTXO is one unspent Bitcoin output: a coin the Pusaka's address can spend."],
+  ["testnet3", "Bitcoin's public test network, the one NEAR's testnet light client tracks. Its coins have no value."],
+  ["Sign epoch", "A counter that goes up every time a Pusaka signs something. A buy or a loan names the epoch the buyer saw and fails if it moved."],
+  ["Clean to buy / proof of clean", "A check that nothing the seller already signed could still move what's inside, on every chain the Pusaka holds funds; also a JSON format and a badge."],
+  ["Heir and silence period", "The person who inherits a Pusaka, and how long the holder must stay silent before they can claim it."],
+  ["Guardians", "Optional accounts that must approve an heir's claim; protects against a lost or hostile heir."],
+  ["Dutch auction", "A sale whose price falls over time from a start price to a floor; the first buyer pays the price at that moment."],
+  ["LTV (loan-to-value)", "A loan's size compared with the value of the Bitcoin pledged for it. The pool liquidates from 80% on testnet."],
+  ["Liquidation", "When a pool loan's LTV gets too high, anyone can repay it and take the Pusaka at a discount; any surplus goes to the borrower."],
+  ["Circle USDC", "Circle's official testnet dollar token, lent by the pool. pUSD was the earlier test token, no longer used by the pool."],
+  ["nBTC", "Bitcoin bridged to NEAR by the Omni bridge. A Smart Pusaka can hold it and redeem it to native Bitcoin; it is counted apart from native sats."],
+  ["NEAR Intents", "A way to swap between chains by stating what you want; solvers fill it. Used for the exit quote and swaps."],
+  ["Smart Pusaka", "A Pusaka on pusaka-v2.testnet with its own keyless NEAR account, bundles, vault, options and more."],
+  ["Keyless contract", "A contract account with no access keys: nobody can sign as it, so its code changes only by its own rules (a DAO vote and timelock, or never)."],
+  ["DAO and timelock", "The Smart Pusaka contract changes only after 2 of 3 council members vote, and then only 10 minutes after the new code is announced."],
+  ["Reproducible build (NEP-330)", "Anyone can rebuild the contract from the source and get the exact bytes deployed on-chain."],
+  ["TEE / Shade Agent", "Code running in attested hardware (Phala TDX). Its key never leaves the enclave; it proves deposits and can claim for an heir."],
+  ["Relayer / gas-free", "Our account that pays NEAR gas for some actions (NEP-366 meta-transactions), so you can act without holding NEAR."],
+  ["MCP", "Model Context Protocol: lets an AI agent use Pusaka through tools, with spend caps."],
+  ["x402", "Pay-per-call over HTTP: an agent pays a few cents in NEAR for a proof-of-reserves audit."],
+  ["BIP-322 / SIWE", "Standard signed messages proving a Pusaka controls a Bitcoin address (BIP-322) or signing in to a website as the Pusaka (SIWE)."],
+  ["OP_RETURN", "A data field in a Bitcoin transaction. Withdrawals carry pusaka:<id>; a Bitcoin purchase carries its reservation code."],
+];
+
 const SECTIONS = [
+  ["why", "Why Pusaka", <>
+    <p>Putting Bitcoin in an NFT usually means wrapped BTC or a custodian: someone else holds the coins and you hold an IOU.
+      Pusaka gives each NFT its own real Bitcoin address. Whoever holds the NFT controls the Bitcoin, and NEAR itself checks
+      how much is inside, so you can sell it, borrow against it or leave it to someone, and the Bitcoin moves with it.</p>
+    <p><em>Pusaka</em> is Indonesian for an heirloom: something valuable passed from hand to hand.</p>
+  </>],
+  ["flow", "How it works, step by step", <>
+    <ol>
+      <li><strong>Mint.</strong> The contract asks NEAR's MPC network for the public key at path <code>pusaka-&lt;id&gt;</code> and
+        stores it. That key's Bitcoin address belongs to this NFT; nobody can mint one pointing at an address they control.</li>
+      <li><strong>Deposit.</strong> Anyone sends Bitcoin to the address shown on the Pusaka's page.</li>
+      <li><strong>Prove.</strong> After a confirmation, the deposit is proven to NEAR's Bitcoin light client (free: our relayer or
+        the TEE agent pays). <code>verified_sats</code> goes up.</li>
+      <li><strong>Sell, lend or leave it.</strong> List it, take a loan against it or name an heir. Buying is one NEAR transaction
+        that moves the NFT, and with it control of the Bitcoin. Nothing happens on Bitcoin.</li>
+      <li><strong>Withdraw.</strong> The holder asks to send Bitcoin out. The contract builds the transaction itself, the MPC network
+        signs it, and the contract records the spent coins so <code>verified_sats</code> stays right.</li>
+    </ol>
+  </>],
+  ["clean", "Clean to buy", <>
+    <p>A seller could sign a withdrawal and then sell the NFT before it lands. So before paying, the token page checks every chain
+      the Pusaka holds funds on (Bitcoin, three EVM chains, Solana, its NEAR account) for anything already signed that could still
+      move them. The purchase itself names the sign epoch the buyer saw and fails if anything was signed since. The same answer is
+      published as a badge and as JSON (<a href={`${REPO}/docs/PROOF-OF-CLEAN.md`}>proof of clean</a>).</p>
+  </>],
   ["basics", "What a Pusaka is", <>
     <p>A Pusaka is a NEAR NFT that controls its own native Bitcoin address through NEAR Chain Signatures. The address's key is held
       by NEAR's MPC network and is used only when the contract asks, and the contract asks only for the NFT's current holder. Sell
@@ -72,6 +129,13 @@ const SECTIONS = [
       stays open for several Pusakas, its price dropping a step after each one. Loans have no due date: the lender can call one,
       which starts an auction where another lender can take it over or the borrower repays.</p>
   </>],
+  ["pool", "Borrowing Circle USDC", <>
+    <p>Besides loans from a person in NEAR, a Pusaka can back a loan in Circle's testnet USDC from a shared pool
+      (<code>pusaka-lend.testnet</code>). Lenders deposit USDC and earn interest. The Bitcoin price comes from three reporters
+      (mempool.space, CoinGecko, Rhea), and two of three must agree. Borrow up to 79.5% of the Bitcoin's value on testnet; from 80%
+      anyone can liquidate, paying the debt and receiving the Pusaka at a discount, with any surplus paid to the borrower.
+      On mainnet the limits would be 50% and 80%.</p>
+  </>],
   ["heir", "Inheritance", <>
     <p>The holder names an heir and a silence period; anything they sign restarts the clock. After the silence, the heir claims it,
       optionally only once guardians approve. An open sale, loan request or gift ends; a lender's or a paying buyer's claim comes first.</p>
@@ -85,6 +149,13 @@ const SECTIONS = [
     <p>No wallet? A passkey gives you a NEAR account; listing, loan and inheritance actions are paid by our relayer. The app also
       opens inside Telegram as a Mini App.</p>
   </>],
+  ["real", "What's real today", <>
+    <p>Everything runs on NEAR testnet and Bitcoin testnet3, with real transactions you can look up; coins on test networks have no
+      value. It isn't on mainnet yet, but NEAR's mainnet Bitcoin light client already accepts Pusaka's proofs
+      (<code>node scripts/mainnet-proof.mjs</code>). The price reporters, the gas relayer and the three DAO members are run by us.
+      NEAR Intents swaps run on a testnet sandbox; mainnet is shown as a live quote.</p>
+  </>],
+  ["terms", "Glossary", <dl className="glossary">{TERMS.map(([t, d]) => <div key={t}><dt>{t}</dt><dd>{d}</dd></div>)}</dl>],
   ["verify", "Check it yourself", <>
     <p><code>node scripts/verify.mjs</code> checks the contract's code, keys, MPC derivation and Bitcoin reserves against the chains
       with no wallet. The <a href="#/refused">Refused</a> page lists real attacks the contracts turned down. More in the
@@ -104,7 +175,7 @@ export default function DocsPage() {
   }, []);
   return (
     <section className="docs">
-      <h1>How it works</h1>
+      <h1>Docs: how Pusaka works</h1>
       <div className="docs-body">
         <nav aria-label="On this page" className="toc">
           <p>On this page</p>
