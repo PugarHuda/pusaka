@@ -177,6 +177,11 @@ export function scriptHex(address) {
   return toHex(bitcoin.address.toOutputScript(address.trim(), NET));
 }
 
+/** The address an output script pays to, or null when it has none (OP_RETURN, bare scripts). */
+export function scriptAddress(hex) {
+  try { return bitcoin.address.fromOutputScript(fromHex(hex), NET); } catch { return null; }
+}
+
 export async function utxos(address) {
   const r = await btcFetch(`/address/${address}/utxo`);
   if (!r.ok) throw new Error(`Esplora answered ${r.status} for ${address}`);

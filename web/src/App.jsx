@@ -903,8 +903,8 @@ function Detail({ id, accountId }) {
           )}
           {(() => { const q = IS_SIBLING ? `&contract=${CONTRACT}` : "", page = `${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/pusaka/${id}`; return <p className="badge-line">
             <img src={`/api/badge?id=${id}${q}`} alt={`Pusaka #${id}: ${btc(Number(info.verified_sats))} BTC verified`} height="22" />
-            <CopyButton label="Copy badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id}${q})](${page})`} />
-            <CopyButton label="Copy proof-of-clean badge (for a listing anywhere)" text={`[![Pusaka #${id}: proof of clean](${location.origin}/api/badge?id=${id}${q}&clean=1)](${page})`} />
+            <CopyButton label="Copy badge for a README or post" what="badge for a README or post" text={`[![Pusaka #${id}](${location.origin}/api/badge?id=${id}${q})](${page})`} />
+            <CopyButton label="Copy proof-of-clean badge (for a listing anywhere)" what="proof-of-clean badge (for a listing anywhere)" text={`[![Pusaka #${id}: proof of clean](${location.origin}/api/badge?id=${id}${q}&clean=1)](${page})`} />
           </p>; })()}
           {info.btc_pubkey && <SelfCheck id={id} explorer={EXPLORER} />}
         </section>
@@ -2100,7 +2100,7 @@ function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
           return <p className="stats">You pay about {usd(paid)} for {usd(inside)} of BTC: {vsLabel(vsInside(now, Number(info.verified_sats), px))} its value at mainnet prices.</p>;
         })()}
         <p className="muted">
-          You get {bundle ? <>{Number(info.verified_sats) ? <>{btc(Number(info.verified_sats))} BTC at its own address and </> : null}{bundle}</> : <>{btc(Number(info.verified_sats))} BTC</>} (verified on NEAR). The NEAR goes to {info.listing.seller}.
+          You get {bundle ? <>{Number(info.verified_sats) ? <>{btc(Number(info.verified_sats))} BTC at its own address and </> : null}{bundle} (verified on NEAR)</> : Number(info.verified_sats) ? <>{btc(Number(info.verified_sats))} BTC (verified on NEAR)</> : <>the NFT; it holds no Bitcoin verified on NEAR yet</>}. The NEAR goes to {info.listing.seller}.
         </p>
         {falling && <AuctionClock listing={info.listing} />}
         <LoanMarket t={t} accountId={accountId} isOwner={isOwner} busy={busy} run={run} />

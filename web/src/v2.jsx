@@ -2,7 +2,7 @@
 // lock, an agent budget, sign-in, BIP-322, rental, Bitcoin sale, vault and call options. How each works: #/docs.
 // Loaded on demand: nothing here is in the main bundle.
 import { useEffect, useState } from "react";
-import { ORIGINAL, SIBLINGS, nbtcDepositAddress, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, NBTC, mintedTokenId, signInSignature, btcAddress, scriptHex } from "@pusaka/shared";
+import { ORIGINAL, SIBLINGS, nbtcDepositAddress, MINT_DEPOSIT, NEAR_EXPLORER, EXPLORER, NBTC, mintedTokenId, signInSignature, btcAddress, scriptHex, scriptAddress } from "@pusaka/shared";
 import { redeemPlan } from "@pusaka/shared/nbtc";
 import { witnessFromMpc } from "@pusaka/shared/bip322";
 import { pqKeys, pqSign } from "@pusaka/shared/pq";
@@ -315,9 +315,9 @@ function BtcSale({ id, sale, accountId, reload }) {
   const act = async (fn) => { setBusy(true); setMsg(null); try { setMsg({ ok: true, text: await fn() }); await reload(); } catch (e) { setMsg({ ok: false, text: e.message }); } finally { setBusy(false); } };
   return (
     <div className="stack">
-      <p><strong>{Number(sale.price_sats).toLocaleString()} sats</strong>, paid on Bitcoin to script <code>{sale.pay_to_script}</code>.
+      <p><strong>{Number(sale.price_sats).toLocaleString()} sats</strong>, paid on Bitcoin to {scriptAddress(sale.pay_to_script) ? <><code>{scriptAddress(sale.pay_to_script)}</code> (script </> : "script "}<code>{sale.pay_to_script}</code>{scriptAddress(sale.pay_to_script) && ")"}.
         {reserved ? <> Reserved by <strong>{sale.buyer}</strong>: pay by {new Date(Number(sale.reserved_until_ms)).toLocaleString()}, proven by {new Date(Number(sale.proof_until_ms ?? sale.reserved_until_ms)).toLocaleString()}.</> : " Open: reserve it to buy."}</p>
-      {reserved && accountId === sale.buyer && <p>Pay {Number(sale.price_sats).toLocaleString()} sats to that script in one Bitcoin transaction that also has an
+      {reserved && accountId === sale.buyer && <p>Pay {Number(sale.price_sats).toLocaleString()} sats to that address in one Bitcoin transaction that also has an
         OP_RETURN output carrying <code>{sale.op_return}</code>. Once it confirms and NEAR's light client has the block, anyone submits
         <code> prove_btc_purchase</code> with its proof (this app has no button for it yet: <code>node scripts/v2-bitcoin.mjs</code> does it; don't pay unless you or someone can run it before the deadline) and the Pusaka is yours (find the txid on <a href={EXPLORER} target="_blank" rel="noreferrer">a Bitcoin explorer</a>).</p>}
       {!reserved && accountId && accountId !== sale.seller && <button disabled={busy} onClick={() => act(async () => {
@@ -440,7 +440,7 @@ function Call({ id, s, accountId, isOwner, reload }) {
       {c.holder === accountId && c.strike_sats && !c.btc_reserved_until_ms && <button disabled={!!busy} onClick={() => run("res", async () =>
         <>Reserved: 6 hours to pay on Bitcoin. {link((await tx2("reserve_btc_exercise", { token_id: id })).transaction.hash)}</>)}>
         Exercise: pay {Number(c.strike_sats).toLocaleString()} sats on Bitcoin</button>}
-      {c.op_return && <p>Pay {Number(c.strike_sats).toLocaleString()} sats to script <code>{c.pay_to_script}</code> in one Bitcoin transaction with an
+      {c.op_return && <p>Pay {Number(c.strike_sats).toLocaleString()} sats to {scriptAddress(c.pay_to_script) ? <><code>{scriptAddress(c.pay_to_script)}</code> (script </> : "script "}<code>{c.pay_to_script}</code>{scriptAddress(c.pay_to_script) && ")"} in one Bitcoin transaction with an
         OP_RETURN output carrying <code>{c.op_return}</code>, by {when(c.btc_reserved_until_ms)}. Once it confirms, anyone submits
         <code> prove_btc_exercise</code> with its proof and the Pusaka goes to {c.holder === accountId ? "you" : c.holder}.</p>}
       {isOwner && !c.holder && <button className="ghost" disabled={!!busy} onClick={() => run("cancel", async () =>
