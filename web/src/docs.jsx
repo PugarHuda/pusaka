@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // #/docs: how Pusaka works. The product pages stay short; the explanations live here. Loaded on demand.
 const REPO = "https://github.com/PugarHuda/pusaka/blob/main";
@@ -165,13 +165,17 @@ const SECTIONS = [
 
 export default function DocsPage() {
   const [here, setHere] = useState(SECTIONS[0][0]);
-  useEffect(() => { // the contents mark the section being read: the topmost one in the upper third of the screen
-    const io = new IntersectionObserver((es) => {
-      const top = es.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-      if (top) setHere(top.target.id);
-    }, { rootMargin: "0px 0px -66% 0px" });
-    SECTIONS.forEach(([id]) => { const el = document.getElementById(id); if (el) io.observe(el); });
-    return () => io.disconnect();
+  const clicked = useRef(0);
+  useEffect(() => { // the contents mark the section being read: the last one whose top has passed the upper third of the screen
+    const onScroll = () => {
+      if (Date.now() - clicked.current < 1000) return; // a contents click scrolls smoothly: keep the section it chose
+      let id = SECTIONS[0][0];
+      for (const [s] of SECTIONS) { const el = document.getElementById(s); if (el && el.getBoundingClientRect().top <= innerHeight / 3) id = s; }
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) id = SECTIONS[SECTIONS.length - 1][0]; // the bottom: the last section
+      setHere(id);
+    };
+    addEventListener("scroll", onScroll, { passive: true });
+    return () => removeEventListener("scroll", onScroll);
   }, []);
   return (
     <section className="docs">
@@ -181,7 +185,7 @@ export default function DocsPage() {
           <p>On this page</p>
           <ul>{SECTIONS.map(([id, title]) => (
             <li key={id}><a href="#/docs" className={here === id ? "is-here" : undefined} aria-current={here === id ? "location" : undefined}
-              onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); setHere(id); }}>{title}</a></li>
+              onClick={(e) => { e.preventDefault(); clicked.current = Date.now(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); setHere(id); }}>{title}</a></li>
           ))}</ul>
         </nav>
         <div className="docs-text">{SECTIONS.map(([id, title, body]) => <article key={id} id={id}><h2>{title}</h2>{body}</article>)}</div>

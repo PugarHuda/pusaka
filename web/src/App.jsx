@@ -862,7 +862,7 @@ function Detail({ id, accountId }) {
         <div className="deal">
           <section>
             <h2>Bitcoin inside, verified on NEAR</h2>
-            <p className="amount"><span>{btc(satsOf({ ...info, inside }))}</span> BTC</p>
+            {satsOf({ ...info, inside }) > 0 ? <p className="amount"><span>{btc(satsOf({ ...info, inside }))}</span> BTC</p> : <p className="amount small">No Bitcoin yet</p>}
             <p className="muted">{satsOf({ ...info, inside }).toLocaleString()} sats{px && satsOf({ ...info, inside }) > 0 && <>, about {usd(satsOf({ ...info, inside }) / 1e8 * px.btcUsd)} at mainnet BTC prices</>}
               {inside?.sats > 0 && (Number(info.verified_sats) ? <>: {Number(info.verified_sats).toLocaleString()} at its own address, {inside.sats.toLocaleString()} inside {inside.ids.join(", ")}</> : <>, all of it inside {inside.ids.join(", ")}</>)}.</p>
             <ExitQuote sats={Number(info.verified_sats)} evm={evmAddress(info.btc_pubkey)} />

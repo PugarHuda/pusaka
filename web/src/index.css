@@ -476,7 +476,8 @@ footer p { max-width: var(--measure); margin: 0; }
 .amount { margin: 0; font: 400 clamp(2.4rem, 5vw, 3.6rem)/1.02 var(--serif); letter-spacing: -0.02em; }
 .amount span { font-variant-numeric: tabular-nums; }
 .amount.small { font-size: clamp(1.8rem, 3.5vw, 2.4rem); }
-.addr { overflow-wrap: anywhere; font-size: 0.95rem; }
+.addr { overflow-wrap: anywhere; white-space: normal; font-size: 0.95rem; }
+.mine.wide p > code { white-space: normal; overflow-wrap: anywhere; }
 .addr span { overflow-wrap: anywhere; }
 
 .actions { display: flex; flex-direction: column; gap: 1.2rem; align-items: flex-start; }
