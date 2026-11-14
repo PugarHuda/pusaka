@@ -12,7 +12,7 @@ HACKATHON.md gives no numeric rubric; the criteria are derived from Q-012, Q-017
 | Depth of NEAR integration | 6 | 9 |
 | Fit with the `nfts` brief | 7 | 9 |
 | Security / threat model | 6 | 9 |
-| Demo & presentation | 5 | 6 (video/X not yet) |
+| Demo & presentation | 5 | 7 (video and X post done) |
 | UI/a11y/perf polish | 6 | 9 |
 
 There is no separate sponsor bounty in this hackathon; "sponsor" = NEAR. Submission checklist: `07-submission.md`.
@@ -38,14 +38,14 @@ NFT-owned NEAR staking (`#/pusaka/2`), free change proof (`#/pusaka/10`), token 
 Contract 376 × 2 (including fuzz + invariant) · Node unit 15 files in CI · Playwright `ui.spec` 115 (5 projects) + `live.spec` 45 · `verify.mjs` 8 checks · MCP smoke. Bugs found by tests: 10 (`06-qa.md`). Production mobile Lighthouse: landing 88, token 87, a11y 100, SEO 100, best-practices 96.
 
 ## 8. Links
-Demo: https://pusaka-two.vercel.app · Contract: https://testnet.near.rocks/account/pusaka-btc.testnet · Repo: https://github.com/PugarHuda/pusaka · Video & deck: not yet (script + outline in `07-submission.md`).
+Demo: https://pusaka-two.vercel.app · Contract: https://testnet.near.rocks/account/pusaka-btc.testnet · Repo: https://github.com/PugarHuda/pusaka · Video: https://x.com/BangDropID/status/2121297369060819133; deck: not yet (script + outline in `07-submission.md`).
 
 ## 9. Blockers (need the user)
-1. **Demo video + X post** (mandatory requirement; script ready).
-2. **Public repo** before 14 Nov 23:59 UTC (suggested 13 Nov); then production source map (1 line).
+1. ~~Demo video + X post~~: **done** (posted on X, https://x.com/BangDropID/status/2121297369060819133).
+2. ~~Public repo~~: **done** (public before the deadline).
 3. ~~Renounce upgrade~~: **done 8 Nov** (proposal 7, `GdASfxh5…`).
-4. **Mainnet payout account** and form data (name, email, team size, consent); submit after the payload is shown.
-5. **Mainnet funds** (~$35 minimum / ~$47 full, measured 8 Nov, `docs/MAINNET.md`; at `pugarhuda.near`) if a mainnet deploy / TLA name is wanted.
+4. ~~Mainnet payout account and submission~~: **done** (submitted; tracks nfts, defi, open, security, agents, privacy).
+5. **Mainnet funds** (~$35 minimum / ~$47 full, measured 8 Nov, `docs/MAINNET.md`; at `pugarhuda.near`) if a mainnet deploy / TLA name is wanted. Not done: testnet-only projects are eligible in every track (rules Q-010).
 6. ~~Firewall publish~~: done 8 Nov (429 after 20 POST/minute/IP). Optional: 1Click JWT from partners.near-intents.org (no 0.2 % fee).
 
 > **14 Nov note:** the repo is public; the main contract is now `pusaka-v2.testnet` (Smart Pusakas, keyless since 13 Nov, upgrades only via the DAO + 10-minute timelock) beside the frozen classic `pusaka-btc.testnet`; the project was submitted in six tracks (`nfts`, `defi`, `open`, `security`, `agents`, `privacy`).
