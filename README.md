@@ -93,7 +93,7 @@ Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.t
 > - **Smart Pusakas** (`pusaka-v2.testnet`, no key since 14 Nov) are upgradeable only through a DAO (our own three demo accounts) plus a 10-minute timelock. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 > - **The USDC pool** lends Circle's own testnet USDC. Its three price reporters are ours, and on testnet it runs tight
->   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation; mainnet: 50/80.
+>   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation, and one did on 14 Nov at 81.15% ([BSDwVry5…](https://testnet.near.rocks/tx/BSDwVry5HC95QByn9RYcH2MW5emjSwx8Pa6TCJsKWH8)); mainnet: 50/80.
 
 **Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (61 tools,
 spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
