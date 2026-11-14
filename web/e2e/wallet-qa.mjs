@@ -9,6 +9,13 @@
 //   node wallet-qa.mjs <profileDir> offer <account> <id>              post a standing loan offer through the form, then cancel it
 //   node wallet-qa.mjs <profileDir> remind <account> <id>             the loan/heir calendar reminder on token id, downloaded and read back
 //   node wallet-qa.mjs <profileDir> accept|refinance <account> <id>   as the holder, take the first loan offer shown (gas-free) or refinance with it
+// QA round 4 (QA_CONTRACT=pusaka-btc.testnet for a classic Pusaka; each prints what the wallet asked and the page's answer):
+//   node wallet-qa.mjs <profileDir> qa-mint <account>                     mint from the header; deposit address, QR, checklist
+//   node wallet-qa.mjs <profileDir> qa-holder <account> <id> <heir>       heir (free + paid check-in), guardians, removals; a typo'd give; ask a loan, cancel it
+//   node wallet-qa.mjs <profileDir> qa-gift <account> <id> <linkFile>     make a gift link (written to linkFile, never printed), reload; QA_CANCEL=1 cancels it
+//   node wallet-qa.mjs <profileDir> qa-claim <account> <linkFile>         claim that gift into account (a second profile)
+//   node wallet-qa.mjs <profileDir> qa-lend <account> <id>                lend to the USDC pool from someone else's Pusaka page (QA_MOBILE=1: 390x844 for any qa- step)
+//   node wallet-qa.mjs <profileDir> qa-v2 <account> <id> <other>          Smart Pusaka #id: rent, BIP-322, agent budget, vault in/out, covered call write/cancel
 //   node wallet-qa.mjs <profileDir> sell <account> <id>               Sell form checks, list at 0.02 NEAR, cancel; QA_DUTCH=0.03,0.01,0.1 then leaves a Dutch auction on
 //   node wallet-qa.mjs <profileDir> buy <account> <id>                from the market card to the token page, Buy (QA_MOBILE=1: 390x844)
 //   node wallet-qa.mjs <profileDir> btc-sell <account> <id> <tb1addr>  v2: list for 1,000 sats through "Sell it for Bitcoin"
@@ -32,7 +39,7 @@ if (process.env.QA_PROXY_BTC) await ctx.route((u) => ["mempool.space", "blockstr
 });
 // Connect the app as `who` (an account already imported into Intear), unless it already is.
 const switchTo = async (who) => {
-  if (!(await p.locator("header").innerText()).includes(who)) {
+  if (!(await p.locator("header.bar").innerText()).includes(who)) {
     const acct = p.getByTitle("Disconnect wallet");
     if (await acct.count()) { await acct.click(); await p.waitForTimeout(2000); }
     await p.getByRole("button", { name: /connect/i }).first().click();
@@ -44,7 +51,8 @@ const switchTo = async (who) => {
     const w = await pop;
     await w.waitForLoadState(); await w.waitForTimeout(4000);
     // already selected when it's the wallet's only account; with two, the other one may be named on the page and still selected
-    if (!(await w.innerText("body")).includes(who) || await w.getByText("Selected Account").count()) {
+    const selected = w.getByText("Selected Account");
+    if (!(await w.innerText("body")).includes(who) || (await selected.count() && !(await selected.locator("..").innerText()).includes(who))) {
       await w.getByText("Selected Account").click(); await w.waitForTimeout(1000);
       await w.getByText(who, { exact: true }).last().click();
       await w.waitForTimeout(1000);
@@ -53,7 +61,154 @@ const switchTo = async (who) => {
     await p.waitForTimeout(6000);
   }
 };
+const BASE = `https://pusaka-two.vercel.app/${process.env.QA_CONTRACT ? `?contract=${process.env.QA_CONTRACT}` : ""}`;
+const errors = [];
+p.on("console", (m) => m.type() === "error" && !/fastnear|429/.test(m.text() + (m.location()?.url ?? "")) && errors.push(m.text().slice(0, 160)));
+p.on("pageerror", (e) => errors.push(`pageerror ${e.message.slice(0, 160)}`));
+// click, then approve whatever the wallet opens, printing what it asks for (no popup within 30 s: say so and go on)
+const approve = async (label, click) => {
+  const wp = ctx.waitForEvent("page", { timeout: 30_000 }).catch(() => null);
+  await click();
+  const w = await wp;
+  if (!w) return console.log(`  [${label}] no wallet popup`);
+  await w.waitForLoadState(); await w.waitForTimeout(4000);
+  console.log(`  [${label}] wallet asks: ${redact((await w.innerText("body")).replace(/\s+/g, " ")).slice(0, 320)}`);
+  await w.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+  // a gas-free call the relayer turns down (its 60 s quota) comes back as a normal transaction: a second prompt
+  const w2 = await ctx.waitForEvent("page", { timeout: 20_000 }).catch(() => null);
+  if (!w2) return;
+  await w2.waitForLoadState(); await w2.waitForTimeout(4000);
+  console.log(`  [${label}] second prompt: ${redact((await w2.innerText("body")).replace(/\s+/g, " ")).slice(-200)}`);
+  await w2.getByRole("button", { name: /^(Confirm|Approve|Sign|Send|Continue)/ }).first().click();
+};
+const statusOf = (scope) => scope.getByRole("status").allInnerTexts().then((a) => a.join(" ").replace(/\s+/g, " ").trim(), () => "");
+// an action in scope: its answer is the scope's role=status once it changes (or comes back after the run cleared it)
+const act = async (scope, label, click, popup = true) => {
+  const prior = await statusOf(scope), t0 = Date.now();
+  if (popup) await approve(label, click); else await click();
+  let m = "", cleared = false;
+  for (let i = 0; i < 120; i++) { m = await statusOf(scope); cleared ||= !m; if (m && (m !== prior || cleared) && !/…$/.test(m)) break; await p.waitForTimeout(1000); }
+  const links = await scope.getByRole("status").locator("a").evaluateAll((as) => as.map((a) => a.href).join(" ")).catch(() => "");
+  console.log(`${label} -> [${m}] ${links} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  return m;
+};
+if (process.env.QA_MOBILE && step.startsWith("qa-")) await p.setViewportSize({ width: 390, height: 844 });
+const section = (h) => p.locator("section", { has: p.getByRole("heading", { name: h, exact: true }) }).first();
+const flat = async (loc, n = 300) => (await loc.innerText().catch(() => "(not shown)")).replace(/\s+/g, " ").slice(0, n);
 try {
+  if (step === "qa-mint") {
+    await p.goto(BASE + "#/market"); await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    await approve("mint", () => p.locator("header.bar").getByRole("button", { name: "Mint a Pusaka" }).click());
+    await p.waitForURL(/#\/pusaka\/\d+/, { timeout: 90_000 });
+    console.log(`minted #${p.url().match(/#\/pusaka\/(\d+)/)[1]} (${process.env.QA_CONTRACT ?? "default contract"})`);
+    await section("Its Bitcoin address").waitFor({ timeout: 60_000 }); await p.waitForTimeout(6000);
+    console.log("address:", await flat(section("Its Bitcoin address").locator("p.addr")));
+    await p.getByText("Show QR code").click();
+    console.log("qr:", await p.locator("img.qr-box").getAttribute("alt"));
+    console.log("checklist:", await flat(p.locator("section.checklist")));
+    console.log("prove:", await flat(p.locator("div.prove")));
+    console.log("actions:", await flat(p.locator("section.actions"), 400));
+  }
+  if (step === "qa-holder") {
+    const [id, heir] = [arg2, process.argv[6]];
+    const typo = heir.replace(/^(\w+)-/, "$1");
+    await p.goto(`${BASE}#/pusaka/${id}`); await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    const h = section("Heir"), actions = p.locator("section.actions");
+    await h.locator("form").first().waitFor({ timeout: 60_000 });
+    await h.getByLabel(/^(Heir|Change heir)/).fill(heir);
+    await h.getByLabel(/^After/).fill("0.007"); // 10 min: the relayer pays a check-in once a tenth of it has passed
+    await act(h, "name heir", () => h.getByRole("button", { name: "Name heir" }).click());
+    console.log("heir:", await flat(h.locator("p").first()));
+    await p.waitForTimeout(65_000);
+    await act(h, "still here (free)", () => h.getByRole("button", { name: "I'm still here" }).click());
+    await act(h, "still here (paid)", () => h.getByRole("button", { name: "I'm still here" }).click());
+    await h.getByLabel(/Guardians/).fill("pusaka-w-mvzhtaw8.testnet, pusaka-b-mvzgq3wm.testnet");
+    await h.getByLabel(/Approvals needed/).fill("1");
+    await act(h, "name guardians", () => h.getByRole("button", { name: "Name guardians" }).click());
+    console.log("guardians:", await flat(h.locator("div.guardians")));
+    await act(h, "remove guardians", () => h.getByRole("button", { name: "Remove guardians" }).click());
+    await act(h, "remove heir", () => h.getByRole("button", { name: "Remove heir" }).click());
+    console.log("heir after:", await flat(h.locator("p").first()));
+    await actions.getByLabel("Their NEAR account").fill(typo);
+    await act(actions, `give to typo ${typo}`, () => actions.getByRole("button", { name: "Give this Pusaka" }).click(), false);
+    const [b, r, d] = await actions.locator("form", { has: p.getByRole("heading", { name: "Borrow against it" }) }).locator("input").all();
+    await b.fill("0.01"); await r.fill("0.011"); await d.fill("1");
+    await act(actions, "ask a loan", () => actions.getByRole("button", { name: "Ask for a loan" }).click());
+    console.log("loan:", await flat(actions));
+    await act(actions, "cancel loan request", () => actions.getByRole("button", { name: "Cancel loan request" }).click());
+    console.log("after:", await flat(actions, 160));
+  }
+  if (step === "qa-gift") {
+    const [id, linkFile] = [arg2, process.argv[6]];
+    await p.goto(`${BASE}#/pusaka/${id}`); await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    const actions = p.locator("section.actions");
+    await act(actions, "make gift link", () => actions.getByRole("button", { name: "Make a gift link" }).click());
+    const link = await actions.locator("p.gift-link code").innerText();
+    const kept = await p.evaluate((k) => sessionStorage.getItem(k), `pusaka:gift:${process.env.QA_CONTRACT ?? "pusaka-v2.testnet"}:${id}`);
+    console.log("link shown:", !!link, "| sessionStorage holds its key:", !!kept && link.endsWith(kept));
+    fs.writeFileSync(linkFile, link);
+    await p.reload(); await p.waitForTimeout(8000);
+    console.log("after reload, link still shown:", await actions.locator("p.gift-link code").count() > 0, "|", (await flat(actions.locator("div.stack").first(), 200)).replace(/ed25519:\S+/g, "[key]"));
+    if (process.env.QA_CANCEL) await act(actions, "cancel gift", () => actions.getByRole("button", { name: "Cancel gift" }).click());
+  }
+  if (step === "qa-claim") {
+    const link = fs.readFileSync(arg2, "utf8").trim();
+    await p.goto(BASE + "#/market"); await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    await p.goto(link); await p.waitForTimeout(8000);
+    const g = p.locator("section.gift");
+    console.log("gift page:", await flat(g));
+    await act(g, "claim", () => g.getByRole("button", { name: /^Claim into/ }).click(), false);
+    await p.reload(); await p.waitForTimeout(8000);
+    console.log("link again:", await flat(p.locator("section.gift"), 200));
+  }
+  if (step === "qa-lend") { // as account, on someone else's Pusaka #id: lend to the USDC pool (says what's missing without Circle USDC)
+    await p.goto(`${BASE}#/pusaka/${arg2}`); await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    const lend = p.locator("section.lend");
+    await lend.waitFor({ timeout: 60_000 });
+    console.log("pool:", await flat(lend.locator("p.stats")));
+    await act(lend, "lend to pool", () => lend.getByRole("button", { name: /^Lend .* to the pool$/ }).click());
+  }
+  if (step === "qa-v2") {
+    const [id, other] = [arg2, process.argv[6]];
+    await p.goto(`https://pusaka-two.vercel.app/#/v2/${id}`); await p.waitForTimeout(5000);
+    await switchTo(keyFile);
+    await p.goto(`https://pusaka-two.vercel.app/#/v2/${id}`); await p.waitForTimeout(8000);
+    const own = p.locator("div.actions").first();
+    const form = (h) => p.locator("form", { has: p.getByRole("heading", { name: h, exact: true }) });
+    const rent = form("Rent its use");
+    await rent.getByLabel("Renter").fill(other); await rent.getByLabel("For").fill("1");
+    await act(own, "rent", () => rent.getByRole("button").click());
+    console.log("rented to:", await flat(p.locator(`h2:text-is("Rented to") + *`), 160));
+    await rent.getByLabel("Renter").fill("");
+    await act(own, "end rental", () => rent.getByRole("button").click());
+    await act(own, "BIP-322", () => own.getByRole("button", { name: "Sign a BIP-322 proof" }).click());
+    console.log("proof:", (await own.locator("pre.siwe").last().innerText().catch(() => "none")).split("\n").map((l) => l.slice(0, 70)).join(" | "));
+    const ag = form("Give an agent a daily budget");
+    await ag.getByLabel("Agent account").fill(other); await ag.getByLabel(/^Per day/).fill("0.01");
+    await act(own, "agent budget", () => ag.getByRole("button").click());
+    console.log("agent:", await flat(p.locator(`h2:text-is("Agent budget") + *`), 200));
+    await ag.getByLabel(/^Per day/).fill("0");
+    await act(own, "revoke budget", () => ag.getByRole("button").click());
+    const after = (h) => p.locator(`h2:text-is("${h}") + *`); // a v2 page's parts are an h2 and what follows it
+    const vault = after("Vault");
+    await vault.getByLabel(/Recovery account/).fill(other); await vault.getByLabel(/^Delay/).fill("1");
+    await act(vault, "vault in", () => vault.getByRole("button", { name: "Put it in a vault" }).click());
+    await act(vault, "request unlock", () => vault.getByRole("button", { name: "Request an unlock" }).click());
+    console.log("vault:", await flat(vault, 200));
+    await p.waitForTimeout(75_000); await p.reload(); await p.waitForTimeout(8000);
+    console.log("vault later:", await flat(vault, 200));
+    await act(vault, "vault out", () => vault.getByRole("button", { name: "Take it out of the vault" }).click());
+    const call = after("Call option");
+    await call.getByLabel(/^Price they may buy at/).fill("5"); await call.getByLabel(/^Premium/).fill("0.1"); await call.getByLabel(/^For/).fill("1");
+    await act(call, "write call", () => call.getByRole("button", { name: "Offer a call option" }).click());
+    console.log("call:", await flat(call, 200));
+    await act(call, "cancel call", () => call.getByRole("button", { name: "Withdraw the offer" }).click());
+  }
   if (step === "import-form") {
     await p.goto("https://wallet.intear.tech/");
     await p.getByRole("button", { name: "I already have a NEAR wallet" }).click();
@@ -89,7 +244,7 @@ try {
       await w.screenshot({ path: `${profile}-popup.png` });
       await w.getByRole("button", { name: "Connect", exact: true }).click();
       await p.waitForTimeout(6000);
-      console.log("HEADER:", await p.locator("header").innerText().catch(() => "?"));
+      console.log("HEADER:", await p.locator("header.bar").innerText().catch(() => "?"));
     }
     await p.waitForTimeout(3000);
     console.log("PAGE:", redact(await p.evaluate(() => document.body.innerText.slice(-600))));
@@ -137,7 +292,7 @@ try {
     if (!(await w.getByText("pusaka-seller.testnet").count())) throw new Error("wallet doesn't offer pusaka-seller");
     await w.getByRole("button", { name: "Connect", exact: true }).click();
     await p.waitForTimeout(6000);
-    console.log("HEADER:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    console.log("HEADER:", (await p.locator("header.bar").innerText()).replace(/\s+/g, " "));
     console.log("heir view ->", (await heirSection().innerText()).replace(/\s+/g, " ").slice(0, 300));
     const claim = heirSection().getByRole("button", { name: "Claim inheritance" });
     if (await claim.count()) {
@@ -210,7 +365,7 @@ try {
     await w.waitForTimeout(1000);
     await w.getByRole("button", { name: "Connect", exact: true }).click();
     await p.waitForTimeout(6000);
-    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    console.log("account:", (await p.locator("header.bar").innerText()).replace(/\s+/g, " "));
     const actions = p.locator("section.actions");
     const btn = actions.getByRole("button", { name: /^Repay/ });
     await btn.waitFor({ timeout: 40_000 });
@@ -229,7 +384,7 @@ try {
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
     await p.waitForTimeout(5000);
     await switchTo(who);
-    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    console.log("account:", (await p.locator("header.bar").innerText()).replace(/\s+/g, " "));
     const sign = async (label, click) => {
       const wp = ctx.waitForEvent("page", { timeout: 20_000 });
       const t0 = Date.now();
@@ -258,7 +413,7 @@ try {
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${id}`);
     await p.waitForTimeout(6000);
     await switchTo(keyFile);
-    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    console.log("account:", (await p.locator("header.bar").innerText()).replace(/\s+/g, " "));
     const offer = p.locator("p").filter({ has: p.getByRole("button", { name: /^(Accept offer|Refinance with this offer)$/ }) }).first();
     await offer.waitFor({ timeout: 40_000 });
     console.log("offer:", (await offer.innerText()).replace(/\s+/g, " "));
@@ -433,7 +588,7 @@ try {
     await p.goto(`https://pusaka-two.vercel.app/#/${v2 ? "v2" : "pusaka"}/${id}`);
     await p.waitForTimeout(6000);
     await switchTo(who);
-    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    console.log("account:", (await p.locator("header.bar").innerText()).replace(/\s+/g, " "));
     if (step === "sell") { // form checks, fixed price listed and cancelled, then (QA_DUTCH=price,floor,hours) a Dutch auction left on
       const form = p.locator("form").filter({ has: p.getByRole("heading", { name: "Sell", exact: true }) });
       await form.waitFor({ timeout: 40_000 });
@@ -522,7 +677,7 @@ try {
     };
     await p.goto(`https://pusaka-two.vercel.app/#/pusaka/${buyId}`);
     await p.waitForTimeout(4000);
-    console.log("account:", (await p.locator("header").innerText()).replace(/\s+/g, " "));
+    console.log("account:", (await p.locator("header.bar").innerText()).replace(/\s+/g, " "));
     await act(`buy #${buyId}`, actions().getByRole("button", { name: /^Buy for/ }));
     await p.waitForTimeout(3000);
     console.log("owner line:", await p.getByText(/^Owned by/).innerText().catch(() => "?"), "| actions:", (await actions().innerText()).replace(/\s+/g, " ").slice(0, 200));
@@ -534,5 +689,7 @@ try {
     console.log("loan after:", (await actions().innerText()).replace(/\s+/g, " ").slice(0, 300));
   }
   console.log(redact(await dump(p)).split("\n").slice(-3).join("\n"));
-  await p.screenshot({ path: `${profile}-${step}.png` });
+  if (errors.length) console.log("console errors:", [...new Set(errors)].join(" || "));
+  // the gift pages show the gift's key: no screenshot of those
+  if (step !== "qa-gift" && step !== "qa-claim") await p.screenshot({ path: `${profile}-${step}.png`, fullPage: step.startsWith("qa-") });
 } finally { await ctx.close(); }

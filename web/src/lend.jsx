@@ -13,10 +13,13 @@ const usd = (x) => `${(Number(x) / U).toLocaleString(undefined, { maximumFractio
 const pct = (bps) => `${(Number(bps) / 100).toFixed(1)}%`;
 
 async function ensureUsd(USD, accountId, need) {
+  // Circle USDC has no faucet here: say what's missing before asking the wallet for a storage deposit
+  if (USD !== PUSD && BigInt(await v(USD, "ft_balance_of", { account_id: accountId })) < BigInt(need))
+    throw new Error(`You need ${usd(need)} (Circle's testnet USDC on NEAR: faucet.circle.com, network NEAR).`);
   if (!(await v(USD, "storage_balance_of", { account_id: accountId })))
     await callRaw("storage_deposit", { account_id: accountId }, { receiver: USD, deposit: 1_250_000_000_000_000_000_000n, tgas: 30 });
   const have = BigInt(await v(USD, "ft_balance_of", { account_id: accountId }));
-  if (USD !== PUSD) { if (have < BigInt(need)) throw new Error(`You need ${usd(need)} of this pool's USDC (Circle's testnet faucet: faucet.circle.com, network NEAR).`); return; }
+  if (USD !== PUSD) return; // checked above
   // testnet: pUSD has no value; the faucet tops the wallet up so the demo needs no bridge
   for (let short = BigInt(need) - have; short > 0n; short -= 1_000n * BigInt(U))
     await callRaw("faucet", { amount: String(short > 1_000n * BigInt(U) ? 1_000n * BigInt(U) : short) }, { receiver: USD, tgas: 30 });
