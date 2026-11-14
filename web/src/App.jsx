@@ -289,7 +289,7 @@ function Scenes({ tokens, px, sats }) {
   const infos = tokens?.map((t) => t.info) ?? [];
   const holding = infos.filter((i) => Number(i.verified_sats) > 0);
   const busy = (i) => !!i.listing || !!i.loan;
-  const forSale = infos.filter((i) => i.listing && i.price_now).sort((a, b) => (BigInt(a.price_now) < BigInt(b.price_now) ? -1 : 1));
+  const forSale = infos.filter((i) => i.listing && i.price_now && Number(i.verified_sats) > 0).sort((a, b) => (BigInt(a.price_now) < BigInt(b.price_now) ? -1 : 1));
   const best = forSale[0];
   const ready = tokens?.length > 0;
   const curve = best && auctionCurve(best.listing);
@@ -332,7 +332,7 @@ function Scenes({ tokens, px, sats }) {
         <div className="widget">
           <div className="widget-head"><span>{best ? `Pusaka #${best.token.token_id} for sale` : "For sale"}</span>{best && (curve.length > 2 ? <Spark points={curve} /> : <span className="chip chip-leaf">Fixed price</span>)}</div>
           {best ? <>
-            {curve.length > 2 && <span className="chip chip-lav">Dutch auction, falling to {near(best.listing.floor)} NEAR</span>}
+            {curve.length > 2 && <span className="chip chip-lav">{Number(best.listing.end_ms) > now ? `Dutch auction, falling to ${near(best.listing.floor)} NEAR` : `Dutch auction, at its floor (${near(best.listing.floor)} NEAR)`}</span>}
             <div className="cells cells-line">
               <div><small>Price now</small><b>{near(best.price_now)} NEAR</b></div>
               <div><small>Bitcoin inside</small><b>{px ? usd((Number(best.verified_sats) / 1e8) * px.btcUsd) : satsLabel(best.verified_sats)}</b></div>
@@ -631,7 +631,7 @@ function Market({ accountId }) {
             {t.info.inside && <span className="piece-inside"><b>Bundle</b> {[...t.info.inside.ids, t.info.inside.nbtc ? `${t.info.inside.nbtc.toLocaleString()} sats nBTC` : null, t.info.inside.usdc ? `${t.info.inside.usdc} USDC` : null].filter(Boolean).join(" + ")}</span>}
             {t.bal && t.bal.safe + t.bal.pending > Number(t.info.verified_sats) && <span className="piece-pending">+{(t.bal.safe + t.bal.pending - Number(t.info.verified_sats)).toLocaleString()} sats not proven yet</span>}
             {t.info.listing && <span className="piece-price">{dealOf(t.info)[0] === "auction" ? "Now" : "For sale at"} <strong>{near(t.info.price_now ?? t.info.listing.price)} NEAR</strong>
-              {dealOf(t.info)[0] === "auction" && <small> falls to {near(t.info.listing.floor)} by {new Date(Number(t.info.listing.end_ms)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small>}</span>}
+              {dealOf(t.info)[0] === "auction" && <small>{Number(t.info.listing.end_ms) > Date.now() ? <> falls to {near(t.info.listing.floor)} by {new Date(Number(t.info.listing.end_ms)).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</> : " (auction ended, at its floor)"}</small>}</span>}
             {t.info.listing && <span className={`piece-clean${t.info.pending ? " is-busy" : ""}`}>{t.info.pending ? "Signing now: wait before buying" : "✓ Nothing signed in flight · full clean check inside"}</span>}
             {t.info.listing && px && satsOf(t.info) > 0 && <span className="piece-vs">{vsLabel(vsInside(t.info.price_now ?? t.info.listing.price, satsOf(t.info), px))} the BTC inside</span>}
             {!t.info.listing && Object.keys(t.info.token.approved_account_ids ?? {}).length > 0 && <span className="piece-price">On sale on Mintbase</span>}
@@ -1661,7 +1661,7 @@ function SealedFiles({ id, fileKey, keyBy, accountId }) {
 /** Per-NFT ledger from its on-chain history: who held it, what it earned its holders, what went out. */
 function Ledger({ history }) {
   const holders = [];
-  let earned = 0n, royalties = 0n, borrowed = 0n;
+  let earned = 0n, royalties = 0n, borrowed = 0n, btcOut = 0, btcN = 0;
   const out = [];
   for (const { event: e } of history) {
     const hold = (a) => { if (a && holders.at(-1) !== a) holders.push(a); };
@@ -1672,13 +1672,14 @@ function Ledger({ history }) {
     if (e.kind === "Inherited") { hold(e.from); hold(e.to); }
     if (e.kind === "Royalty") royalties += BigInt(e.amount);
     if (e.kind === "LoanFunded" || e.kind === "LoanOfferAccepted") borrowed += 1n;
-    if (e.kind === "Withdraw") out.push(`${Number(e.amount_sat).toLocaleString()} sats`);
+    if (e.kind === "Withdraw") { btcOut += Number(e.amount_sat); btcN += 1; }
     if (e.kind === "WithdrawEth" && e.signed && BigInt(e.value_wei) > 0n) out.push(`${formatEther(BigInt(e.value_wei))} ETH`);
     if (e.kind === "WithdrawErc20" && e.signed) out.push(`${formatUnits(BigInt(e.amount), 6)} USDC`);
     if (e.kind === "WithdrawSol" && e.signed) out.push(`${sol9(e.lamports)} SOL`);
     if (e.kind === "WithdrawNear" && e.signed) out.push(`${near(e.amount)} NEAR`);
     if (e.kind === "WithdrawNbtc" && e.signed) out.push(`${Number(e.sats).toLocaleString()} nBTC sats`);
   }
+  if (btcN) out.unshift(`${btcOut.toLocaleString()} sats${btcN > 1 ? ` in ${btcN} withdrawals` : ""}`);
   // The contract keeps the latest 32 events; past that, the full record is in NEAR's NEP-297 logs.
   const partial = history.length > 0 && history[0].event.kind !== "Mint";
   const span = partial ? `in its last ${history.length} events` : "in total";

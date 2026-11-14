@@ -34,7 +34,7 @@ export function AuctionClock({ listing }) {
   return (
     <div className="auction" role="timer" aria-live="off">
       <div className="auction-row">
-        <span>Dutch auction: <strong>{fine(priceAt(listing, now))} NEAR</strong> now</span>
+        <span>Dutch auction: <strong>{left > 0 ? fine(priceAt(listing, now)) : near(listing.floor)} NEAR</strong> now</span>
         <span className="muted">{left > 0 ? `${near(listing.floor)} NEAR in ${span(left)}` : `at its floor, ${near(listing.floor)} NEAR`}</span>
       </div>
       <div className="auction-bar"><i style={{ width: `${(done * 100).toFixed(2)}%` }} /></div>

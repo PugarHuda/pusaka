@@ -51,7 +51,7 @@ export function LendPanel({ id, info, accountId, isOwner, onDone }) {
   return (
     <section className="lend" aria-labelledby="lend-h">
       <h2 id="lend-h">{loan ? `Collateral in the ${sym} pool` : `Borrow ${sym} from the pool`}</h2>
-      <p className="muted">Two ways to borrow against this Bitcoin. <b>NEAR from a person</b> (above): fixed term, no oracle, so a price dip can never cost the
+      <p className="muted">Two ways to borrow against this Bitcoin. <b>NEAR from a person</b> (a loan request or a lender's standing offer): fixed term, no oracle, so a price dip can never cost the
         borrower the Bitcoin. <b>{sym} from a pool</b> (here): up to {cfg.max_ltv_bps / 100}% of the BTC's value, repay any time, {cfg.rate_bps / 100}% a year; from {cfg.liq_ltv_bps / 100}% loan-to-value
         anyone can liquidate it, paying at least {cfg.liq_price_bps / 100}% of the BTC's value, and the borrower gets everything above the debt.</p>
       <p className="stats">Pool {usd(pool.assets)} ({usd(pool.cash)} free, {usd(pool.borrowed)} lent) ·{" "}

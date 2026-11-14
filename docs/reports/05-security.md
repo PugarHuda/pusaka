@@ -75,7 +75,7 @@ Scanners were rerun on all components.
 | Oracle / price | the contract doesn't use prices; prices only in the client/MCP with a 2-source cross-check (>5 % difference → reject) | `shared/prices.test.mjs` |
 | Front-running | buyers/lenders bind `expected_sign_epoch` and the loan terms | T4, T11, T22 |
 | Signature replay | BTC outpoint recorded before signing; EVM/NEAR nonce floor; Solana without durable nonce | T3, T10, T14, T16 |
-| DoS loop/gas | lists are capped (max 3 pools, 4 USDC proofs, history 32) | `sk7_…` |
+| DoS loop/gas | pools (max 3), USDC proofs (4) and history (32) are capped; the signed-outpoint list is not (see Round 5) | `sk7_…` |
 | Upgradeability | only bytes whose sha256 the DAO approved, after the timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Centralization | upgrades **renounced** on 8 Nov (DAO proposal 7, tx `GdASfxh5…`); contract has 0 keys → no party can change the code | `verify.mjs`: "upgrades renounced: final" |
 
@@ -114,6 +114,25 @@ The GitHub Actions runs for this round's commits did not start because the priva
 - the 11 relevant `live.spec` tests, against production.
 
 CI runs automatically again once the repo is made public (free Actions minutes) or the spending limit is raised.
+
+## Round 5 (14 Nov): adversarial review of every contract
+
+An outside-style review of contract/src, market/src, lend/src and token-account/src found nothing critical: no path lets a seller keep the BTC, ETH, SOL or NEAR after a NEAR-settled sale, no signing path skips `bump_epoch` (only SIWE, BIP-322 and CKD payloads are signed without it, and none can be replayed as a transaction), and every callback is `#[private]` or checks its predecessor. Disclosed here, as found:
+
+| ID | Where | Severity | What | Status |
+|---|---|---|---|---|
+| R6-1 | v2 `reserve_btc_purchase` | Medium | Buying with BTC (F12) doesn't bind `sign_epoch`: a seller can cancel the BTC listing, withdraw, and relist before a buyer reserves. After a reservation the Pusaka is locked, so a buyer who checks again before paying is safe, but loses the 0.1 NEAR bond if they walk away | The app re-checks the verified sats and sign epoch after reserving and warns before showing payment details; a contract fix (`expected_sign_epoch` on reserve) needs a DAO upgrade of v2 |
+| R6-2 | lend price | Medium | With only two fresh reports, one source can move the liquidation price up to 5% (removing the liquidator's discount) or stop liquidations; with three fresh, the median holds. The test `with_two_reports_one_source_cannot_move_the_price_either_way` checks the 5% bound, not "can't move" | Final contract: keep all three reporters fresh (the app posts reports on page load) |
+| R6-3 | lend accounting | Medium | A loan whose debt exceeds the BTC's value is never liquidated (a liquidator pays at least the debt) and never written off; its principal still counts in `assets()`, so lenders who withdraw first are paid in full and the last carry the loss | Final contract; reachable after a > ~20% price gap between updates |
+| R6-4 | lend shares | Low-Medium | New shares are priced on cash + principal, ignoring accrued interest: a deposit just before a large repayment takes part of that interest | Final contract |
+| R6-5 | lend collateral | Low | BTC proven into a pledged Pusaka later isn't counted (the loan values the sats at borrow time); testnet max 79.5% vs liquidation 80% leaves ~0.6% of room, so a loan at the limit is liquidatable after a small move or about a month of interest | Final contract; testnet settings are deliberately tight (mainnet 50/80) |
+| R6-6 | v2 F12 reservations | Low | Anyone can keep a BTC-listed Pusaka reserved (locked, heir can't claim) by re-reserving at each expiry, 0.1 NEAR per window, paid to the seller | Fixable on v2 via DAO |
+| R6-7 | heir on round trips | Low | `nft_transfer_call` into the market or pool and back clears the heir and guardians (by design, `x5_transfer_call_clears_the_heir`), so a borrow-and-repay silently removes the will | Disclosed; the holder names the heir again |
+| R6-8 | signed outpoints | Low | The per-token signed-outpoint list is never pruned; past ~600 entries `token_info` exceeds the 64 KB read limit used by market and lend. Only the owner can grow it, at their storage cost | Disclosed |
+| R6-9 | history storage | Low/Info | `set_agent`/`set_guardians` events can grow history beyond the 8,000 B reserved at mint (~0.06 NEAR per token from the contract's balance) | Disclosed |
+| R6-10 | market loans | Info | A market loan can be called right away and seized whole, with no surplus to the borrower (Blend's design); BTC-settled sales (F12/F16) skip the creator royalty | Disclosed |
+
+Checked and sound: outpoint and txid canonicalisation, change proofs, EVM USDC "signed_out" matching, Solana and NEAR nonce/expiry, cross-protocol signing, vault and rental after transfer_call, gift-key scope and races, market fill races (`filling`, pinned approval_id), first-depositor share inflation, `overflow-checks = true` in all crates.
 
 ## Known issues (not fixed, with reasons)
 1. **A full CSP `script-src` is not set.** `@hot-labs/near-connect` runs wallet code in a `srcdoc` iframe, which inherits the parent page's CSP, so a strict CSP kills every wallet. What is set: `frame-ancestors 'none'` + XFO DENY. The XSS surface is small: React without `dangerouslySetInnerHTML` from user input (the QR SVG is built from a contract-derived address).

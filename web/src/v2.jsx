@@ -307,6 +307,10 @@ function BtcSale({ id, sale, accountId, reload }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [now] = useState(() => Date.now()); // read once per render of this sale
+  // what the buyer is looking at; checked again just before the bond is paid (review R6-1: the contract's reserve
+  // doesn't bind the sign epoch, so a seller could unlist, withdraw and relist in between)
+  const [seen, setSeen] = useState(null);
+  useEffect(() => { view("token_info", { token_id: id }).then((t) => t && setSeen({ epoch: t.sign_epoch, sats: t.verified_sats })).catch(() => {}); }, [id]);
   const reserved = sale.buyer && Number(sale.proof_until_ms ?? sale.reserved_until_ms) > now;
   const act = async (fn) => { setBusy(true); setMsg(null); try { setMsg({ ok: true, text: await fn() }); await reload(); } catch (e) { setMsg({ ok: false, text: e.message }); } finally { setBusy(false); } };
   return (
@@ -317,6 +321,8 @@ function BtcSale({ id, sale, accountId, reload }) {
         OP_RETURN output carrying <code>{sale.op_return}</code>. Once it confirms and NEAR's light client has the block, anyone submits
         <code> prove_btc_purchase</code> with its proof and the Pusaka is yours (find the txid on <a href={EXPLORER} target="_blank" rel="noreferrer">a Bitcoin explorer</a>).</p>}
       {!reserved && accountId && accountId !== sale.seller && <button disabled={busy} onClick={() => act(async () => {
+        const t = await view("token_info", { token_id: id });
+        if (!seen || t.sign_epoch !== seen.epoch) throw new Error(`Something was signed for this Pusaka since you opened the page (verified sats now ${Number(t.verified_sats).toLocaleString()}${seen ? `, were ${Number(seen.sats).toLocaleString()}` : ""}). Nothing was reserved: reload and check before paying a bond.`);
         const o = await callRaw("reserve_btc_purchase", { token_id: id }, { deposit: yocto(0.1), tgas: 30, receiver: V2 });
         return <>Reserved: 6 hours to pay, 6 more to prove it (0.1 NEAR bond, back when you buy). {link(o.transaction.hash)}</>;
       })}>Reserve to buy with Bitcoin (0.1 NEAR bond)</button>}

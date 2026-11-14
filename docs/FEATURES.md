@@ -11,7 +11,7 @@ Each line is live on testnet with transaction hashes; the detail is one click aw
 **The core (contract `pusaka-btc.testnet`, final: no key, upgrades renounced)**
 - **Bitcoin proven, not claimed**: every deposit is checked by NEAR's Bitcoin light client; `verified_sats` is net of everything ever signed away. [How](#trustless-balance-nears-bitcoin-light-client) · [proof of reserves](https://pusaka-two.vercel.app/#/reserves)
 - **Sell the NFT = sell the Bitcoin**, in one NEAR transaction; a buy fails if anything was signed since the buyer looked. Also on outside markets (NEP-178/199, tested on Mintbase). [How](#one-nft-many-wallets-how-control-passes-on-transfer)
-- **Borrow against the Bitcoin**, two ways: NEAR from a person (offer book, refinancing, auctions; no oracle, only the due date), or **Circle USDC from a pool** priced by three reporters, where one bad source can't move the price either way and a liquidation pays the borrower everything above the debt. [How](#borrow-against-your-bitcoin-sell-by-auction) · [the pool](#usdc-from-a-pool-stablecoin-loans-priced-by-reporters-liquidated-at-a-price-lend) · [prices](#prices-what-a-lender-or-buyer-is-actually-getting)
+- **Borrow against the Bitcoin**, two ways: NEAR from a person (offer book, refinancing, auctions; no oracle, only the due date), or **Circle USDC from a pool** priced by three reporters (with all three fresh, one bad source can't move the price either way) where a liquidation pays the borrower everything above the debt. [How](#borrow-against-your-bitcoin-sell-by-auction) · [the pool](#usdc-from-a-pool-stablecoin-loans-priced-by-reporters-liquidated-at-a-price-lend) · [prices](#prices-what-a-lender-or-buyer-is-actually-getting)
 - **Clean to buy, clean to inherit**: before paying, a buyer (or an heir before claiming) sees whether anything already signed could still move what's inside, on Bitcoin, every EVM chain, Solana and the NFT's NEAR account; `verify.mjs` checks it for every Pusaka for sale. [How](#clean-to-buy-and-clean-to-inherit)
 - **Inheritance**: an heir claims after the holder goes silent, optionally only with guardians' approval. [How](#heirloom-it-passes-on-if-you-go-silent)
 - **One NFT, many wallets**: the same MPC keys hold ETH and USDC on Ethereum/Base/Arbitrum, SOL, its own NEAR account (staking, nBTC: native BTC → nBTC → back to native BTC, live from a Smart Pusaka's keyless account), all moving with the NFT. [How](#one-nft-many-wallets-how-control-passes-on-transfer)
@@ -116,8 +116,9 @@ only the pool account can call and only while the pool is empty (no loan, no sha
 - **Price**: three reporters, each posting one independent source: `pusaka-relayer.testnet` (mempool.space),
   `pusaka-admin.testnet` (CoinGecko), `pusaka-seller.testnet` (Rhea's nBTC pool on NEAR). The contract needs 2 of 3
   fresh (at most 2 hours old) reports; **borrowing values collateral at the lower middle report and liquidation decides
-  on the higher one**, and two middles more than 5% apart mean no price at all, so one bad source can't move the price
-  used against the pool or against a borrower. A stale price pauses borrowing and liquidation; nobody is liquidated on
+  on the higher one**, and two middles more than 5% apart mean no price at all. With all three reports fresh one bad source can't move
+  the price used against the pool or against a borrower; with only two fresh, one source can shift the liquidation
+  side by up to 5% or stop liquidations (see 05-security Round 5). A stale price pauses borrowing and liquidation; nobody is liquidated on
   an old price. Reports go out whenever a page asks `/api/prices` and on a GitHub Actions schedule (`lend-price.yml`, best effort), with keys that can call only
   `report_price` on this contract. On testnet all three reporters are ours: the quorum guards against a bad source,
   not against us.
@@ -222,7 +223,7 @@ afterwards, so its `GET /` can no longer be read: the tx's key and the function-
 The contract above is final. New features run in a second deployment, **[`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet)**:
 the same contract plus `contract/src/v2.rs`, upgraded only through the DAO (`pusaka-council.sputnikv2.testnet`, 2 of 3
 votes, our own accounts) and a 10-minute timelock. **The deploy key was deleted on 13 Nov (17:45 UTC)** (tx `6PrDXyqq…`):
-the account has no keys, and `verify.mjs` checks it. What v2 adds, each live on testnet with tx hashes in
+the account has no keys (except a function-call key limited to the claim methods while a gift link is open), and `verify.mjs` checks it. What v2 adds, each live on testnet with tx hashes in
 **[docs/V2.md](V2.md)**:
 
 - **Its own NEAR account** (`0s…`, NEP-616 + NEP-591): keyless, obeys only the current holder, frozen while the NFT is for sale. Plus a readable name, `t<id>.pusaka-v2.testnet`.
