@@ -1711,7 +1711,7 @@ function GiftLink({ id, busy, run }) {
     try { const k = sessionStorage.getItem(k0); if (k) setLink(`${location.origin}/${IS_SIBLING ? `?contract=${CONTRACT}` : ""}#/gift/${k}`); } catch {}
   }, [open, link, id]);
   if (open === undefined) return null;
-  if (open) return <div className="stack">
+  if (open || link) return <div className="stack">
     <h2>Gift link open</h2>
     <p>This Pusaka is waiting for whoever opens its gift link{link ? "" : " (only you had the link)"}. Until then it can't be sold, lent against or withdrawn from.</p>
     {link && <p className="gift-link"><code>{link}</code> <CopyButton text={link} label="Copy link" what="gift link" /></p>}

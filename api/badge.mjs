@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     if (req.query?.heir === "1") {
       // a countdown: never cached longer than a minute
       const h = await viewFinal("heir_of", { token_id: id }, c);
-      const inherited = h ? null : (await viewFinal("token_info", { token_id: id }, c))?.history?.findLast((x) => x.event.kind === "Inherited");
+      const inherited = h ? null : (await viewFinal("token_info", { token_id: id }, c))?.history?.findLast((x) => x.event.kind === "Inherited" && x.event.to === t.owner); // only while the heir still holds it
       res.setHeader("content-type", "image/svg+xml");
       res.setHeader("cache-control", "public, s-maxage=60, max-age=0, must-revalidate");
       return res.status(200).send(badge(id, t.verified_sats, null, null, heirSegment(h, Date.now(), inherited)));

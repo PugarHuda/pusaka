@@ -115,7 +115,10 @@ export function nearProvider({ FailoverRpcProvider, JsonRpcProvider }) {
       let last;
       for (const i of order) {
         try {
-          const r = await getResult(this.providers[i]);
+          // a hung endpoint fails over after 20 s instead of holding one of the 8 slots for minutes
+          let timer;
+          const r = await Promise.race([getResult(this.providers[i]), new Promise((_, no) => { timer = setTimeout(() => no(Object.assign(new Error("timed out"), { name: "TimeoutError" })), 20_000); })])
+            .finally(() => clearTimeout(timer));
           downUntil.delete(i);
           return r;
         } catch (e) {

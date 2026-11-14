@@ -13,3 +13,8 @@ media/
 video/node_modules
 video/out
 video/public/clips
+
+# wallet-qa.mjs output: wallet screenshots and gift link files (live secrets)
+*-picker.png
+*-popup.png
+*.giftlink

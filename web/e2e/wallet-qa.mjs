@@ -13,6 +13,7 @@
 //   node wallet-qa.mjs <profileDir> qa-mint <account>                     mint from the header; deposit address, QR, checklist
 //   node wallet-qa.mjs <profileDir> qa-holder <account> <id> <heir>       heir (free + paid check-in), guardians, removals; a typo'd give; ask a loan, cancel it
 //   node wallet-qa.mjs <profileDir> qa-gift <account> <id> <linkFile>     make a gift link (written to linkFile, never printed), reload; QA_CANCEL=1 cancels it
+//                                                                        (linkFile holds a live secret: name it *.giftlink or keep it outside the repo)
 //   node wallet-qa.mjs <profileDir> qa-claim <account> <linkFile>         claim that gift into account (a second profile)
 //   node wallet-qa.mjs <profileDir> qa-lend <account> <id>                lend to the USDC pool from someone else's Pusaka page (QA_MOBILE=1: 390x844 for any qa- step)
 //   node wallet-qa.mjs <profileDir> qa-v2 <account> <id> <other>          Smart Pusaka #id: rent, BIP-322, agent budget, vault in/out, covered call write/cancel
