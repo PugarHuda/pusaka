@@ -13,7 +13,7 @@
   "registrations": [],
   "supportedTrust": [],
   "pusakaTrustSources": [
-    { "tool": "pusaka_contract_trust", "reads": "NEAR testnet pusaka-btc.testnet: code sha256, NEP-330 source, every access key, upgrade DAO and timelock" },
+    { "tool": "pusaka_contract_trust", "reads": "NEAR testnet pusaka-v2.testnet (or the classic pusaka-btc.testnet): code sha256, NEP-330 source, every access key, upgrade DAO and timelock" },
     { "tool": "pusaka_audit", "reads": "NEAR MPC key derivation, the contract's proven deposits and Bitcoin itself (proof of reserves per token)" },
     { "tool": "pusaka_credit_record", "reads": "the contract's on-chain loan history per borrower: taken, repaid, defaulted, open" }
   ]

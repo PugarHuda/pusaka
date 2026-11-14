@@ -6,7 +6,7 @@ Each Pusaka also holds ETH and USDC on Ethereum, Base and Arbitrum (same secp256
 
 USDC deposits on Base and Arbitrum are attested by NEAR MPC foreign-transaction verification: the MPC network reads the finalized chain itself, so `usdc_info` on the contract is trustworthy without any EVM RPC. Every Bitcoin withdrawal carries an `OP_RETURN pusaka:{id}` output. The deployed wasm is a NEP-330 reproducible build (`contract_source_metadata`).
 
-Network: NEAR testnet (contract `pusaka-btc.testnet`, MPC signer `v1.signer-prod.testnet`), Bitcoin testnet3 (tracked by NEAR's Bitcoin light client `btc-client-v4.testnet`), Sepolia, Base Sepolia, Arbitrum Sepolia, Solana devnet.
+Network: NEAR testnet (main contract `pusaka-v2.testnet`, Smart Pusakas: no access keys, code changes only through a Sputnik DAO vote and a 10-minute timelock; the classic `pusaka-btc.testnet`: no keys, upgrades renounced; MPC signer `v1.signer-prod.testnet`), Bitcoin testnet3 (tracked by NEAR's Bitcoin light client `btc-client-v4.testnet`), Sepolia, Base Sepolia, Arbitrum Sepolia, Solana devnet.
 
 ## How to use this site
 

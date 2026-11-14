@@ -52,11 +52,13 @@ More screenshots (lending pool, proof trail, exchange check, Smart Pusaka, reser
 
 > **Run by us on testnet:** the three price reporters, the gas relayer, and the 3-account DAO that can upgrade
 > `pusaka-v2.testnet`. **Nobody can change** the classic `pusaka-btc.testnet`.
-> - **Real, on NEAR testnet, every claim with a tx hash** (201 of them, all checked by `verify.mjs`).
+> - **Real, on NEAR testnet, every claim with a tx hash** (203 of them, all checked by `verify.mjs`).
 > - **Mainnet:** not deployed (needs funds; `docs/MAINNET.md`), but `scripts/mainnet-proof.mjs` shows Pusaka's proof
 >   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
 > - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`
->   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote.
+>   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote. This follows the hackathon rules:
+>   testnet-only projects are eligible in every track (Q-010), and since Intents has no testnet (Q-007), the app asks
+>   mainnet 1Click for real quotes with `dry: true` (`shared/intents.mjs`) while swaps execute on Tidepool.
 > - **No keys:** the classic contract has none and renounced upgrades. `pusaka-v2.testnet` (the main contract, Smart
 >   Pusakas), the market, the USDC pool and pUSD have had none since 13 Nov; v2 changes only through the DAO plus a
 >   10-minute timelock (last used 14 Nov to fix review finding R6-1).

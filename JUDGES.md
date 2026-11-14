@@ -70,6 +70,9 @@ in the `mainnet` build) for a real Bitcoin **mainnet** transaction, and asks the
 `btc-client.bridge.near` as a view call: `true`. The same proof with one merkle hash changed: `false`. No wallet,
 no NEAR spent. (12 Nov: tx `e1ad57ea…` in block 975,511, 13-step proof, accepted; the forged one refused.)
 It tries mempool.space, then blockstream.info, by itself; `BTC_MAINNET_ESPLORA=<an Esplora API>` picks another.
+Testnet vs mainnet follows the hackathon rules: testnet-only projects are eligible in every track (Q-010), and since NEAR
+Intents has no testnet (Q-007), the app asks mainnet 1Click for real quotes with `dry: true` (`shared/intents.mjs`) while
+swaps execute on the Tidepool testnet sandbox.
 
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 

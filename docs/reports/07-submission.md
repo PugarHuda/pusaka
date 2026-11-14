@@ -8,7 +8,7 @@ Reference: `01`–`06`. Official rules: https://nearhackathon.com/HACKATHON.md.
 | `cargo test` testnet + mainnet (376 + 376, including fuzz + invariant) | ✓ |
 | `cargo audit` | ✓ (1 dev-only advisory ignored, with a stated reason) |
 | reproducible wasm build + sha256 | ✓ |
-| Node unit (14 files in CI) | ✓ |
+| Node unit (15 files in CI) | ✓ |
 | `npm run lint` (oxlint, `no-undef`) | ✓ |
 | typecheck | none: JavaScript project; `tsc --checkJs` was tried, only false positives |
 | `npm run build -w web` | ✓ |
@@ -49,7 +49,7 @@ Not there yet (needs the user): demo video link and X post.
 
 ## Submission form text
 - Project name: `Pusaka`
-- Tracks: `nfts`, `defi`, `open`
+- Tracks: `nfts`, `defi`, `open` (14 Nov: submitted in six, adding `security`, `agents`, `privacy`)
 - Repo: https://github.com/PugarHuda/pusaka (must be public)
 - Demo post: *(the user publishes it on X, then provides the link)*
 - What they built (≤2000 characters):
@@ -63,6 +63,7 @@ Not there yet (needs the user): demo video link and X post.
 - [x] LICENSE (MIT)
 - [x] Upgrade renounced through the DAO (8 Nov, proposal 7, `GdASfxh5…`)
 - [ ] Public repo (≤ 14 Nov 23:59 UTC; 13 Nov recommended) (user)
+  - 14 Nov: the repo is public (github.com/PugarHuda/pusaka).
 - [ ] Demo video + X post (@NEARProtocol, #NEARHackathon) (user)
 - [ ] Mainnet payout account (`pugarhuda.near`?) (user confirms)
 - [ ] Submit (JSON payload shown first, waiting for "yes") (user)

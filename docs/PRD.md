@@ -23,7 +23,8 @@
 >
 > | PRD plan | Reality | Evidence |
 > |---|---|---|
-> | F1–F11 (P0): mint, BTC address, balance, withdraw, listing, atomic buy, pending lock, outpoint registry, safe balance, history, `npm run demo` | Done | `cargo test` (225 on 9 Nov; 375 now), `live.spec` |
+> | F1–F11 (P0): mint, BTC address, balance, withdraw, listing, atomic buy, pending lock, outpoint registry, safe balance, history, `npm run demo` | Done | `cargo test` (225 on 9 Nov; 376 now), `live.spec` |
+> | Submission tracks `nfts`, `defi`, `open` | Submitted (14 Nov) in six: `nfts`, `defi`, `open`, `security`, `agents`, `privacy` | `docs/reports/07-submission.md` |
 > | F12 gift receiving page · F13 hosted demo · F14 image changes with the BTC inside | Done: Give + NEP-452 gift link · https://pusaka-two.vercel.app · on-chain SVG with "liquid" as high as the balance (`contract/src/art.rs`) | README "Try it" |
 > | Bitcoin testnet4, P2PKH | **testnet3** (the network the NEAR light client follows), **P2WPKH** (BIP143) | README "Measured on testnet" |
 > | Next.js frontend + wallet-selector | Vite + React + `@hot-labs/near-connect` | `web/` |
