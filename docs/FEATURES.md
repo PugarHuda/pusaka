@@ -177,6 +177,23 @@ on 13 Nov, `ed25519:J2W4WSpa…` before and after; the heir added it once
 ([E5qvkn42…](https://testnet.near.rocks/tx/E5qvkn428Z5j4aaGzQEZBa7hsmXFzGR1GvLgBSAec4yJ)). Limits: at most 5 claims an
 hour per heir, and the contract doesn't need the agent (the heir can always claim directly).
 
+**Check that the claim key lives in the attested agent** (no wallet, four reads):
+1. `curl https://2c023d0a661b10161ab612f41b0aeb858e345e1d-3000.dstack-pha1-prod5.phala.network/`: the running agent
+   reports its NEAR account (`agent`), its `heir_key` (`ed25519:J2W4WSpa…`) and every claim it made.
+2. `get_agent({"account_id": "<agent>"})` on `pusaka-agent.testnet`: the agent is registered with a TDX attestation whose
+   `app_compose_hash_payload` is `c06e4c5a…`, the hash of `shade/docker-compose.yaml`. That compose pins image
+   `sha256:0472cd99…`, built by CI from `shade/agent.mjs`, which derives the heir key with dstack's `GetKey` inside the
+   enclave and never exports it. (The agent's own NEAR account is new on every boot; the heir key is not.)
+3. `view_access_key` of `pusaka-buyer.testnet` for `ed25519:J2W4WSpa…`: a function-call key, `claim_inheritance` on
+   `pusaka-btc.testnet` only.
+4. After 16 Nov 02:00 UTC: the transaction that moves classic #27 to `pusaka-buyer.testnet` is signed with
+   `ed25519:J2W4WSpa…` (the `public_key` in its `tx` result), and the agent's `GET /` lists that claim.
+
+The earlier claim of classic #2 ([ECFUYRky…](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR))
+was signed with `ed25519:FGjh6aby…`, the random key of the first agent (image `fbf5c315…`). That CVM was deleted
+afterwards, so its `GET /` can no longer be read: the tx's key and the function-call key still on
+`pusaka-buyer.testnet` are the evidence left, which is why the agent now derives its key with `GetKey`.
+
 ## Demo history added on 13 Nov (`scripts/demo-cases.mjs` and friends), every case a real transaction
 
 | Case | What happened | Tx |
