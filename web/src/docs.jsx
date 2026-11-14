@@ -166,11 +166,11 @@ const SECTIONS = [
 export default function DocsPage() {
   const [here, setHere] = useState(SECTIONS[0][0]);
   const clicked = useRef(0);
-  useEffect(() => { // the contents mark the section being read: the last one whose top has passed the upper third of the screen
+  useEffect(() => { // the contents mark the section being read: the last one whose top has reached the top of the screen
     const onScroll = () => {
       if (Date.now() - clicked.current < 1000) return; // a contents click scrolls smoothly: keep the section it chose
       let id = SECTIONS[0][0];
-      for (const [s] of SECTIONS) { const el = document.getElementById(s); if (el && el.getBoundingClientRect().top <= innerHeight / 3) id = s; }
+      for (const [s] of SECTIONS) { const el = document.getElementById(s); if (el && el.getBoundingClientRect().top <= 120) id = s; }
       if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) id = SECTIONS[SECTIONS.length - 1][0]; // the bottom: the last section
       setHere(id);
     };
