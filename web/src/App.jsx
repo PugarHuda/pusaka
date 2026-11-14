@@ -377,7 +377,7 @@ function MainnetReady() {
   };
   return (
     <p className="mainnet-ready">
-      Testnet today, mainnet-ready: NEAR's <strong>mainnet</strong> Bitcoin light client checks the very proof Pusaka sends.{" "}
+      Testnet today. Mainnet check: NEAR's <strong>mainnet</strong> Bitcoin light client accepts the very proof Pusaka sends.{" "}
       {!r && <button type="button" className="ghost" onClick={run}>Ask it now, from your browser</button>}
       {r?.busy && <span className="muted">Building a proof for the latest Bitcoin block and asking btc-client.bridge.near…</span>}
       {r?.error && <span className="error">{r.error} <button type="button" className="ghost" onClick={run}>Try again</button></span>}
@@ -423,7 +423,7 @@ function Home() {
 
       {tokens?.length > 0 && (
         <p className="reserves">
-          <strong>{btc(sats)} BTC</strong> verified on NEAR across {tokens.length} Pusaka
+          <strong>{btc(sats)} BTC</strong> verified on NEAR in the {tokens.filter((t) => Number(t.info.verified_sats) > 0).length} Smart Pusakas that hold any (of {tokens.length}; the classic ones are in the Market)
           {px && <> (about {usd(sats / 1e8 * px.btcUsd)})</>}. Every satoshi is proven by NEAR's Bitcoin light client,
           not reported by us.
         </p>

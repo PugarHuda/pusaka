@@ -1,6 +1,7 @@
-# Pusaka in five minutes, for judges and screeners
+# Pusaka for judges and screeners: a 3-minute check, a 10-minute tour
 
-Everything below runs without a wallet and without a key, on a fresh clone. Nothing is signed or sent.
+Everything below runs without a wallet and without a key, on a fresh clone
+(`git clone https://github.com/PugarHuda/pusaka && cd pusaka`). Nothing is signed or sent.
 
 ## 1. Check the core claims against the chains (about 3 minutes; the classic contract about 5; it stops itself after 10)
 
@@ -19,7 +20,7 @@ PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/verify.mjs     # 14 Nov: all che
 
 (PowerShell: `$env:PUSAKA_CONTRACT="pusaka-btc.testnet"; node scripts/verify.mjs`.)
 
-Expect `all checks passed` from both. The classic run prints these lines (numbers move as the demo is used; the
+Expect `all checks passed` from both. Example output from the classic run (numbers move as the demo is used; the
 default v2 run prints the same checks for `pusaka-v2.testnet`, with "admin pusaka-council.sputnikv2.testnet announces a
 sha256; deployable 10 min later" in place of "upgrades renounced"):
 
@@ -76,7 +77,7 @@ It tries mempool.space, then blockstream.info, by itself; `BTC_MAINNET_ESPLORA=<
 cd contract && cargo test        # 375 passed (incl. fuzz + invariant tests)
 ```
 
-Tests are named after the attack they stop; the README's [threat model](docs/THREAT-MODEL.md)
+Tests are named after the attack they stop; the [threat model](docs/THREAT-MODEL.md)
 maps each attack to its tests (`t1_…` to `t5_…`, loans `l…`/`o…`, heir `h…`, guardians `gd…`, upgrades `up…`, gift links `g…`).
 
 ## 3. Use it (2 minutes)

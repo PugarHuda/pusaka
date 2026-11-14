@@ -2,7 +2,10 @@
 
 [![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
 
-**Bitcoin you can sell, borrow against and leave to your heirs, as a NEAR NFT, and NEAR itself proves what's inside.**
+**An NFT on NEAR that holds real Bitcoin. Sell it, borrow against it or leave it to an heir, and the BTC moves with it. NEAR's
+Bitcoin light client proves every deposit. Live on NEAR testnet; not on mainnet yet ([what's real](#whats-real-and-what-isnt-yet)).**
+
+Today, putting BTC in an NFT means wrapped BTC or a custodian. Here the NFT controls a native Bitcoin address itself.
 
 Three things to check, in this order:
 
@@ -10,13 +13,13 @@ Three things to check, in this order:
    signed away. See the [proof of reserves](https://pusaka-two.vercel.app/#/reserves), or run
    `node scripts/mainnet-proof.mjs` to watch NEAR's *mainnet* light client accept the same proof.
 2. **Clean to buy.** Before paying, a buyer sees whether anything the seller already signed could still move what's
-   inside, on Bitcoin, every EVM chain, Solana and the NFT's NEAR account. The badges below are redrawn from the chains
-   on every view; the same answer as JSON is an open format any NFT-wallet can adopt:
+   inside, on Bitcoin, three EVM chains, Solana and the NFT's NEAR account. The badges below are redrawn from the chains
+   on every view; the same answer is a JSON format other wallets can read:
    [proof of clean](docs/PROOF-OF-CLEAN.md) (`/api/badge?id=4&contract=pusaka-btc.testnet&format=json`).
-3. **It passes on, with no custodian.** If the holder goes silent, the named heir claims the NFT and every Bitcoin in
-   it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn). A will
-   executed by attested code: an agent in a TEE claims for the heir with a key that never leaves the enclave and can
-   only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR) with the first agent's key; [check the current key is the enclave's](docs/FEATURES.md#the-heirs-agent-in-a-tee)).
+3. **It passes on, with no custodian.** Name an heir and a silence period. If the holder stays silent, the heir claims
+   the NFT and every Bitcoin in it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn).
+   An agent in a TEE (attested hardware) can claim for the heir with a key that never leaves it and can only call
+   `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR) with the first agent's key; [check the current key is the enclave's](docs/FEATURES.md#the-heirs-agent-in-a-tee)).
    Failure cases, each with its test: a guardian loses their key, a guardian turns hostile, the holder is alive but
    offline ([table](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)). Watch the next one happen during judging:
 
@@ -26,7 +29,8 @@ Each Pusaka is a NEAR NFT (NEP-171) with its own native Bitcoin address, signed 
 [Chain Signatures](https://docs.near.org/chain-abstraction/chain-signatures) only when the **current NFT owner** asks.
 Every deposit is **proven on NEAR** against Bitcoin's own headers by NEAR's Bitcoin light client, and the contract
 subtracts every output it ever signed away: `verified_sats` is a number a buyer, lender, heir or AI agent can rely on
-with no indexer, no oracle, no wrapped BTC and no trust in us.
+with no indexer, no oracle and no custodian. (Smart Pusakas can also hold nBTC, which is bridged BTC; the app counts it
+separately.)
 
 Live badges, redrawn from the chains on every view (BTC proven on NEAR, and whether anything the holder already signed
 could still move it, with the time of the check):
@@ -34,8 +38,9 @@ could still move it, with the time of the check):
 [![Pusaka #4: proof of clean](https://pusaka-two.vercel.app/api/badge?id=4&contract=pusaka-btc.testnet&clean=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/4)
 [![Pusaka #27: proof of clean](https://pusaka-two.vercel.app/api/badge?id=27&contract=pusaka-btc.testnet&clean=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/27)
 
-**60 seconds, no wallet:**
+**About 3 minutes, no wallet:**
 ```
+git clone https://github.com/PugarHuda/pusaka && cd pusaka
 npm install && node scripts/verify.mjs        # every claim below, checked against NEAR, its MPC, its light client and Bitcoin
 node scripts/mainnet-proof.mjs                # the same proof, accepted by NEAR's *mainnet* Bitcoin light client (free view call)
 ```
@@ -84,7 +89,10 @@ account per NFT: it can hold USDC from a NEAR Intents swap of the NFT's own Bitc
 is sold, lent and inherited as one bundle (live: an AI agent bought one at 66% below its contents, then an heir inherited it).
 Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.testnet` stays frozen for good (open any of its Pusakas with `?contract=pusaka-btc.testnet`), and the Market, reserves, offer book and refusals cover both.
 
-> **What's real, and what isn't (yet).**
+### What's real, and what isn't (yet)
+
+> **Run by us on testnet:** the three price reporters, the gas relayer, and the 3-account DAO that can upgrade
+> `pusaka-v2.testnet`. **Nobody can change** the classic `pusaka-btc.testnet`.
 > - **Real, on NEAR testnet, every claim with a tx hash** (200 of them, all checked by `verify.mjs`).
 > - **Mainnet:** not deployed (needs funds; `docs/MAINNET.md`), but `scripts/mainnet-proof.mjs` shows Pusaka's proof
 >   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
@@ -95,7 +103,7 @@ Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.t
 > - **The USDC pool** lends Circle's own testnet USDC. Its three price reporters are ours, and on testnet it runs tight
 >   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation, and one did on 14 Nov at 81.15% ([BSDwVry5…](https://testnet.near.rocks/tx/BSDwVry5HC95QByn9RYcH2MW5emjSwx8Pa6TCJsKWH8)); mainnet: 50/80.
 
-**Judges and screeners:** [JUDGES.md](JUDGES.md) is the five-minute path. For AI agents: `npx -y pusaka-mcp` (61 tools,
+**Judges and screeners:** [JUDGES.md](JUDGES.md) is the shortest path (3-minute check, 10-minute tour). For AI agents: `npx -y pusaka-mcp` (61 tools,
 spend caps), also in the official MCP Registry as `io.github.PugarHuda/pusaka`.
 
 *Pusaka* is Indonesian for an heirloom: a valued object passed from hand to hand.
@@ -116,14 +124,14 @@ agent owned and governed by its members (tracks Social Money, Autonomous Busines
 ## Try it in two minutes (testnet wallet only)
 
 1. Open **https://pusaka-two.vercel.app/#/market**, click *Connect NEAR wallet* and pick Meteor (testnet; new accounts get faucet NEAR).
-2. **Buy:** Pusaka #27 (11,000 sats verified) is for sale at 0.35 NEAR, #10 at 0.5; #4 is a Dutch auction falling to 0.4 NEAR. Each card says how its price compares with the BTC inside. Click one, then *Buy*. **See:** "You own Pusaka #N", and you can *Withdraw* its BTC to any `tb1…` address.
-3. **Lend:** #14 and #25 ask to borrow against 10,000 verified sats each. The page shows the loan-to-value and what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
-4. **A bundle:** Smart Pusaka #7 holds classic Pusaka #22 (11,500 sats) and 12.5 USDC in its own account; its page says so before you buy, and the Market counts that Bitcoin once.
+2. **Buy:** pick any card marked *For sale* in the Market (the demo stock is refilled, so the numbers move). Each card says how its price compares with the BTC inside. Click one, then *Buy*. **See:** "You own Pusaka #N", and you can *Withdraw* its BTC to any `tb1…` address.
+3. **Lend:** pick any card marked *Asking to borrow*. The page shows the loan-to-value and what the collateral would sell for right now through NEAR Intents. Click *Lend*. **See:** the loan funded, the Pusaka locked as collateral, and *Take the Pusaka* once it's overdue.
+4. **A bundle:** a Smart Pusaka can hold other Pusakas and USDC in its own account; a card marked *Bundle* lists what is inside, its page says so before you buy, and the Market counts that Bitcoin once.
 5. **No wallet at all?** Any Pusaka with a confirmed, unproven deposit proves itself when you open it; the relayer pays.
 6. **See the attacks it refused:** [#/refused](https://pusaka-two.vercel.app/#/refused) lists real failed transactions (a seller withdrawing after a sale, a front-run signature, an early heir, a stranger spending from an NFT's own account, …), each with the contract's own panic read live from NEAR's archive and the test that guards it.
 7. **Don't trust our page:** open any Pusaka and click *Check it yourself*: your browser asks NEAR, its MPC signer, its light client and Bitcoin directly. Same code as `scripts/verify.mjs`.
 
-## Try it
+## Run it locally
 
 Requirements: Node 22+, and Rust + `cargo-near` only if you want to rebuild the contract.
 
@@ -164,9 +172,8 @@ npm run e2e -w web                # Playwright, against https://pusaka-two.verce
 npx playwright show-report web/playwright-report   # the HTML report, with traces and screenshots of any failure
 ```
 
-Two suites. `e2e/ui.spec.mjs` runs on **Chromium, Firefox, WebKit, an iPad and a Pixel 7** (23 tests each, 115 in all; visual baselines are checked on Linux in CI): back/forward and deep links (leading zeros, a missing token, `-1`, a 5,000-character route, a script tag in the URL), the command palette with empty, huge and hostile input, no horizontal scroll on any key page, **axe-core** (WCAG 2.1 AA, no serious or critical violation on landing, market, a Pusaka, For AI agents, refused, a classic Pusaka with Clean to buy and the USDC pool, verify, reserves and not-found, and in dark mode on landing, market and a Pusaka), **visual snapshots** of the pages whose pixels don't depend on live data (not-found; Your Pusakas without a wallet in light, then in dark after the system switches with the page open), committed per engine and OS, and **failure paths by route interception**: every NEAR RPC down (the token page, the market and the landing page say so and *Try again* recovers), both Bitcoin explorers down (NEAR-verified sats still shown, with a warning), the price API failing (no `NaN`), and going offline mid-session. Nothing on the success path is mocked: it reads the live testnet contract. These tests found four bugs, fixed: the theme ignored a system switch to dark while the page was open; the landing page stayed on *Reading the contract…* forever when NEAR was unreachable; fast back/forward left unhandled View Transition rejections; and twenty parallel reads failing on a rate-limited RPC cycled the shared failover index back onto that RPC (now each call skips an endpoint that failed in the last minute, and a contract panic is never retried: `node shared/failover.test.mjs`). `e2e/live.spec.mjs` (Chromium) checks the production deployment against the chain. See: `40 passed`, a few skipping when an outside feed is down (home, first paint without the bundle, loan offer book, detail, not-found recovery, keyboard skip link and focus on navigation, phone layout, no-wallet actions, relayer and API input checks, on-chain NFT image, outside-market listings, EVM/SOL/NEAR accounts, holder room, reserves and badges, nBTC, heir section, security headers, the NEAR Intents exit quote, the Your Pusakas page, and that the demo stock and the relayer's balance are there). Read-only: no wallet, no transactions. CI runs it on every push and once a day.
-
-**Monitoring** (NEAR security checklist: alert on every failed callback receipt). `node scripts/receipt-monitor.mjs [--hours 6]` reads every receipt of every transaction touching `pusaka-btc.testnet` or `pusaka-relayer.testnet` in the last 6 hours (FastNear tx API, no keys). It fails if a receipt the contract sent to itself failed (`on_key`, `on_signed*`, `on_deposit_proven`, `on_usdc_proven`, `nft_resolve_transfer`, ...), or if a token's signing lock (`pending`) has been held for 600+ blocks, which means a callback never cleared it and the owner needs `unlock_stale`. A user's own call that panics on purpose (a refused withdraw, a buy that hits `StateChanged`) is that caller's failed transaction, so it's only counted. CI runs it after the e2e checks, on the same 6-hour schedule.
+115 UI tests on Chromium, Firefox, WebKit, an iPad and a Pixel 7, plus 45 read-only checks against the live app; CI runs
+them on every push and daily, with a receipt monitor for failed callbacks. Details: [docs/TESTING.md](docs/TESTING.md).
 
 ### 3. Use the web app
 
