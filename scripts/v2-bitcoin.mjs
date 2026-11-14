@@ -61,7 +61,8 @@ if (step === "proof") {
   await refused("the seller withdraws or relists while it's listed for Bitcoin", /Listed/, () => tx(seller, "list", { token_id, price: "1000000000000000000000000", floor: null, duration_ms: null }));
 } else if (step === "reserve") {
   const [buyer, token_id] = a;
-  const o = await tx(buyer, "reserve_btc_purchase", { token_id }, 10n ** 23n);
+  const { sign_epoch } = await view("token_info", { token_id }, V2);
+  const o = await tx(buyer, "reserve_btc_purchase", { token_id, expected_sign_epoch: sign_epoch }, 10n ** 23n);
   const l = await view("btc_listing_of", { token_id }, V2);
   console.log(`${buyer} reserved #${token_id} until ${new Date(Number(l.reserved_until_ms)).toISOString()}: ${link(o)}`);
   console.log(`pay ${l.price_sats} sats to script ${l.pay_to_script} with OP_RETURN ${l.op_return}`);

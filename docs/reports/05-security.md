@@ -79,7 +79,7 @@ Scanners were rerun on all components.
 | Upgradeability | only bytes whose sha256 the DAO approved, after the timelock; `renounce_upgrades` | `up…`, tx `EHX5b1cp…` (TooEarly), `25pi2EER…` (CodeMismatch) |
 | Centralization | upgrades **renounced** on 8 Nov (DAO proposal 7, tx `GdASfxh5…`); contract has 0 keys → no party can change the code | `verify.mjs`: "upgrades renounced: final" |
 
-Exploit PoC: every threat model row has a test that tries the attack and checks that it fails (375 tests, including fuzz and invariant).
+Exploit PoC: every threat model row has a test that tries the attack and checks that it fails (376 tests, including fuzz and invariant).
 
 ## Round 4 (13 Nov): USDC pool (`lend/`, `pusaka-lend.testnet`; started on pUSD, moved to Circle USDC on 13 Nov)
 | Threat | Defense | Test |
@@ -109,7 +109,7 @@ Acknowledged limit: all three reporters are run by us on testnet; the quorum hol
 
 ## Verification notes
 The GitHub Actions runs for this round's commits did not start because the private repo's Actions minutes quota ran out or the spending limit was reached, so not because of a code failure. Verification was run locally:
-- `cargo test` (375) and Node units;
+- `cargo test` (376) and Node units;
 - `node api/_nearai.test.mjs` and `node api/_holder.test.mjs`;
 - the 11 relevant `live.spec` tests, against production.
 
@@ -121,7 +121,7 @@ An outside-style review of contract/src, market/src, lend/src and token-account/
 
 | ID | Where | Severity | What | Status |
 |---|---|---|---|---|
-| R6-1 | v2 `reserve_btc_purchase` | Medium | Buying with BTC (F12) doesn't bind `sign_epoch`: a seller can cancel the BTC listing, withdraw, and relist before a buyer reserves. After a reservation the Pusaka is locked, so a buyer who checks again before paying is safe, but loses the 0.1 NEAR bond if they walk away | The app re-checks the verified sats and sign epoch after reserving and warns before showing payment details; a contract fix (`expected_sign_epoch` on reserve) needs a DAO upgrade of v2 |
+| R6-1 | v2 `reserve_btc_purchase` | Medium | Buying with BTC (F12) doesn't bind `sign_epoch`: a seller can cancel the BTC listing, withdraw, and relist before a buyer reserves. After a reservation the Pusaka is locked, so a buyer who checks again before paying is safe, but loses the 0.1 NEAR bond if they walk away | **Fixed (14 Nov, DAO upgrade of v2):** `reserve_btc_purchase(token_id, expected_sign_epoch)` refuses with `StateChanged` if anything was signed since the buyer looked (test `f12_a_reservation_is_bound_to_the_sign_epoch_the_buyer_saw`); the app passes the epoch it showed |
 | R6-2 | lend price | Medium | With only two fresh reports, one source can move the liquidation price up to 5% (removing the liquidator's discount) or stop liquidations; with three fresh, the median holds. The test `with_two_reports_one_source_cannot_move_the_price_either_way` checks the 5% bound, not "can't move" | Final contract: keep all three reporters fresh (the app posts reports on page load) |
 | R6-3 | lend accounting | Medium | A loan whose debt exceeds the BTC's value is never liquidated (a liquidator pays at least the debt) and never written off; its principal still counts in `assets()`, so lenders who withdraw first are paid in full and the last carry the loss | Final contract; reachable after a > ~20% price gap between updates |
 | R6-4 | lend shares | Low-Medium | New shares are priced on cash + principal, ignoring accrued interest: a deposit just before a large repayment takes part of that interest | Final contract |

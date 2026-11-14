@@ -74,7 +74,7 @@ It tries mempool.space, then blockstream.info, by itself; `BTC_MAINNET_ESPLORA=<
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 
 ```
-cd contract && cargo test        # 375 passed (incl. fuzz + invariant tests)
+cd contract && cargo test        # 376 passed (incl. fuzz + invariant tests)
 ```
 
 Tests are named after the attack they stop; the [threat model](docs/THREAT-MODEL.md)

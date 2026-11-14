@@ -749,14 +749,16 @@ impl Pusaka {
 
     /// Buyer: reserves the BTC sale for `RESERVE_MS` with a bond (at least 0.1 NEAR, back on purchase). Returns
     /// the OP_RETURN data (hex) the Bitcoin payment must carry, binding it to this buyer and this reservation.
+    /// `expected_sign_epoch` binds it to the Bitcoin the buyer saw inside, as `buy` does (review R6-1).
     #[payable]
-    pub fn reserve_btc_purchase(&mut self, token_id: TokenId) -> String {
+    pub fn reserve_btc_purchase(&mut self, token_id: TokenId, expected_sign_epoch: u32) -> String {
         let mut l: BtcListing = raw_get(&btc_listing_key(&token_id)).unwrap_or_else(|| env::panic_str("NotListed"));
         let buyer = env::predecessor_account_id();
         require!(buyer != l.seller, "SelfBuy");
         require!(env::attached_deposit() >= BTC_BOND, "attach 0.1 NEAR: a bond, back when you buy");
         let now = env::block_timestamp_ms();
         require!(!l.holds(now), "Reserved: another buyer is paying");
+        self.assert_epoch(&token_id, expected_sign_epoch);
         if l.buyer.is_some() && l.bond > 0 {
             refund(l.seller.clone(), NearToken::from_yoctonear(l.bond));
         }

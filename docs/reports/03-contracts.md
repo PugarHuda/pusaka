@@ -65,7 +65,7 @@ SourceScan and `cargo near verify` take the source from the GitHub repo, so **th
 ## Test and coverage results
 | Type | Result |
 |---|---|
-| Unit + revert paths | **375 passing** (`cargo test`) and **375 passing** (`cargo test --features mainnet`) |
+| Unit + revert paths | **376 passing** (`cargo test`) and **376 passing** (`cargo test --features mainnet`) |
 | Fuzz (proptest) | 5 properties: 2,000 cases for pure functions, 256 for those that build a contract per case (can be raised via `PROPTEST_CASES`). A full 2,000-case run for all of them also passes (728 s, 9 Nov) |
 | Invariant | `inv1` (random sequences of ≤ 24 operations, 256 sequences per run) |
 | Coverage (`cargo llvm-cov`, `tests.rs` excluded) | **Lines 96.48 %, functions 94.38 %, regions 91.47 %** (target ≥ 90 % ✓). Per file: `art` 100 %, `btc` 99.4 %, `gift` 97.7 %, `lib` 95.8 %, `upgrade` 98.6 %, `usdc` 95.4 % (lines) |

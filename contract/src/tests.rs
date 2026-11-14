@@ -3912,7 +3912,16 @@ mod f10_f13 {
     }
     fn reserve(c: &mut Pusaka, who: &str, ms: u64) -> String {
         at(who, NearToken::from_millinear(100), ms);
-        c.reserve_btc_purchase("1".into())
+        let e = c.epoch(&"1".to_string());
+        c.reserve_btc_purchase("1".into(), e)
+    }
+    #[test]
+    #[should_panic(expected = "StateChanged")]
+    fn f12_a_reservation_is_bound_to_the_sign_epoch_the_buyer_saw() {
+        let mut c = btc_listed();
+        let seen = c.epoch(&"1".to_string());
+        at("bob.testnet", NearToken::from_millinear(100), 2_000);
+        c.reserve_btc_purchase("1".into(), seen + 1);
     }
     /// A one-input transaction paying `sats` to `script` and carrying `memo` as OP_RETURN (non-witness serialization).
     fn payment(script: &str, sats: u64, memo: &str) -> String {

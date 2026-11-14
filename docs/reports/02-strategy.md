@@ -22,7 +22,7 @@ Track briefs, quoted:
 |---|---|---|
 | Reproducibility (AI screener) | 9 | Public repo. The rest is already there: `npm run demo`, `verify.mjs`, JUDGES.md, CI green again since `44bda6a` |
 | Claims = on-chain reality | 10 | Keep it: daily `verify.mjs` in CI |
-| Technical implementation | 9 | — (375 contract tests including fuzz + invariant, 96 % line coverage, light client, MPC 3 domains + CKD + foreign-tx) |
+| Technical implementation | 9 | — (376 contract tests including fuzz + invariant, 96 % line coverage, light client, MPC 3 domains + CKD + foreign-tx) |
 | Fit with `nfts` ("NFTs as accounts that own money") | 9 | The track brief practically describes Pusaka |
 | Fit with `defi` ("settle… through NEAR Intents", "nobody to switch it off") | 6 | Intents in Pusaka is only a **dry-run quote**: 1Click liquidity only exists on mainnet. The `defi` leaders (Warrant, setllend) are **on mainnet**, and Warrant settles its transactions inside `intents.near`. To go up: deploy to mainnet + one Intents exit path that is actually executed |
 | Fit with `open` | 8 | The BTC × AI agent (MCP) × inheritance combination is already unique |
@@ -117,7 +117,7 @@ The comparison table in the README has been sharpened for this (column "BTC/EVM 
 **Actions, ordered by score gain per hour:**
 1. Public repo (user), by 12 Nov at the latest. Repro 1 → 9, and CI becomes free again so the badge turns green.
 2. 2–2.5 minute video + X post (user). Opening line: "Native BTC, proven by a light client". Show real screens + explorer, not animation.
-3. ~~Align the test counts~~: done (375 in all documents).
+3. ~~Align the test counts~~: done (376 in all documents).
 4. ~~"What's real / not" box~~: done, at the top of the README.
 5. ~~`verify.mjs` checks v2~~: done. ~~Delete the v2 key~~: done 13 Nov (`6PrDXyqq…`).
 6. Mainnet (user, needs funds) is the only way to catch Contri, Hallmark and Warrant on "impact".
