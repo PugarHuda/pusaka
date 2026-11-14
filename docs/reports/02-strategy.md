@@ -119,7 +119,7 @@ The comparison table in the README has been sharpened for this (column "BTC/EVM 
 2. 2–2.5 minute video + X post (user). Opening line: "Native BTC, proven by a light client". Show real screens + explorer, not animation.
 3. ~~Align the test counts~~: done (375 in all documents).
 4. ~~"What's real / not" box~~: done, at the top of the README.
-5. ~~`verify.mjs` checks v2~~: done. ~~Delete the v2 key~~: done 14 Nov (`6PrDXyqq…`).
+5. ~~`verify.mjs` checks v2~~: done. ~~Delete the v2 key~~: done 13 Nov (`6PrDXyqq…`).
 6. Mainnet (user, needs funds) is the only way to catch Contri, Hallmark and Warrant on "impact".
 
 ## 4. Honest: parity, what to catch up on, gaps

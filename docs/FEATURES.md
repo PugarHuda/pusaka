@@ -206,7 +206,7 @@ afterwards, so its `GET /` can no longer be read: the tx's key and the function-
 | A per-sat bid the token can't meet | the market refused it on-chain (`SatsOutOfRange`) | [5kg3YamS…](https://testnet.near.rocks/tx/5kg3YamSC6tqyLbjTPNk8rEK64sZ8U5ecNjUdf9swFKD) |
 | A sale into a per-sat bid | #27 sold into pusaka-buyer's bid (0.3 NEAR per 10,000 sats) for 0.33 NEAR | [C6rsfEot…](https://testnet.near.rocks/tx/C6rsfEot9g61SrJ4PxeKExY3xRrd6aYn6bJbwgLnjTeP) |
 | Listed again | #27 back on sale at 0.35 NEAR | [AdXRV6WY…](https://testnet.near.rocks/tx/AdXRV6WyVhYAvj6brserUomcoJZn3ThUXmaFySKDNnx7) |
-| The USDC pool refuses thin collateral | #11 (1,400 sats) can't cover the 1 USDC minimum: `borrow_refused` (OverLimit), the NFT straight back | [6VxM5AH6…](https://testnet.near.rocks/tx/6VxM5AH6TBrV8Fzmj9Uf7Bjgw21VXFEgYkYUQrkgyFaq) |
+| The USDC pool refuses thin collateral | #11 (1,400 sats) can borrow at most 0.76 USDC, so a 1 USDC loan was refused: `borrow_refused` (OverLimit), the NFT straight back | [6VxM5AH6…](https://testnet.near.rocks/tx/6VxM5AH6TBrV8Fzmj9Uf7Bjgw21VXFEgYkYUQrkgyFaq) |
 | A healthy USDC loan | 3 USDC against #12 (10,000 sats) at 43.9% loan-to-value | [DdJxauWe…](https://testnet.near.rocks/tx/DdJxauWe67oYC6HRrj8vrQjibA1FZpzcVcoBgBwp1hKG) |
 | A USDC loan at the limit | 3.544336 USDC against Smart Pusaka #1 at 79.5%, waiting for a real price move to 80% | [ERLuF8nf…](https://testnet.near.rocks/tx/ERLuF8nfwMTPBjywXRNxZpFHc8hLrbgfnk2Lj4xWTxX1) |
 | An heir named | #11's holder names pusaka-seller, 30 days of silence | [5EbU7qxM…](https://testnet.near.rocks/tx/5EbU7qxMxWBHG7y9qQw7rtEpA8eCGxgZsGYGdnT9JBwu) |
@@ -221,7 +221,7 @@ afterwards, so its `GET /` can no longer be read: the tx's key and the function-
 
 The contract above is final. New features run in a second deployment, **[`pusaka-v2.testnet`](https://testnet.near.rocks/account/pusaka-v2.testnet)**:
 the same contract plus `contract/src/v2.rs`, upgraded only through the DAO (`pusaka-council.sputnikv2.testnet`, 2 of 3
-votes, our own accounts) and a 10-minute timelock. **The deploy key was deleted on 14 Nov** (tx `6PrDXyqq…`):
+votes, our own accounts) and a 10-minute timelock. **The deploy key was deleted on 13 Nov (17:45 UTC)** (tx `6PrDXyqq…`):
 the account has no keys, and `verify.mjs` checks it. What v2 adds, each live on testnet with tx hashes in
 **[docs/V2.md](V2.md)**:
 
@@ -429,7 +429,7 @@ out with an MPC-signed `ft_transfer` ([FbT94gnj…](https://testnet.near.rocks/t
 Try: `node scripts/withdraw-nbtc.mjs <owner> <token_id> <receiver> <sats>`. Verifying a deposit on the connector
 yourself needs a staked trusted relayer (1,000 NEAR); Near-One's relayer does it for you.
 
-**And back to native Bitcoin, from a Smart Pusaka's keyless account (13 Nov, live).** The round trip with no key anywhere:
+**And back to native Bitcoin, from a Smart Pusaka's keyless account (12 Nov, live).** The round trip with no key anywhere:
 classic #5 sent 2,300 nBTC to Smart Pusaka #4's `0s…` account ([Vg8RtvNg…](https://testnet.near.rocks/tx/Vg8RtvNgVXpab2hDZawD8JjLorUEeAPy7BjUDzWcNdU));
 classic #1 paid 3,000 native sats to that account's Omni deposit address (`234a0f97…`) and 2,800 nBTC were minted to it;
 then the holder had the account redeem 3,600 nBTC through the connector (`account_call` → `ft_transfer_call`,

@@ -45,6 +45,6 @@
     "usdc_supply_20_faucet": "BEhFzECwr95eDvQG1f5qtfCwSnSB8A1SYQSPqzVMZt6U",
     "liquidated_at_81_15pct_real_price_14_nov": "BSDwVry5HC95QByn9RYcH2MW5emjSwx8Pa6TCJsKWH8"
   },
-  "keys": "none: both full-access keys deleted on 14 Nov (pusaka-lend.testnet HZnY3FJFLxTjypwg4tQmFoZuzgtZKR1svaAQeBhkDhRZ, pusaka-usd.testnet JCU9DDo4vuVBCVH1vBh3ctKBncBH7mpwvroCk1Jt3iqk); the pool's rules and reset can never change",
+  "keys": "none: both full-access keys deleted on 13 Nov, 17:45 UTC (pusaka-lend.testnet HZnY3FJFLxTjypwg4tQmFoZuzgtZKR1svaAQeBhkDhRZ, pusaka-usd.testnet JCU9DDo4vuVBCVH1vBh3ctKBncBH7mpwvroCk1Jt3iqk); the pool's rules and reset can never change",
   "stable_note": "Circle's testnet USDC on NEAR since the reset of 13 Nov; pusaka-usd.testnet (pUSD) before"
 }

@@ -16,7 +16,7 @@ Three things to check, in this order:
 3. **It passes on, with no custodian.** If the holder goes silent, the named heir claims the NFT and every Bitcoin in
    it: [claimed Pusaka #2 gas-free](https://testnet.near.rocks/tx/DzHQ4456hRkbJxTBRHDJCJ2C8PhXto5T7AgF33zSD3Dn). A will
    executed by attested code: an agent in a TEE claims for the heir with a key that never leaves the enclave and can
-   only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR); [check the key is the enclave's](docs/FEATURES.md#the-heirs-agent-in-a-tee)).
+   only call `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR) with the first agent's key; [check the current key is the enclave's](docs/FEATURES.md#the-heirs-agent-in-a-tee)).
    Failure cases, each with its test: a guardian loses their key, a guardian turns hostile, the holder is alive but
    offline ([table](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)). Watch the next one happen during judging:
 
@@ -90,7 +90,7 @@ Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.t
 >   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
 > - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`
 >   verifier; 1Click's own liquidity is mainnet-only, so mainnet is shown as a live quote.
-> - **Smart Pusakas** (`pusaka-v2.testnet`, no key since 14 Nov) are upgradeable only through a DAO (our own three demo accounts) plus a 10-minute timelock. The market (`pusaka-market.testnet`), the USDC pool (`pusaka-lend.testnet`) and pUSD (`pusaka-usd.testnet`) have had no key since 14 Nov either. The original
+> - **Smart Pusakas** (`pusaka-v2.testnet`, no key since 13 Nov) are upgradeable only through a DAO (our own three demo accounts) plus a 10-minute timelock. The market (`pusaka-market.testnet`), the USDC pool (`pusaka-lend.testnet`) and pUSD (`pusaka-usd.testnet`) have had no key since 13 Nov either. The original
 >   contract `pusaka-btc.testnet` has no key and renounced upgrades: nobody can change it.
 > - **The USDC pool** lends Circle's own testnet USDC. Its three price reporters are ours, and on testnet it runs tight
 >   (borrow up to 79.5%, liquidation from 80%) so a real price move can trigger a real liquidation, and one did on 14 Nov at 81.15% ([BSDwVry5…](https://testnet.near.rocks/tx/BSDwVry5HC95QByn9RYcH2MW5emjSwx8Pa6TCJsKWH8)); mainnet: 50/80.
