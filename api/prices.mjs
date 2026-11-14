@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     res.setHeader("cache-control", "public, s-maxage=60, stale-while-revalidate=300");
     res.status(200).json(last);
   } catch (e) {
-    if (last && Date.now() - last.fetchedAt < STALE_MS) return res.setHeader("cache-control", "no-store").status(200).json({ ...last, stale: true, error: e.message });
+    if (last && Date.now() - last.fetchedAt < STALE_MS) { console.error("prices (serving last good)", String(e.message ?? e).slice(0, 200)); return res.setHeader("cache-control", "no-store").status(200).json({ ...last, stale: true, error: "price sources unavailable; last good prices" }); }
     console.error("prices", String(e.message ?? e).slice(0, 200));
     res.setHeader("cache-control", "no-store").status(502).json({ error: "price sources unavailable" });
   }

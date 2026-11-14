@@ -2112,7 +2112,7 @@ function Actions({ t, accountId, isOwner, onDone, px, bundle }) {
   if (info.listing) return (
     <section className="actions">
       <p>Listed at <strong>{near(info.price_now ?? info.listing.price)} NEAR</strong>
-        {info.listing.floor !== info.listing.price && <>, falling to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}</>}.
+        {info.listing.floor !== info.listing.price && (Number(info.listing.end_ms) > Date.now() ? <>, falling to {near(info.listing.floor)} NEAR by {when(info.listing.end_ms)}</> : <>; the auction has ended at its floor, {near(info.listing.floor)} NEAR</>)}.
         Withdrawals are locked while it's for sale.</p>
       <AuctionClock listing={info.listing} />
       {act("cancel", "Cancel listing", "Cancelling…", async () => {
