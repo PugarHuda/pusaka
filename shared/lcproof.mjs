@@ -23,14 +23,24 @@ export function proofArgs({ txid, blockHash, pos, merkle, coinbase, coinbaseMerk
  * { lc, txid, height, steps, accepted, forgedAccepted }: a transaction 6 blocks below the light client's tip, its proof
  * accepted (must be true) and the forged one (must be false). `esplora`: a mempool.space-compatible mainnet API.
  */
-export async function mainnetProofCheck({ esplora = "https://mempool.space/api", rpc = "https://free.rpc.fastnear.com", txid } = {}) {
-  const get = async (p, text = false) => {
+export const MAINNET_ESPLORAS = ["https://mempool.space/api", "https://blockstream.info/api"];
+export async function mainnetProofCheck({ esplora, rpc = "https://free.rpc.fastnear.com", txid } = {}) {
+  // one explorer given: only that one; otherwise fail over in order and stay on the first that answers
+  let explorers = esplora ? [esplora] : [...MAINNET_ESPLORAS];
+  const once = async (base, p, text) => {
     for (let k = 1; ; k++) { // public explorers rate-limit (429): back off rather than fail
-      const r = await fetch(esplora + p, { signal: AbortSignal.timeout(20_000) });
+      const r = await fetch(base + p, { signal: AbortSignal.timeout(20_000) });
       if (r.ok) return text ? r.text() : r.json();
-      if (r.status !== 429 || k === 5) throw new Error(`Bitcoin explorer answered ${r.status} for ${p}`);
+      if (r.status !== 429 || k === 5) throw new Error(`Bitcoin explorer ${base} answered ${r.status} for ${p}`);
       await new Promise((x) => setTimeout(x, 2000 * k));
     }
+  };
+  const get = async (p, text = false) => {
+    let last;
+    for (const base of explorers) {
+      try { const v = await once(base, p, text); explorers = [base]; return v; } catch (e) { last = e; }
+    }
+    throw new Error(`no Bitcoin mainnet explorer answered (${last?.cause?.code ?? last?.message}); set BTC_MAINNET_ESPLORA to another Esplora API`);
   };
   const view = async (method, bytes) => {
     const j = await (await fetch(rpc, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(20_000),

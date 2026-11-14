@@ -6,7 +6,9 @@
 import assert from "node:assert/strict";
 import { mainnetProofCheck, MAINNET_LIGHT_CLIENT } from "@pusaka/shared/lcproof";
 
-const r = await mainnetProofCheck({ esplora: process.env.BTC_MAINNET_ESPLORA ?? "https://mempool.space/api", txid: process.argv[2] });
+let r;
+try { r = await mainnetProofCheck({ esplora: process.env.BTC_MAINNET_ESPLORA, txid: process.argv[2] }); }
+catch (e) { console.log(`⚠ couldn't run the check from this network: ${e.message}`); process.exit(2); }
 console.log(`NEAR mainnet light client ${MAINNET_LIGHT_CLIENT} is at Bitcoin block ${r.lc}`);
 console.log(`Bitcoin mainnet tx ${r.txid} in block ${r.height} (${r.lc - r.height + 1} confirmations), ${r.steps}-step merkle proof`);
 console.log(`verify_transaction_inclusion_v2 -> ${r.accepted}${r.error ? ` (${r.error})` : ""}`);

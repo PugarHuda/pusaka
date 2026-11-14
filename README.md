@@ -85,7 +85,7 @@ is sold, lent and inherited as one bundle (live: an AI agent bought one at 66% b
 Since 13 Nov `pusaka-v2.testnet` is the main contract; the classic `pusaka-btc.testnet` stays frozen for good (open any of its Pusakas with `?contract=pusaka-btc.testnet`), and the Market, reserves, offer book and refusals cover both.
 
 > **What's real, and what isn't (yet).**
-> - **Real, on NEAR testnet, every claim with a tx hash** (178 of them, all checked by `verify.mjs`).
+> - **Real, on NEAR testnet, every claim with a tx hash** (200 of them, all checked by `verify.mjs`).
 > - **Mainnet:** not deployed (needs funds; `docs/MAINNET.md`), but `scripts/mainnet-proof.mjs` shows Pusaka's proof
 >   accepted by the mainnet light client `btc-client.bridge.near` for a real mainnet Bitcoin transaction.
 > - **NEAR Intents** swaps execute on Tidepool, a 1Click-compatible testnet sandbox with NEAR's unmodified `defuse`
@@ -135,7 +135,7 @@ cd contract && cargo test
 
 See: `375 passed`. They cover every attack in the [threat model](docs/THREAT-MODEL.md#why-the-seller-cant-keep-the-bitcoin) (tests named `t1_…` to `t5_…`, `m…` for markets, `l…` loans, `p…` proofs, `s…` Solana, `a…` the NEAR account, `h1_letter…`–`h4_…` the sealed letter, `h1_heir…`–`h10_…` the heir, `x…` `nft_transfer_call`, `o…` the loan market, `up…` timelocked upgrades, `g…` gift links, `sn…` NEAR Social notifications, `n…` the on-chain image, `gd…` guardians, `ch…` withdrawal change, `sk…` staking) plus storage and input validation.
 
-### 2. Run the full flow against the deployed contract (~3 min)
+### 2. Run the full flow against the deployed contract (~5 min, 3 of them waiting for an optional BTC deposit)
 
 ```sh
 npm install

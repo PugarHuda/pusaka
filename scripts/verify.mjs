@@ -14,9 +14,10 @@ const APP = process.env.PUSAKA_APP ?? "https://pusaka-two.vercel.app";
 // the README plus the docs/ pages that hold the detail moved out of it
 const README = ["README.md", "docs/EVIDENCE.md", "docs/THREAT-MODEL.md", "docs/FEATURES.md", "docs/V2.md", "docs/AGENTS.md"].map((f) => fs.readFileSync(path.join(import.meta.dirname, "..", f), "utf8")).join("\n");
 let failed = 0, inconclusive = 0;
-// A judge shouldn't wait forever on a slow explorer: the whole run stops after 5 minutes and says where it was.
+// A judge shouldn't wait forever on a slow explorer: the whole run stops after 10 minutes and says where it was
+// (a full run takes about 3 min on the default contract, about 5 on the classic one).
 let step = "start";
-setTimeout(() => { console.log(`✗ stopped after 5 minutes at: ${step} (a Bitcoin explorer or NEAR RPC isn't answering; run again)`); process.exit(2); }, 300_000).unref();
+setTimeout(() => { console.log(`✗ stopped after 10 minutes at: ${step} (a Bitcoin explorer or NEAR RPC isn't answering; run again)`); process.exit(2); }, 600_000).unref();
 const ok = (good, what, detail = "") => {
   if (!good) failed++;
   console.log(`${good ? "✓" : "✗"} ${what}${detail ? `: ${detail}` : ""}`);
@@ -184,12 +185,12 @@ step = "replaying every contract event from FastNear's archival index";
 //     client as a free view call, and a forged one refused (shared/lcproof.mjs; scripts/mainnet-proof.mjs alone).
 step = "asking NEAR's mainnet Bitcoin light client";
 try {
-  const m = await mainnetProofCheck({ esplora: process.env.BTC_MAINNET_ESPLORA ?? "https://mempool.space/api" });
+  const m = await mainnetProofCheck({ esplora: process.env.BTC_MAINNET_ESPLORA });
   ok(m.accepted && !m.forgedAccepted, "mainnet-ready: NEAR's mainnet light client accepts Pusaka's proof for a real Bitcoin mainnet tx and refuses a forged one",
     `${MAINNET_LIGHT_CLIENT}, tx ${m.txid.slice(0, 12)}… in block ${m.height}, forged accepted: ${m.forgedAccepted}`);
 } catch (e) {
   inconclusive++;
-  console.log(`⚠ mainnet light-client check not run (${e.message}); try BTC_MAINNET_ESPLORA=https://mempool.emzy.de/api, or node scripts/mainnet-proof.mjs later`);
+  console.log(`⚠ mainnet light-client check not run (${e.message}); tried mempool.space and blockstream.info; set BTC_MAINNET_ESPLORA to another Esplora API, or run node scripts/mainnet-proof.mjs later`);
 }
 
 // 6d. Clean to buy: for every Pusaka for sale (both contracts), nothing the seller already signed can still move what's
@@ -264,10 +265,10 @@ Market: ${d.contract}`);
 // 9. The lending pool (testnet; Circle USDC since 13 Nov): recorded code and config, solvent, and every pledged Pusaka really held by the pool.
 const LD = path.join(import.meta.dirname, "..", "deployments", `${NETWORK}-lend.json`);
 if (fs.existsSync(LD)) {
-  step = "checking the pUSD lending pool";
+  step = "checking the USDC lending pool";
   const d = JSON.parse(fs.readFileSync(LD, "utf8"));
   console.log(`
-Lend: ${d.contract} (pUSD: ${d.stable})`);
+Lend: ${d.contract} (stablecoin: ${d.stable})`);
   const a = await rpc("query", { request_type: "view_account", finality: "final", account_id: d.contract });
   ok(hex(base58.decode(a.code_hash)) === d.wasm_sha256, "lend code = the build recorded in deployments", `${d.wasm_sha256.slice(0, 16)}…`);
   const [cfg, pool, loans] = await Promise.all([viewFinal("config", {}, d.contract), viewFinal("pool", {}, d.contract), viewFinal("loans", { limit: 100 }, d.contract)]);

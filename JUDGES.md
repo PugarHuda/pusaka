@@ -2,7 +2,7 @@
 
 Everything below runs without a wallet and without a key, on a fresh clone. Nothing is signed or sent.
 
-## 1. Check the core claims against the chains (about 2 minutes; it stops itself after 5)
+## 1. Check the core claims against the chains (about 3 minutes; the classic contract about 5; it stops itself after 10)
 
 ```
 npm install
@@ -14,22 +14,26 @@ changes only through a DAO vote plus a timelock (the classic contract renounced 
 which holds most of the Bitcoin, passes everything too:
 
 ```
-PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/verify.mjs     # 13 Nov: all checks passed
+PUSAKA_CONTRACT=pusaka-btc.testnet node scripts/verify.mjs     # 14 Nov: all checks passed
 ```
 
-Expect `all checks passed`, with these lines (numbers move as the demo is used):
+(PowerShell: `$env:PUSAKA_CONTRACT="pusaka-btc.testnet"; node scripts/verify.mjs`.)
+
+Expect `all checks passed` from both. The classic run prints these lines (numbers move as the demo is used; the
+default v2 run prints the same checks for `pusaka-v2.testnet`, with "admin pusaka-council.sputnikv2.testnet announces a
+sha256; deployable 10 min later" in place of "upgrades renounced"):
 
 ```
 ✓ deployed code = the recorded build: sha256 …, commit …
 ✓ NEP-330 build info names the reproducible image: sourcescan/cargo-near:0.21.1-rust-1.96.1
 ✓ nobody holds a key to the contract account: no key at all (or only open gift-link keys limited to claim)
 ✓ new code only after a public announcement: upgrades renounced: final
-✓ all 27 Pusaka BTC keys are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
-✓ verified_sats = proven deposits never signed away; 13 proven deposits found on Bitcoin, confirmed, paying the right address: …
+✓ all 29 checked Pusaka BTC keys (of 29) are the MPC's derivation for pusaka-btc.testnet: signer v1.signer-prod.testnet
+✓ verified_sats = proven deposits never signed away; 14 proven deposits found on Bitcoin, confirmed, paying the right address: …
 ✓ the app's /api/reserves matches the contract: … sats verified in total
 ✓ all … NEAR transactions cited in the README and docs/ are on chain: via FastNear's archival index
-✓ replayed from genesis: 553 transactions, 26 logged mints and 60 transfers give every owner the contract reports now: …
-✓ each of the 13 proven UTXOs the contract counts traces to a proof transaction on chain where the light client answered true: …
+✓ replayed from genesis: 693 transactions, 28 logged mints and 89 transfers give every owner the contract reports now: …
+✓ each of the 14 proven UTXOs the contract counts traces to a proof transaction on chain where the light client answered true: …
 ```
 
 If a line starts with ⚠, a Bitcoin explorer (mempool.space or Blockstream) didn't answer from your network: those
@@ -64,7 +68,7 @@ Builds the exact bytes Pusaka's contract sends to NEAR's Bitcoin light client (`
 in the `mainnet` build) for a real Bitcoin **mainnet** transaction, and asks the mainnet light client
 `btc-client.bridge.near` as a view call: `true`. The same proof with one merkle hash changed: `false`. No wallet,
 no NEAR spent. (12 Nov: tx `e1ad57ea…` in block 975,511, 13-step proof, accepted; the forged one refused.)
-If the default explorer rate-limits you, `BTC_MAINNET_ESPLORA=https://mempool.space/api` uses another.
+It tries mempool.space, then blockstream.info, by itself; `BTC_MAINNET_ESPLORA=<an Esplora API>` picks another.
 
 ## 2. Run the tests (2 minutes once built; the first build adds ~2)
 
