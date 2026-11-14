@@ -1,9 +1,6 @@
 name: shade-image
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [shade/agent-contract/**, shade/agent.mjs, shade/package*.json, shade/Dockerfile, shared/btc.mjs, shared/ckd.mjs, shared/intents.mjs, deployments/testnet.json, deployments/testnet-v2.json, api/_relayer.mjs, .github/workflows/shade-image.yml]
+  workflow_dispatch: # on demand: the running agent's image is pinned by digest in shade/docker-compose.yaml
 permissions:
   contents: read
 jobs:

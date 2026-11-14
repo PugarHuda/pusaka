@@ -181,7 +181,8 @@ on 13 Nov, `ed25519:J2W4WSpa…` before and after; the heir added it once
 hour per heir, and the contract doesn't need the agent (the heir can always claim directly).
 
 **Check that the claim key lives in the attested agent** (no wallet, four reads):
-1. `curl https://2c023d0a661b10161ab612f41b0aeb858e345e1d-3000.dstack-pha1-prod5.phala.network/`: the running agent
+1. `curl https://2c023d0a661b10161ab612f41b0aeb858e345e1d-3000.dstack-pha1-prod5.phala.network/` (until the #27 claim on
+   16 Nov; the CVM is deleted soon after to save Phala credit, and steps 2-4 stay checkable on chain): the running agent
    reports its NEAR account (`agent`), its `heir_key` (`ed25519:J2W4WSpa…`) and every claim it made.
 2. `get_agent({"account_id": "<agent>"})` on `pusaka-agent.testnet`: the agent is registered with a TDX attestation whose
    `app_compose_hash_payload` is `c06e4c5a…`, the hash of `shade/docker-compose.yaml`. That compose pins image

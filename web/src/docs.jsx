@@ -17,8 +17,8 @@ const SECTIONS = [
     <p><strong>Pusaka</strong> (<code>pusaka-btc.testnet</code>) is final: its account has no keys and upgrades were renounced, so
       nobody, us included, can change its rules.</p>
     <p><strong>Smart Pusakas</strong> (<code>pusaka-v2.testnet</code>) are the same contract plus everything newer on this page. Its code
-      changes only through a DAO vote (2 of 3) and a 10-minute timelock; until its deploy key is deleted on 13 Nov, the team can
-      also change it directly, and <a href={`${REPO}/scripts/verify.mjs`}>verify.mjs</a> reports that key until then.</p>
+      changes only through a DAO vote (2 of 3) and a 10-minute timelock; its deploy key was deleted on 13 Nov, and
+      <a href={`${REPO}/scripts/verify.mjs`}>verify.mjs</a> checks that the account has no key.</p>
   </>],
   ["sell", "Selling without a way back in", <>
     <p>A buyer checks the Bitcoin inside and buys against the token's <em>sign epoch</em>: if anything was signed since they looked,

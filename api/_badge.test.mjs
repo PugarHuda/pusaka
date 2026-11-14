@@ -27,3 +27,7 @@ assert.equal(heirSegment({ claimable_from_ms: String(now - 1) }, now)[0], "heir 
 assert.match(badge("27", 7700, null, null, heirSegment({ claimable_from_ms: String(now + 90_000) }, now)), /heir claims 11-14 00:01Z \(in 0h 1m\)/);
 assert.match(badge("4", 10_000, "clean", now), /clean @00:00Z/); // the clean badge is unchanged
 console.log("heir badge: countdown, due, none");
+
+// after the claim: who inherited it, not "no heir named"
+assert.match(heirSegment(null, now, { at_ms: String(Date.UTC(2026, 10, 16, 2, 1)), event: { kind: "Inherited", to: "pusaka-buyer.testnet" } })[0], /inherited by pusaka-buyer\.testnet 11-16 02:01Z/);
+console.log("heir badge: inherited");

@@ -12,7 +12,8 @@ const esc = (s) => String(s).replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const CLEAN = { clean: ["clean", "#2e7d32"], risk: ["not clean", "#c62828"], unknown: ["clean: unchecked", "#6b6b6b"] };
 
 /** `heir_of(id)` as a badge segment: when the heir can claim (a countdown a judge can watch run out), or that it's due. */
-export function heirSegment(h, now) {
+export function heirSegment(h, now, inherited) {
+  if (!h && inherited) return [`inherited by ${inherited.event.to} ${new Date(Number(inherited.at_ms)).toISOString().slice(5, 16).replace("T", " ")}Z`, "#2e7d32"];
   if (!h) return ["no heir named", "#6b6b6b"];
   const due = Number(h.claimable_from_ms);
   if (due <= now) return [`heir can claim now`, "#7a3fb0"];
@@ -66,9 +67,10 @@ export default async function handler(req, res) {
     if (req.query?.heir === "1") {
       // a countdown: never cached longer than a minute
       const h = await viewFinal("heir_of", { token_id: id }, c);
+      const inherited = h ? null : (await viewFinal("token_info", { token_id: id }, c))?.history?.findLast((x) => x.event.kind === "Inherited");
       res.setHeader("content-type", "image/svg+xml");
       res.setHeader("cache-control", "public, s-maxage=60, max-age=0, must-revalidate");
-      return res.status(200).send(badge(id, t.verified_sats, null, null, heirSegment(h, Date.now())));
+      return res.status(200).send(badge(id, t.verified_sats, null, null, heirSegment(h, Date.now(), inherited)));
     }
     res.setHeader("content-type", "image/svg+xml");
     // a clean verdict goes stale the moment something is signed: a minute at most, never served stale

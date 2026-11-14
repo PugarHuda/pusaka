@@ -1,6 +1,6 @@
 # Pusaka
 
-[![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
+[![CI](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/PugarHuda/pusaka/actions/workflows/ci.yml)
 
 **An NFT on NEAR that holds real Bitcoin. Sell it, borrow against it or leave it to an heir, and the BTC moves with it. NEAR's
 Bitcoin light client proves every deposit. Live on NEAR testnet; not on mainnet yet ([what's real](#whats-real-and-what-isnt-yet)).**
@@ -21,7 +21,8 @@ Three things to check, in this order:
    An agent in a TEE (attested hardware) can claim for the heir with a key that never leaves it and can only call
    `claim_inheritance` ([claimed classic #2](https://testnet.near.rocks/tx/ECFUYRkyr23STgCu8okhYs52RXvHXUmrg9449Q3mUTqR) with the first agent's key; [check the current key is the enclave's](docs/FEATURES.md#the-heirs-agent-in-a-tee)).
    Failure cases, each with its test: a guardian loses their key, a guardian turns hostile, the holder is alive but
-   offline ([table](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)). Watch the next one happen during judging:
+   offline ([table](docs/FEATURES.md#heirloom-it-passes-on-if-you-go-silent)). The next one, live: classic #27's heir can
+   claim from 16 Nov 02:00 UTC and the TEE agent claims it then; this badge counts down, then names who inherited it:
 
    [![Pusaka #27: heir countdown](https://pusaka-two.vercel.app/api/badge?id=27&contract=pusaka-btc.testnet&heir=1)](https://pusaka-two.vercel.app/?contract=pusaka-btc.testnet#/pusaka/27)
 
@@ -61,7 +62,7 @@ Then open **https://pusaka-two.vercel.app/#/market**: every Pusaka, the Bitcoin 
 | ![Real attacks the contracts refused, each confirmed failed on NEAR](docs/screenshots/refused.png) | ![For AI agents: the live MCP endpoint's tools, prompts and resources](docs/screenshots/agents.png) |
 | **Refused**: real attacks, failed on-chain | **For AI agents**: 61 MCP tools, x402 audits |
 | ![Pusaka #27's will: if its holder stays silent until 16 Nov 02:00 UTC, pusaka-buyer.testnet can claim it with everything it holds](docs/screenshots/heir.png) | ![A prompt-injected agent tries to send a Pusaka's Bitcoin to an attacker and is refused three ways; nothing changes on chain](docs/screenshots/attack-demo.png) |
-| **It passes on**: #27's heir can claim from 16 Nov 02:00 UTC (the TEE agent will) | **Attack demo**: a prompt-injected agent, refused before signing |
+| **It passes on**: #27's heir can claim from 16 Nov 02:00 UTC, by the TEE agent (its page history shows the claim) | **Attack demo**: a prompt-injected agent, refused before signing |
 
 Regenerate: `node web/e2e/readme-shots.mjs [bip322-proof.json]`.
 
